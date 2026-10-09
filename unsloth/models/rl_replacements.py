@@ -1098,6 +1098,10 @@ def _unsloth_grpo_vision_inputs(source):
             "num_images",
             "token_type_ids",
             "mm_token_type_ids",
+            "num_videos",
+            "pixel_values_videos",
+            "second_per_grid_ts",
+            "video_grid_thw",
         )
     }
 
