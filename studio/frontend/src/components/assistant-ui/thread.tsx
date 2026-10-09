@@ -34,6 +34,8 @@ import { ComposerDraftPreview } from "@/components/assistant-ui/composer-draft-p
 import { PromptQueueList } from "@/components/assistant-ui/lazy-prompt-queue-list";
 import { QueueResumeIcon } from "@/components/assistant-ui/queue-resume-icon";
 import { ProgressiveMessages } from "@/components/assistant-ui/progressive-messages";
+import { AgentHistoryMessages } from "@/components/assistant-ui/agent-history-messages";
+import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
 import { MessageMenuTime } from "@/components/assistant-ui/message-menu-time";
 import { UserMessageActionBar, UserMessageFooter } from "@/components/assistant-ui/user-message-actions";
 import { useActionBarFocusReveal } from "@/components/assistant-ui/use-action-bar-focus-reveal";
@@ -1945,6 +1947,9 @@ export const Thread: FC<{
   );
   const activeThreadId = useChatRuntimeStore((s) => s.activeThreadId);
   const threadId = targetThreadId ?? activeThreadId ?? null;
+  const agentHistoryEnabled = useAgentHistoryModeStore((state) =>
+    threadId ? state.enabledThreads[threadId] === true : false,
+  );
   const aui = useAui();
   useThreadForkCounts();
   useTrackForkBoundaryAnchor(threadId);
@@ -2194,11 +2199,18 @@ export const Thread: FC<{
             completeProgressiveMounts. It takes the propless slot #9042 introduced, for the same
             reason: React's bail-out needs one shared element per row. See
             progressive-mount-controller.ts. */}
-            <ProgressiveMessages
-              renderMessage={renderThreadMessage}
-              resetKey={runtimeThreadId}
-              viewportRef={viewportElRef}
-            />
+            {agentHistoryEnabled ? (
+              <AgentHistoryMessages
+                renderMessage={renderThreadMessage}
+                resetKey={runtimeThreadId}
+              />
+            ) : (
+              <ProgressiveMessages
+                renderMessage={renderThreadMessage}
+                resetKey={runtimeThreadId}
+                viewportRef={viewportElRef}
+              />
+            )}
 
             {/* Bottom slack so the last message has room above the sticky
             scroll-to-bottom button (and floating composer in single mode),
