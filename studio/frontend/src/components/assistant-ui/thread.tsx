@@ -34,6 +34,8 @@ import { ComposerDraftPreview } from "@/components/assistant-ui/composer-draft-p
 import { PromptQueueList } from "@/components/assistant-ui/lazy-prompt-queue-list";
 import { QueueResumeIcon } from "@/components/assistant-ui/queue-resume-icon";
 import { ProgressiveMessages } from "@/components/assistant-ui/progressive-messages";
+import { AgentHistoryScrollMessages } from "@/components/assistant-ui/agent-history-scroll-messages";
+import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
 import { MessageMenuTime } from "@/components/assistant-ui/message-menu-time";
 import { UserMessageActionBar, UserMessageFooter } from "@/components/assistant-ui/user-message-actions";
 import { useActionBarFocusReveal } from "@/components/assistant-ui/use-action-bar-focus-reveal";
@@ -1945,6 +1947,9 @@ export const Thread: FC<{
   );
   const activeThreadId = useChatRuntimeStore((s) => s.activeThreadId);
   const threadId = targetThreadId ?? activeThreadId ?? null;
+  const agentHistoryEnabled = useAgentHistoryModeStore((state) =>
+    threadId ? state.enabledThreads[threadId] === true : false,
+  );
   const aui = useAui();
   useThreadForkCounts();
   useTrackForkBoundaryAnchor(threadId);
@@ -2172,6 +2177,8 @@ export const Thread: FC<{
             scrollToBottomOnThreadSwitch={false}
             className={cn(
               "aui-thread-viewport aui-stream-viewport relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-x-auto overflow-y-auto scroll-smooth px-5",
+              // Preserve the exact default class order for normal-chat DOM parity.
+              agentHistoryEnabled && "scroll-auto",
               hideComposer
                 ? "pt-4"
                 : // + the chat-model notice, which is an opaque absolute bar
@@ -2194,11 +2201,19 @@ export const Thread: FC<{
             completeProgressiveMounts. It takes the propless slot #9042 introduced, for the same
             reason: React's bail-out needs one shared element per row. See
             progressive-mount-controller.ts. */}
-            <ProgressiveMessages
-              renderMessage={renderThreadMessage}
-              resetKey={runtimeThreadId}
-              viewportRef={viewportElRef}
-            />
+            {agentHistoryEnabled ? (
+              <AgentHistoryScrollMessages
+                renderMessage={renderThreadMessage}
+                resetKey={runtimeThreadId}
+                viewportRef={viewportElRef}
+              />
+            ) : (
+              <ProgressiveMessages
+                renderMessage={renderThreadMessage}
+                resetKey={runtimeThreadId}
+                viewportRef={viewportElRef}
+              />
+            )}
 
             {/* Bottom slack so the last message has room above the sticky
             scroll-to-bottom button (and floating composer in single mode),

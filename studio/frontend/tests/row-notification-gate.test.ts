@@ -258,6 +258,28 @@ test("the gate holds the parent subscription only while a row is subscribed", ()
   assert.equal(fake.parentSubscriptions(), 0);
 });
 
+
+test("a virtual window evicts only unmounted, unsubscribed row clients", () => {
+  const fake = fakeClient();
+  const gate = createRowNotificationGate(fake.client);
+  const early = gate.row(4);
+  const visible = gate.row(50);
+  const subscribed = gate.row(200);
+  let notifications = 0;
+  const release = subscribed.subscribe(() => { notifications += 1; });
+
+  gate.pruneOutside(32, 64);
+  assert.notEqual(gate.row(4), early, "unmounted client can be reclaimed");
+  assert.equal(gate.row(50), visible, "the mounted window keeps stable clients");
+  assert.equal(gate.row(200), subscribed, "a live subscriber must not be evicted");
+  fake.publish({ thread: { isRunning: true } });
+  assert.equal(notifications, 1, "an off-window subscription remains functional");
+  release();
+
+  gate.pruneOutside(32, 64);
+  assert.notEqual(gate.row(200), subscribed, "released off-window client is reclaimable");
+});
+
 test("a row client is stable per index and inherits every scope from its parent", () => {
   const fake = fakeClient();
   const gate = createRowNotificationGate(fake.client);
