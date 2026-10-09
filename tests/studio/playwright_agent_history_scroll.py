@@ -17,8 +17,13 @@ import argparse
 import json
 import time
 import uuid
+import sys
+from pathlib import Path
 
-from .studiobench.runtime.lifecycle import (
+# Executed as a standalone Playwright driver from the checkout root.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from tests.studio.studiobench.runtime.lifecycle import (
     authenticate,
     auth_request_json,
     seed_init_script,
