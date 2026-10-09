@@ -42,12 +42,15 @@ export const AgentHistoryMessages: FC<{
   const isRunning = useAuiState(({ thread }) => thread.isRunning);
   const aui = useAui();
   const gate = useMemo(() => createRowNotificationGate(aui), [aui]);
-  const lastUserIndex = useAuiState(({ thread }) => {
-    for (let i = thread.messages.length - 1; i >= 0; i--) {
-      if (thread.messages[i].role === "user") return i;
+  // Scan only when the message count changes, not on each composer keystroke
+  // or each delta. The upstream long-chat regression was selector fan-out.
+  const lastUserIndex = useMemo(() => {
+    const messages = aui.thread().getState().messages;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") return i;
     }
     return -1;
-  });
+  }, [aui, count]);
   const [page, setPage] = useState<AgentHistoryPage>(() => initialAgentHistoryPage(count));
   const [seen, setSeen] = useState({ count, key: resetKey, running: isRunning });
 
