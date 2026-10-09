@@ -156,8 +156,21 @@ def test_explicit_loss_type_still_wins():
 
     if not hasattr(trl.SFTConfig, "loss_type"):
         pytest.skip("this TRL has no SFTConfig.loss_type")
-    cfg = trl.SFTConfig(output_dir = "unused", loss_type = "chunked_nll")
-    assert cfg.loss_type == "chunked_nll", "explicit loss_type was clobbered"
+    # TRL 1.15+ normalizes the deprecated chunked_nll alias to nll even
+    # without Unsloth. Verify that normalization and preserve an unrelated
+    # explicit objective (dft), rather than demanding the retired spelling.
+    from packaging.version import Version
+
+    for requested in ("chunked_nll", "dft"):
+        cfg = trl.SFTConfig(output_dir = "unused", loss_type = requested)
+        expected = (
+            "nll"
+            if requested == "chunked_nll" and Version(trl.__version__) >= Version("1.15.0")
+            else requested
+        )
+        assert cfg.loss_type == expected, (
+            f"explicit loss_type {requested!r} resolved to {cfg.loss_type!r}, expected {expected!r}"
+        )
 
 
 def _skip_if_unsloth_refuses_grpo():
@@ -227,9 +240,20 @@ def test_pristine_trl_sft_config_keeps_an_explicit_loss_type():
     if not hasattr(pristine, "loss_type"):
         pytest.skip("this TRL has no SFTConfig.loss_type")
 
+    from packaging.version import Version
+    import trl
+
     for wanted in ("chunked_nll", "dft"):
         got = pristine(output_dir = "unused", loss_type = wanted).loss_type
-        assert got == wanted, f"explicit loss_type {wanted!r} was clobbered to {got!r}"
+        # TRL 1.15+ deprecates chunked_nll and canonicalizes it to nll.
+        expected = (
+            "nll"
+            if wanted == "chunked_nll" and Version(trl.__version__) >= Version("1.15.0")
+            else wanted
+        )
+        assert got == expected, (
+            f"explicit loss_type {wanted!r} resolved to {got!r}, expected {expected!r}"
+        )
 
 
 def test_dataclass_field_default_is_nll_for_hfargumentparser():
