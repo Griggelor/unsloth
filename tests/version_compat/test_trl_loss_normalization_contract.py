@@ -163,11 +163,9 @@ def test_explicit_loss_type_still_wins():
 
     for requested in ("chunked_nll", "dft"):
         cfg = trl.SFTConfig(output_dir = "unused", loss_type = requested)
-        expected = (
-            "nll"
-            if requested == "chunked_nll" and Version(trl.__version__) >= Version("1.15.0")
-            else requested
-        )
+        expected = requested
+        if requested == "chunked_nll" and Version(trl.__version__) >= Version("1.15.0"):
+            expected = "nll"
         assert cfg.loss_type == expected, (
             f"explicit loss_type {requested!r} resolved to {cfg.loss_type!r}, expected {expected!r}"
         )
@@ -246,11 +244,9 @@ def test_pristine_trl_sft_config_keeps_an_explicit_loss_type():
     for wanted in ("chunked_nll", "dft"):
         got = pristine(output_dir = "unused", loss_type = wanted).loss_type
         # TRL 1.15+ deprecates chunked_nll and canonicalizes it to nll.
-        expected = (
-            "nll"
-            if wanted == "chunked_nll" and Version(trl.__version__) >= Version("1.15.0")
-            else wanted
-        )
+        expected = wanted
+        if wanted == "chunked_nll" and Version(trl.__version__) >= Version("1.15.0"):
+            expected = "nll"
         assert got == expected, (
             f"explicit loss_type {wanted!r} resolved to {got!r}, expected {expected!r}"
         )
