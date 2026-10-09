@@ -166,6 +166,11 @@ export const AgentHistoryScrollMessages: FC<{
     }
     return result;
   }, [range.start, range.end, renderMessage, gate, count]);
+  // Reclaim row clients from previously visited windows after React has
+  // finished unmounting their subscriptions. Keep the mounted window stable.
+  useEffect(() => {
+    gate.pruneOutside(range.start, range.end);
+  }, [gate, range.start, range.end]);
   const backToLatest = () => { following.current = true; seek(countRef.current - 1, "bottom"); };
   return <div data-agent-history-scroll-list="true" role="list" className="flex min-w-0 flex-col">
     {range.end < count && <button type="button" className="sticky top-2 z-20 mx-auto rounded-full border bg-background px-3 py-1 text-xs shadow" onClick={backToLatest}>Zur neuesten Ausgabe</button>}
