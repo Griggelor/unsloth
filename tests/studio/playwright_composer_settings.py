@@ -168,8 +168,14 @@ def main():
                 page.get_by_role(
                     "switch", name = en_string("composerSettings.plainText"), exact = True
                 ).wait_for(state = "visible", timeout = 60_000)
-                check_settings(page)
-                assert not errors, errors
+                try:
+                    check_settings(page)
+                    assert not errors, errors
+                except Exception:
+                    print("Composer browser:", browser.version, flush = True)
+                    print("Composer page errors:", errors, flush = True)
+                    print("Composer current URL:", page.url, flush = True)
+                    raise
             finally:
                 browser.close()
     finally:
