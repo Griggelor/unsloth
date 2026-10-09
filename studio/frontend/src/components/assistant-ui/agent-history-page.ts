@@ -75,6 +75,19 @@ export function olderAgentHistoryPage(slice: AgentHistorySlice): AgentHistoryPag
   return { kind: "older", end: slice.start };
 }
 
+/** Show the most recent user instruction with its original index, without scanning in render. */
+export function agentHistoryPageForMessage(
+  messageIndex: number,
+  count: number,
+): AgentHistoryPage {
+  if (!Number.isSafeInteger(messageIndex) || messageIndex < 0 || messageIndex >= count) {
+    return initialAgentHistoryPage(count);
+  }
+  return messageIndex >= count - AGENT_HISTORY_PAGE_SIZE
+    ? initialAgentHistoryPage(count)
+    : { kind: "older", end: messageIndex + 1 };
+}
+
 export function newerAgentHistoryPage(
   slice: AgentHistorySlice,
   count: number,
