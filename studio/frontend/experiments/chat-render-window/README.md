@@ -1,42 +1,36 @@
-# Experimental bounded chat rendering (WIP)
+# Agenten-Chatverlauf – experimental opt-in
 
-Status: **planner and unit tests only**. The production chat UI is **not** changed and this is **not yet** a pull-request-ready rendering optimization.
+## Variant A: bounded history pages (integrated, not release-ready)
 
-## Problem and scope
+This fork adds an opt-in **Agenten-Chatverlauf** for long-running autonomous agent chats. Ordinary chats keep the existing ProgressiveMessages renderer, unchanged.
 
-Long-running coding chats retain their history in `studio.db` but the default chat UI eventually mounts all messages. The existing progressive mount makes the first paint fast, but deliberately widens to the complete DOM. The experiment asks whether an actual bounded viewport can reduce sustained DOM/paint cost **without** harming streaming, reading, copy, search, export, or accessibility.
+The header menu toggles the mode on saved single chats; switching is disabled while generation runs. The local per-thread preference is stored in browser storage. It is not mirrored into studio.db or synchronized across devices/accounts. The chat transcript, model context, compaction and backend remain untouched.
 
-No change to persistence, context compaction, model inference, or prompt replay is proposed.
+The latest page initially mounts the last 32 messages. Explicit Older / Newer / Latest navigation changes whole pages; it is not continuous virtual scrolling. The live page is pruned after 64 idle messages or 96 during a running agent generation, preserving the currently generating tail and avoiding huge predicted-height spacer calculations.
 
-## Prior negative evidence to beat
+### Blockers before any upstream PR
 
-`tests/studio/studiobench/CONTRIBUTING-perf.md` documents an earlier fully virtualized prototype. It reduced selected costs but degraded `send_turn` from 61.1 to 37.3 FPS at the 100K rung and increased p95 frames from 34 to 375 ms. It also lost mounted messages after an interaction and truncated select-all copy until the copy path changed. A prior `content-visibility:auto` experiment on message roots was likewise unhelpful.
+- Search in the existing find-in-page indexes mounted DOM; currently it does **not** search hidden pages. Add a full-history search or explicit complete-history mode before release.
+- Browser selection and Ctrl+A cover the visible page only; explicit Copy Chat / Export are storage-backed but browser parity is still unverified.
+- Accessibility range labelling exists but virtualized list semantics and keyboard/focus/page-transition behavior need review.
+- Local preference needs account switching, privacy and multi-device persistence policy review.
+- Browser integration for active tool calls, edits, removal, fork, thread switch, image growth and active streaming needs E2E coverage.
+- The current source commits have NOT been compiled or browser-benchmarked; no performance claim is warranted.
+- Existing stream-pacing gate remains in place. Do not add another proxy without proving a separate remaining cost.
 
-The new experiment must beat the **shipping** implementation, not just the old rejected virtualizer.
+### Prior regressions we must beat
 
-## Phase 1: pure window planner (implemented)
+Unsloth documented a rejected virtualizer in tests/studio/studiobench/CONTRIBUTING-perf.md: send_turn declined from 61.1 FPS to 37.3 FPS and p95 increased from 34 ms to 375 ms, mostly because of first-append style recalculation and row repositioning. This experiment uses fixed pages, not continuous shifting absolute-positioned rows.
 
-`src/components/assistant-ui/experimental-render-window.ts` produces one reader-centred index range and an optional protected live tail. It always returns original message indices, merges overlaps and adjacency, clamps an index stale after deletion, and never duplicates rows. A streaming caller must capture the protected tail's starting index **once** when a run begins, not slide the protected start whenever a new token arrives.
+Upstream PR #13059 already significantly reduces selector fan-out, including for very large agent chats, so all A/B measurement must be against current upstream rather than older releases.
 
-`tests/experimental-render-window.test.ts` covers boundary, long-thread, pinning, overlapping, append, deletion, invalid-input and exhaustive small-history invariants.
+### Test/measurement gate
 
-Run from `studio/frontend`:
+From studio/frontend, run the new tests/agent-history-page.test.ts and existing tests, then npm test, npm run typecheck and npm run build. Run Playwright for find, copy, edit, stream, tool actions, resize, thread switches, and WebView2 real agent traces. Run Studiobench with in-band null controls and its liveness/floor_table/visible+behaviour parity gates. Any uncovered action is NOT RUN, not PASS.
 
-```bash
-node --experimental-strip-types --test tests/experimental-render-window.test.ts
-```
+## Follow-up variants
 
-## Phase 2: integration (NOT implemented)
+- B: opt-in true pixel-aware viewport virtualization, if an A/B test shows benefit beyond A.
+- C: decouple the in-memory assistant-ui message repository from complete persisted archive, with store-backed global history search.
 
-- Build a separately gated prototype beside `ProgressiveMessages`; keep the current UI default, avoid switching provider trees mid-run.
-- Preserve `MessageByIndexProvider` original indexes, and keep the active streamed reply mounted without re-positioning every historical row per token.
-- Measure true row heights and retain reader scroll anchor across inserts, edits, expansion, image loads and history switches. No presumed constant-size messages.
-- Provide an explicit, complete-history API for export and copy; do not trust the bounded DOM as the whole history.
-- Teach find-in-page, screen readers (`aria-posinset` / `aria-setsize`), keyboard navigation and print about unmounted messages.
-- Run existing stream, copy, find-in-page, edit/fork, compaction and browser tests before claiming a usable mode.
-
-## Release and PR gate
-
-Only consider an upstream draft PR once the prototype builds and passes functional regression tests. Performance claims require Unsloth Studiobench A/B against a pinned baseline **and a concurrent base-vs-base null control**; run liveness checks, `floor_table`, and `ui_parity` (visible and behaviour modes) as prescribed in `tests/studio/studiobench/CONTRIBUTING-perf.md`. Report `send_turn` frame distributions, first append, continuous token streaming, thread switch, long-context size rungs, memory/DOM, export/copy completeness and scroll stability.
-
-Do not cite the pure planner tests as proof that the chat UI is faster or even usable: they establish indexing correctness only.
+The earlier experimental-render-window.ts is an unrelated research planner; Variant A uses agent-history-page.ts instead.
