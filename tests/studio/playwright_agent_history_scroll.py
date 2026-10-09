@@ -11,6 +11,7 @@ This test writes and then deletes ONE uniquely named fixture thread on that inst
 Missing prerequisites, auth failures, missing virtualizer and any incomplete traversal
 are hard failures, not skipped or counted as passes. It does not test find/copy parity.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,9 +41,11 @@ def create_fixture(base: str, auth, count: int) -> str:
     now = int(time.time() * 1000) - count * 1000
     auth_request_json(
         auth, f"{base}/api/chat/threads", method = "POST",
-        body={
-            "id": thread_id, "title": "agent-history-e2e-" + thread_id,
-            "modelType": "base", "modelId": "agent-history-fixture",
+        body = {
+            "id": thread_id,
+            "title": "agent-history-e2e-" + thread_id,
+            "modelType": "base",
+            "modelId": "agent-history-fixture",
             "createdAt": now,
         },
     )
@@ -50,20 +53,24 @@ def create_fixture(base: str, auth, count: int) -> str:
     parent = None
     for index in range(count):
         message_id = str(uuid.uuid4())
-        messages.append({
-            "id": message_id,
-            "threadId": thread_id,
-            "parentId": parent,
-            "role": "user" if index % 2 == 0 else "assistant",
-            "content": [{"type": "text", "text": f"agent-history-e2e-row-{index:05d} unique-fixture"}],
-            "attachments": None,
-            "metadata": None,
-            "createdAt": now + index * 1000,
-        })
+        messages.append(
+            {
+                "id": message_id,
+                "threadId": thread_id,
+                "parentId": parent,
+                "role": "user" if index % 2 == 0 else "assistant",
+                "content": [{"type": "text", "text": f"agent-history-e2e-row-{index:05d} unique-fixture"}],
+                "attachments": None,
+                "metadata": None,
+                "createdAt": now + index * 1000,
+            }
+        )
         parent = message_id
     auth_request_json(
-        auth, f"{base}/api/chat/threads/{thread_id}/messages",
-        method = "PUT", timeout = 120,
+        auth,
+        f"{base}/api/chat/threads/{thread_id}/messages",
+        method = "PUT",
+        timeout = 120,
         body = {"messages": messages, "pruneMissing": True},
     )
     persisted = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
@@ -91,10 +98,12 @@ def census(page, expected: int, where: str) -> dict:
     if not (1 <= state["mounted"] <= MAX_ROWS):
         raise AssertionError(f"{where}: mounted rows not bounded: {state}")
     ordinals = state["ordinal"]
-    if (len(set(ordinals)) != len(ordinals)
-            or ordinals != list(range(ordinals[0], ordinals[-1] + 1))
-            or any(size != expected for size in state["sizes"])
-            or not (1 <= ordinals[0] <= ordinals[-1] <= expected)):
+    if (
+        len(set(ordinals)) != len(ordinals)
+        or ordinals != list(range(ordinals[0], ordinals[-1] + 1))
+        or any(size != expected for size in state["sizes"])
+        or not (1 <= ordinals[0] <= ordinals[-1] <= expected)
+    ):
         raise AssertionError(f"{where}: invalid ARIA positions/total: {state}")
     return state
 
@@ -106,11 +115,14 @@ def scroll_to(page, fraction: float, expected: int, label: str) -> dict:
     viewport.hover()
     for _ in range(12):
         page.mouse.wheel(0, -1800 if fraction == 0 else 1800)
-        page.evaluate("""fraction => {
+        page.evaluate(
+            """fraction => {
           const el = document.querySelector('.aui-thread-viewport');
           el.scrollTop = (el.scrollHeight - el.clientHeight) * fraction;
           el.dispatchEvent(new Event('scroll'));
-        }""", fraction)
+        }""",
+            fraction,
+        )
         page.wait_for_timeout(100)
     state = census(page, expected, label)
     first, last = state["ordinal"][0], state["ordinal"][-1]
@@ -135,21 +147,31 @@ def run(url: str, username: str, password: str, messages: int) -> None:
             browser = driver.chromium.launch(headless = True)
             try:
                 context = browser.new_context(viewport = {"width": 1440, "height": 960})
-                context.add_init_script(seed_init_script(
-                    auth, [], {"unsloth_agent_chat_history_v1": {
-                        "state": {"enabledThreads": {thread_id: True}},
-                        "version": 0,
-                    }},
-                ))
+                context.add_init_script(
+                    seed_init_script(
+                        auth,
+                        [],
+                        {
+                            "unsloth_agent_chat_history_v1": {
+                                "state": {"enabledThreads": {thread_id: True}},
+                                "version": 0,
+                            }
+                        },
+                    )
+                )
                 page = context.new_page()
-                page.goto(f"{base}/chat?thread={thread_id}",
-                          wait_until = "domcontentloaded", timeout = 120_000)
+                page.goto(
+                    f"{base}/chat?thread={thread_id}",
+                    wait_until = "domcontentloaded",
+                    timeout = 120_000,
+                )
                 page.locator(LIST).wait_for(state = "attached", timeout = 60_000)
                 page.wait_for_function(
                     """expected => document.querySelectorAll(
                       '[data-agent-history-row][aria-setsize="' + expected + '"]'
                     ).length > 0""",
-                    arg = messages, timeout = 60_000,
+                    arg = messages,
+                    timeout = 60_000,
                 )
                 tail = census(page, messages, "initial")
                 if tail["ordinal"][-1] != messages:
@@ -174,15 +196,21 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 )
                 if len(stored.get("messages", [])) != messages:
                     raise AssertionError("Virtual scrolling changed the persisted transcript")
-                print(json.dumps({
-                    "status": "PASS", "messages": messages,
-                    "mounted_initial": tail["mounted"],
-                    "mounted_top": top["mounted"],
-                    "mounted_middle": middle["mounted"],
-                    "mounted_bottom": bottom["mounted"],
-                    "mounted_reload": after_reload["mounted"],
-                    "transcript_preserved": True,
-                }, sort_keys = True))
+                print(
+                    json.dumps(
+                        {
+                            "status": "PASS",
+                            "messages": messages,
+                            "mounted_initial": tail["mounted"],
+                            "mounted_top": top["mounted"],
+                            "mounted_middle": middle["mounted"],
+                            "mounted_bottom": bottom["mounted"],
+                            "mounted_reload": after_reload["mounted"],
+                            "transcript_preserved": True,
+                        },
+                        sort_keys = True,
+                    )
+                )
             finally:
                 browser.close()
     finally:
