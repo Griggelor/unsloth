@@ -221,9 +221,20 @@ def test_a_kept_qwen3_omni_wrapper_forwards_through_its_thinker(capsys, monkeypa
         fresh(input_ids = ids)
 
 
-def test_a_kept_wrapper_trains_through_peft():
+def test_a_kept_wrapper_trains_through_peft(monkeypatch):
     peft = pytest.importorskip("peft")
     from unsloth.models.vision import _text_trainable_core
+
+    if not has_real_cuda():
+        # This test checks PEFT's LoRA gradient propagation through the Omni
+        # wrapper, not the Triton-only optimized CE kernel. Unsloth installs
+        # that GPU loss globally, even on a CPU-only CI runner. Restore the
+        # upstream eager loss *for this one test*; GPU coverage is unchanged.
+        from transformers.loss.loss_utils import LOSS_MAPPING, ForCausalLMLoss
+
+        for key, loss_fn in list(LOSS_MAPPING.items()):
+            if getattr(loss_fn, "__name__", "") == "UnslothForCausalLMLoss":
+                monkeypatch.setitem(LOSS_MAPPING, key, ForCausalLMLoss)
 
     model = _text_trainable_core(_tiny_omni(), text_intent = False)
     # Reentrant checkpointing with frozen embeddings trains LoRA only when the embedding

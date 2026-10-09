@@ -325,9 +325,51 @@ def test_grpo_trains_on_cpu(tmp_path):
     ).train()
 
 
-def test_dpo_trains_on_cpu(tmp_path):
+def test_dpo_trains_on_cpu(tmp_path, monkeypatch):
     from datasets import Dataset
     from trl import DPOConfig, DPOTrainer
+
+    # TRL 1.15's fused LM head invokes a CUDA-only Triton log-probability
+    # kernel, even when DPOConfig(use_cpu=True). Substitute the equivalent
+    # differentiable dense PyTorch calculation ONLY in this CPU harness.
+    # The actual fused CUDA kernel remains untouched in production/GPU tests.
+    import trl.trainer.utils as trl_utils
+
+    if getattr(trl_utils, "_ChunkedLogProbFunction", None) is not None:
+
+        class CpuChunkedLogProb:
+            @staticmethod
+            def apply(
+                hidden,
+                weight,
+                bias,
+                targets,
+                temperature,
+                chunk_size,
+                final_logit_softcapping,
+                logit_scale,
+                outputs,
+            ):
+                logits = torch.nn.functional.linear(hidden, weight, bias).float() * logit_scale
+                if final_logit_softcapping is not None:
+                    logits = final_logit_softcapping * torch.tanh(
+                        logits / final_logit_softcapping
+                    )
+                logits = logits / temperature
+                log_probs = logits.log_softmax(dim = -1)
+                selected = log_probs.gather(-1, targets.unsqueeze(-1)).squeeze(-1)
+                probs = log_probs.exp()
+                entropy = -(probs * log_probs).sum(dim = -1) if "entropy" in outputs else None
+                sum_sq = (
+                    torch.logsumexp(2 * log_probs, dim = -1)
+                    if "log_sum_sq_probs" in outputs
+                    else None
+                )
+                mean = logits.mean(dim = -1) if "mean_logits" in outputs else None
+                top1 = logits.argmax(dim = -1).eq(targets) if "is_top1" in outputs else None
+                return selected, entropy, sum_sq, mean, top1
+
+        monkeypatch.setattr(trl_utils, "_ChunkedLogProbFunction", CpuChunkedLogProb)
 
     assert DPOTrainer.__name__ == "UnslothDPOTrainer", "DPO patch did not apply"
     model, tok = _load_plain()

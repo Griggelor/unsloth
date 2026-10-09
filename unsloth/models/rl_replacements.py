@@ -961,6 +961,14 @@ def orpo_trainer_row_cap(function_name, function):
     # Before TRL's own response cut: its negative slice end can empty the shorter answer.
     match = re.search(r"(?m)^([ \t]*)longer_response_length = max\(", function)
     if match is None:
+        # Newer TRL revisions calculate the response length differently, but
+        # retain the response-truncation comment. Insert the guard directly
+        # before that block; the guard computes its own _unsloth_ul.
+        match = re.search(
+            r"(?m)^([ \t]*)# if combined sequence is too long, truncate the response",
+            function,
+        )
+    if match is None:
         return function
     indent = match.group(1)
     block = "".join(indent + line + "\n" for line in _ORPO_ROW_CAP.splitlines())
@@ -1098,6 +1106,10 @@ def _unsloth_grpo_vision_inputs(source):
             "num_images",
             "token_type_ids",
             "mm_token_type_ids",
+            "num_videos",
+            "pixel_values_videos",
+            "second_per_grid_ts",
+            "video_grid_thw",
         )
     }
 
