@@ -10,6 +10,7 @@
  */
 export const AGENT_HISTORY_PAGE_SIZE = 32;
 export const AGENT_HISTORY_MAX_LIVE_ROWS = 64;
+export const AGENT_HISTORY_MAX_RUNNING_ROWS = 96;
 
 export type AgentHistoryPage =
   | Readonly<{ kind: "latest"; start: number }>
@@ -30,7 +31,8 @@ export function initialAgentHistoryPage(count: number): AgentHistoryPage {
 /**
  * Reconcile after history fetch, append, delete, and a run finishing.
  * Keep current rows mounted on ordinary appends; prune in chunks only when
- * idle, so the first streamed reply does not pay for window repositioning.
+ * idle; a higher hard ceiling applies to one long-running generation so
+ * multi-hour tool agents cannot grow the live DOM without limit.
  */
 export function reconcileAgentHistoryPage(
   page: AgentHistoryPage,
@@ -43,8 +45,7 @@ export function reconcileAgentHistoryPage(
   if (count < oldCount) return initialAgentHistoryPage(count);
   if (page.kind === "older") return page;
   if (
-    !isRunning &&
-    count - page.start > AGENT_HISTORY_MAX_LIVE_ROWS
+    count - page.start > (isRunning ? AGENT_HISTORY_MAX_RUNNING_ROWS : AGENT_HISTORY_MAX_LIVE_ROWS)
   ) {
     return initialAgentHistoryPage(count);
   }
