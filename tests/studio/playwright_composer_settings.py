@@ -76,7 +76,10 @@ def check_settings(page):
     editor.fill("First line")
     editor.press("End")
     editor.press("Enter")
-    editor.type("Second line")
+    # Chrome 152 on macOS dropped the final keystrokes from type() while
+    # React was updating the controlled composer input. Deliver distinct
+    # key events with a small gap so this asserts the real multiline shortcut.
+    editor.press_sequentially("Second line", delay = 30)
     expect(editor).to_have_value("First line\nSecond line")
     expect(submitted).to_have_text("[]")
     editor.press("Meta+Enter")
