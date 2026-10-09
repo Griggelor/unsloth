@@ -31,6 +31,18 @@ export const AgentHistoryScrollMessages: FC<{
   const anchor = useRef<{ index: number; top: number } | null>(null);
   const jump = useRef<"top" | "bottom" | null>(null);
   const [state, setState] = useState(() => ({ key: resetKey, count, range: latestAgentWindow(count) }));
+  const [heightRevision, setHeightRevision] = useState(0);
+  const heightFrame = useRef<number | null>(null);
+  const requestHeightRevision = useCallback(() => {
+    if (heightFrame.current !== null) return;
+    heightFrame.current = requestAnimationFrame(() => {
+      heightFrame.current = null;
+      setHeightRevision(v => v + 1);
+    });
+  }, []);
+  useEffect(() => () => {
+    if (heightFrame.current !== null) cancelAnimationFrame(heightFrame.current);
+  }, []);
 
   // Async history arrival must not mount the entire conversation in one commit.
   const range = state.key !== resetKey ? latestAgentWindow(count)
@@ -98,7 +110,9 @@ export const AgentHistoryScrollMessages: FC<{
         if (viewport.scrollTop < 1) { seek(0, "top"); return; }
         const spacer = topSpacer.current;
         if (!spacer) return;
-        const origin = spacer.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop;
+        // The spacer begins at virtual offset(range.start), not at zero.
+        // Without subtracting that offset every scroll seeks the first row.
+        const origin = spacer.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop - heights.offset(rangeRef.current.start);
         const index = heights.indexAt(viewport.scrollTop - origin + viewport.clientHeight / 3);
         seek(index);
       });
@@ -115,11 +129,15 @@ export const AgentHistoryScrollMessages: FC<{
     const viewport = viewportRef.current;
     if (!viewport || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(entries => {
+      let changed = false;
       for (const entry of entries) {
         const row = entry.target as HTMLElement;
-        const index = Number(row.closest<HTMLElement>("[data-agent-history-row]")?.dataset.agentHistoryRow);
-        if (Number.isSafeInteger(index)) heights.measure(index, row.getBoundingClientRect().height);
+        const raw = row.closest<HTMLElement>("[data-agent-history-row]")?.dataset.agentHistoryRow;
+        if (raw === undefined) continue;
+        const index = Number(raw);
+        if (Number.isSafeInteger(index)) changed = heights.measure(index, row.getBoundingClientRect().height) || changed;
       }
+      if (changed) requestHeightRevision();
     });
     for (const wrapper of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
       const row = wrapper.querySelector<HTMLElement>("[data-role]");
@@ -127,12 +145,14 @@ export const AgentHistoryScrollMessages: FC<{
       const index = Number(wrapper.dataset.agentHistoryRow);
       row.setAttribute("aria-setsize", String(count));
       row.setAttribute("aria-posinset", String(index + 1));
-      heights.measure(index, row.getBoundingClientRect().height);
+      if (heights.measure(index, row.getBoundingClientRect().height)) requestHeightRevision();
       observer.observe(row);
     }
     return () => observer.disconnect();
-  }, [range.start, range.end, count, viewportRef, heights]);
+  }, [range.start, range.end, count, viewportRef, heights, requestHeightRevision]);
 
+  // A ResizeObserver measurement must update both spacers, not merely the ledger.
+  void heightRevision;
   const rows = useMemo(() => {
     const element = renderMessage();
     const result: ReactElement[] = [];
