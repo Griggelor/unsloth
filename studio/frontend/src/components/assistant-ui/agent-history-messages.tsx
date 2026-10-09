@@ -11,7 +11,6 @@ import {
   type FC,
   type ReactElement,
   memo,
-  useEffect,
   useMemo,
   useState,
 } from "react";
