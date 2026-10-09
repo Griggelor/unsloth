@@ -3,7 +3,7 @@
 import { AuiProvider, MessageByIndexProvider, useAui, useAuiState } from "@assistant-ui/react";
 import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRowNotificationGate } from "./row-notification-gate";
-import { AgentHeightIndex, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
+import { AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 
 /**
@@ -110,10 +110,13 @@ export const AgentHistoryScrollMessages: FC<{
         if (viewport.scrollTop < 1) { seek(0, "top"); return; }
         const spacer = topSpacer.current;
         if (!spacer) return;
-        // The spacer begins at virtual offset(range.start), not at zero.
-        // Without subtracting that offset every scroll seeks the first row.
-        const origin = spacer.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop - heights.offset(rangeRef.current.start);
-        const index = heights.indexAt(viewport.scrollTop - origin + viewport.clientHeight / 3);
+        const index = agentIndexAtScrollPosition(
+          heights,
+          spacer.getBoundingClientRect().top,
+          viewport.getBoundingClientRect().top,
+          viewport.scrollTop,
+          viewport.clientHeight,
+        );
         seek(index);
       });
     };
