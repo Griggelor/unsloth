@@ -59,7 +59,9 @@ def create_fixture(base: str, auth, count: int) -> str:
                 "threadId": thread_id,
                 "parentId": parent,
                 "role": "user" if index % 2 == 0 else "assistant",
-                "content": [{"type": "text", "text": f"agent-history-e2e-row-{index:05d} unique-fixture"}],
+                "content": [
+                    {"type": "text", "text": f"agent-history-e2e-row-{index:05d} unique-fixture"}
+                ],
                 "attachments": None,
                 "metadata": None,
                 "createdAt": now + index * 1000,
