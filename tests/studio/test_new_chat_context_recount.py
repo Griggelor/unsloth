@@ -614,6 +614,9 @@ export async function hydrateThreadUsage(props: any): Promise<void> {
   // The thread's stored messages, which the loader reads into `msgs` above the sliced block.
   // The block prices them with `estimateContextUsage` when nothing saved is usable (#9475).
   const msgs: any[] = props.messages ?? [];
+  // Match the live loader: context usage is estimated from the selected branch,
+  // not all stored messages (which may include alternate fork branches).
+  const branch = orderBySelectedBranch(msgs, props.headId ?? msgs.at(-1)?.id);
   // Read once, as the loader does, just above the sliced block.
   const store = useChatRuntimeStore.getState();
 __RESTORE__
