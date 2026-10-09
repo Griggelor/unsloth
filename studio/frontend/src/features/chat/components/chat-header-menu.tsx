@@ -19,6 +19,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useChatFavoritesStore } from "@/features/library/chats/favorites-store";
+import { useAgentHistoryModeStore } from "../stores/agent-history-mode-store";
+import { useAuiState } from "@assistant-ui/react";
 import { useShortcutLabel } from "@/features/settings";
 import type { ShortcutId } from "@/features/settings";
 import { useT } from "@/i18n";
@@ -149,6 +151,10 @@ function TemporaryChatButton({
 
 function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
   const t = useT();
+  const running = useAuiState(({ thread }) => thread.isRunning);
+  const agentHistoryEnabled = useAgentHistoryModeStore(
+    (state) => state.enabledThreads[menu.item.id] === true,
+  );
   const favorite = useChatFavoritesStore((state) =>
     state.chatIds.includes(menu.item.id),
   );
@@ -210,6 +216,17 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
         )}
       </Item>
       <DropdownMenuSeparator className="mx-3" />
+      <Item
+        icon={agentHistoryEnabled ? ViewIcon : ViewOffSlashIcon}
+        disabled={running}
+        onSelect={() =>
+          useAgentHistoryModeStore.getState().setEnabled(menu.item.id, !agentHistoryEnabled)
+        }
+      >
+        {agentHistoryEnabled
+          ? "Agenten-Chatverlauf deaktivieren"
+          : "Agenten-Chatverlauf aktivieren"}
+      </Item>
       <Item
         glyph={<HugeiconsIcon icon={ForkIcon} strokeWidth={1.75} className={ICON} />}
         onSelect={menu.fork}
