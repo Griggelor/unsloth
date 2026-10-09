@@ -2176,7 +2176,8 @@ export const Thread: FC<{
             scrollToBottomOnInitialize={false}
             scrollToBottomOnThreadSwitch={false}
             className={cn(
-              "aui-thread-viewport aui-stream-viewport relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-x-auto overflow-y-auto scroll-smooth px-5",
+              "aui-thread-viewport aui-stream-viewport relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-x-auto overflow-y-auto px-5",
+              agentHistoryEnabled ? "scroll-auto" : "scroll-smooth",
               hideComposer
                 ? "pt-4"
                 : // + the chat-model notice, which is an opaque absolute bar
