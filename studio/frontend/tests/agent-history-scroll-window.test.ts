@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AgentHeightIndex, latestAgentWindow, agentWindowAtIndex, agentWindowOnAppend, AGENT_MAX_ROWS } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
+import { AgentHeightIndex, agentIndexAtScrollPosition, latestAgentWindow, agentWindowAtIndex, agentWindowOnAppend, AGENT_MAX_ROWS } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
 
 test("first and last 32 messages are reachable without paging buttons", () => {
   assert.deepEqual(latestAgentWindow(1000), { start: 968, end: 1000 });
@@ -67,4 +67,22 @@ test("invalid indices are rejected rather than crashing the chat", () => {
   assert.equal(heights.indexAt(100), 0);
   heights.resize(1);
   assert.equal(heights.measure(10, 50), false);
+});
+
+
+test("scroll position uses the top spacer as document origin even at a distant window", () => {
+  const heights = new AgentHeightIndex(1_000, 720);
+  const viewHeight = 600;
+  const viewTop = 80;
+  for (const index of [0, 31, 100, 500, 967, 998]) {
+    const scrollTop = index * 720;
+    // The spacer starts at the document origin, even when the mounted rows
+    // begin at index 968 and its height is 968 * 720.
+    const spacerTop = viewTop - scrollTop;
+    assert.equal(agentIndexAtScrollPosition(heights, spacerTop, viewTop, scrollTop, viewHeight), index);
+  }
+  // A measured 20k-px tool message moves every later row's offset.
+  heights.measure(400, 20_000);
+  const scrollTop = heights.offset(500);
+  assert.equal(agentIndexAtScrollPosition(heights, viewTop - scrollTop, viewTop, scrollTop, viewHeight), 500);
 });
