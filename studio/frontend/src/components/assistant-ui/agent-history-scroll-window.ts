@@ -50,6 +50,24 @@ export function agentWindowOnAppend(
 }
 
 /**
+ * Resolve a scroll position into the index of a logical transcript row.
+ * The top spacer is the PREFIX of the virtual document: its top is the
+ * document origin, not the position of the first mounted row. Subtracting
+ * offset(window.start) here double-counts the prefix and pins large histories
+ * to the last messages even while the reader scrolls upwards.
+ */
+export function agentIndexAtScrollPosition(
+  heights: AgentHeightIndex,
+  topSpacerViewportTop: number,
+  viewportTop: number,
+  scrollTop: number,
+  viewportHeight: number,
+): number {
+  const documentOrigin = topSpacerViewportTop - viewportTop + scrollTop;
+  return heights.indexAt(scrollTop - documentOrigin + viewportHeight / 3);
+}
+
+/**
  * Height index: initial estimates + sparse corrections for measured rows.
  * It gives O(log N) offset lookup, and does not re-position mounted rows on append.
  * A growing capacity doubles rather than rebuilding on each agent message.
