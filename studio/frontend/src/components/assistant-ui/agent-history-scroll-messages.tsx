@@ -157,14 +157,14 @@ export const AgentHistoryScrollMessages: FC<{
     const element = renderMessage();
     const result: ReactElement[] = [];
     for (let index = range.start; index < range.end; index++) {
-      result.push(<div key={index} className="contents" data-agent-history-row={index}>
+      result.push(<div key={index} data-agent-history-row={index} role="listitem" aria-posinset={index + 1} aria-setsize={count} className="min-w-0">
         <AuiProvider value={gate.row(index)}><MessageByIndexProvider index={index}>{element}</MessageByIndexProvider></AuiProvider>
       </div>);
     }
     return result;
-  }, [range.start, range.end, renderMessage, gate]);
+  }, [range.start, range.end, renderMessage, gate, count]);
   const backToLatest = () => { following.current = true; seek(countRef.current - 1, "bottom"); };
-  return <div data-agent-history-scroll-list="true" className="contents">
+  return <div data-agent-history-scroll-list="true" role="list" className="flex min-w-0 flex-col">
     {range.end < count && <button type="button" className="sticky top-2 z-20 mx-auto rounded-full border bg-background px-3 py-1 text-xs shadow" onClick={backToLatest}>Zur neuesten Ausgabe</button>}
     <div ref={topSpacer} data-agent-history-spacer="top" aria-hidden="true" style={{ height: heights.offset(range.start), flexShrink: 0 }} />
     {rows}
