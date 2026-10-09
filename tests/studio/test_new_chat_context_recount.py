@@ -1591,7 +1591,7 @@ def test_the_harness_binds_every_loader_local_the_history_restore_reads() -> Non
     above = provider[loader:start]
     declared_above = _declared_names(above)
     assert (
-        {"msgs", "savedUsage", "store"} <= declared_above
+        {"msgs", "branch", "savedUsage", "store"} <= declared_above
     ), "could not read the loader's locals above the restore; this guard would check nothing"
     # Code only: the comments in the block name words like "message" that are locals elsewhere.
     code = re.sub(r"//[^\n]*", "", restore)
@@ -1601,9 +1601,9 @@ def test_the_harness_binds_every_loader_local_the_history_restore_reads() -> Non
         for name in declared_above - declared_in_slice
         if re.search(rf"(?<![\w$.]){re.escape(name)}\b", code)
     )
-    assert {"msgs", "remoteId"} <= set(
+    assert {"branch", "remoteId"} <= set(
         read_from_above
-    ), "the guard no longer sees the restore read `msgs` and the destructured `remoteId`"
+    ), "the guard no longer sees the restore read `branch` and the destructured `remoteId`"
     bound = _declared_names(HARNESS_HISTORY)
     missing = [name for name in read_from_above if name not in bound]
     assert not missing, (
