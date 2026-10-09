@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  AGENT_HISTORY_PAGE_SIZE, AGENT_HISTORY_MAX_LIVE_ROWS,
+  AGENT_HISTORY_PAGE_SIZE, AGENT_HISTORY_MAX_LIVE_ROWS, AGENT_HISTORY_MAX_RUNNING_ROWS,
   agentHistorySlice, initialAgentHistoryPage, newerAgentHistoryPage,
   olderAgentHistoryPage, reconcileAgentHistoryPage,
 } from "../src/components/assistant-ui/agent-history-page.ts";
@@ -59,12 +59,15 @@ test("idle tail prunes only after 64 rows", () => {
   assert.equal(agentHistorySlice(page,count+1).end-agentHistorySlice(page,count+1).start,AGENT_HISTORY_PAGE_SIZE);
 });
 
-test("a running stream never prunes its active message", () => {
+test("a running stream preserves the active message while bounding rows", () => {
   let page=initialAgentHistoryPage(120);
+  const start=page.start;
   for(let count=121;count<320;count++){
     page=reconcileAgentHistoryPage(page,count-1,count,true);
-    assert.equal(page.start,120-AGENT_HISTORY_PAGE_SIZE);
-    assert.equal(agentHistorySlice(page,count).end,count);
+    const slice=agentHistorySlice(page,count);
+    assert.equal(slice.end,count);
+    assert.ok(slice.end-slice.start<=AGENT_HISTORY_MAX_RUNNING_ROWS);
+    if(count-start<=AGENT_HISTORY_MAX_RUNNING_ROWS)assert.equal(page.start,start);
   }
 });
 
