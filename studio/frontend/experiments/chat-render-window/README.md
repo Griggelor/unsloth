@@ -34,3 +34,21 @@ From studio/frontend, run the new tests/agent-history-page.test.ts and existing 
 - C: decouple the in-memory assistant-ui message repository from complete persisted archive, with store-backed global history search.
 
 The earlier experimental-render-window.ts is an unrelated research planner; Variant A uses agent-history-page.ts instead.
+
+## Variant B prototype: natural-scroll viewport (2026-10-09)
+
+The user rejected explicit 32-row navigation buttons: the intended experience is **continuous scrolling**, automatic load/unload, first messages at scroll top, last messages at scroll bottom, and one optional "Zur neuesten Ausgabe" jump.
+
+This experimental branch now contains `agent-history-scroll-window.ts` (height index and bounded range planner), `agent-history-scroll-messages.tsx` (React wiring to the existing Thread viewport) and `tests/agent-history-scroll-window.test.ts`. The former page implementation remains in the branch as unreferenced history; **the active opt-in renderer is the scroll prototype**, while ordinary chat continues to use `ProgressiveMessages`.
+
+Only pure algorithm tests have been locally executed (six passing) and a TypeScript AST syntax parse of the local prototype completed. GitHub code changes are committed, but **the actual React app has not been typechecked, bundled, or exercised in a browser**. Do not claim the scrolling feature is proven or advise running it on a production agent conversation yet.
+
+Review blockers for Variant B:
+- Prove scroll anchoring with a real browser and tall dynamically changing messages; handle selected text, inline tool cards and reasoning.
+- Inspect CSS for the `contents` wrapper and spacer metrics; verify bottom autoscroll and jumping to start across large histories.
+- ResizeObserver measurements currently update the height ledger, not React spacer styles immediately; validate correction/repaint scheduling and adjust to avoid scroll jump.
+- Ensure massive estimated scroll height does not exceed engine scroll dimension caps; prefer anchored chunked navigation if it does.
+- Provide full-history search and clipboard support independently of mounted DOM; screen reader range semantics require browser-level verification.
+- Benchmark long-thread `send_turn` against upstream main and concurrent null. Reject this design if it repeats the previously documented first-append style recalculation regression.
+- Verify account switch/privacy, transient chats and thread reopen, and the existing native autocomplete/auto-scroll interactions.
+- Consolidate clean commits only after tests and performance A/B; the existing branch is a research worktree, not PR-ready.
