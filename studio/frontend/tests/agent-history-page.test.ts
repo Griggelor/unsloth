@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AGENT_HISTORY_PAGE_SIZE, AGENT_HISTORY_MAX_LIVE_ROWS, AGENT_HISTORY_MAX_RUNNING_ROWS,
-  agentHistorySlice, initialAgentHistoryPage, newerAgentHistoryPage,
+  agentHistorySlice, agentHistoryPageForMessage, initialAgentHistoryPage, newerAgentHistoryPage,
   olderAgentHistoryPage, reconcileAgentHistoryPage,
 } from "../src/components/assistant-ui/agent-history-page.ts";
 
@@ -104,4 +104,22 @@ test("exhaustive pages cover each message exactly once", () => {
     }
     assert.equal(traversed,count);
   }
+});
+
+test("last user input jumps to the page ending at the selected message", () => {
+  const page = agentHistoryPageForMessage(420, 1000);
+  const slice = agentHistorySlice(page, 1000);
+  assert.equal(slice.end, 421);
+  assert.equal(slice.start, 389);
+  assert.equal(slice.newer, true);
+  assert.equal(agentHistoryPageForMessage(999, 1000).kind, "latest");
+  assert.equal(agentHistoryPageForMessage(-1, 1000).kind, "latest");
+});
+
+test("run completion without a new message reduces the live page", () => {
+  const running = { kind: "latest", start: 0 } as const;
+  const page = reconcileAgentHistoryPage(running, 70, 70, false);
+  const slice = agentHistorySlice(page, 70);
+  assert.equal(slice.start, 38);
+  assert.equal(slice.end, 70);
 });
