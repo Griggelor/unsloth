@@ -340,8 +340,15 @@ def test_dpo_trains_on_cpu(tmp_path, monkeypatch):
         class CpuChunkedLogProb:
             @staticmethod
             def apply(
-                hidden, weight, bias, targets, temperature, chunk_size,
-                final_logit_softcapping, logit_scale, outputs,
+                hidden,
+                weight,
+                bias,
+                targets,
+                temperature,
+                chunk_size,
+                final_logit_softcapping,
+                logit_scale,
+                outputs,
             ):
                 logits = torch.nn.functional.linear(hidden, weight, bias).float() * logit_scale
                 if final_logit_softcapping is not None:
