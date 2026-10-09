@@ -613,6 +613,19 @@ jobs:
           echo "STUDIO_EXTRA_OLD_PW=$OLD" >> "$GITHUB_ENV"
           echo "STUDIO_EXTRA_NEW_PW=$NEW" >> "$GITHUB_ENV"
 
+      # Dedicated disposable backend already booted on 18894. This test seeds and deletes
+      # its own thread, so keep it before suites that change the account credentials.
+      - name: Agent-history windowed scroll (Playwright)
+        if: matrix.shard == 'extra'
+        env:
+          AGENT_HISTORY_CI_BOOTSTRAP_PW: ${{ env.STUDIO_EXTRA_OLD_PW }}
+        run: |
+          python tests/studio/playwright_agent_history_scroll.py \\
+            --url http://127.0.0.1:18894 \\
+            --username unsloth \\
+            --password "$AGENT_HISTORY_CI_BOOTSTRAP_PW" \\
+            --messages 400
+
       - name: Drive Compare/Recipes/Export/Unsloth/Settings with Playwright
         if: matrix.shard == 'extra'
         env:
