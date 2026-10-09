@@ -86,7 +86,7 @@ export const AgentHistoryMessages: FC<{
         <nav
           aria-label="Agenten-Chatverlauf"
           data-agent-history-navigation="true"
-          className="mx-auto mb-4 flex w-full max-w-(--thread-content-max-width) flex-wrap items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground"
+          className="sticky top-0 z-10 mx-auto mb-4 flex w-full max-w-(--thread-content-max-width) flex-wrap items-center justify-center gap-2 rounded-lg border border-border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur-sm"
         >
           <span aria-live="polite">
             Nachrichten {slice.start + 1}–{slice.end} von {count}
