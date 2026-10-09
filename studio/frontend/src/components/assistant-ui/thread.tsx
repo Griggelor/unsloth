@@ -34,7 +34,7 @@ import { ComposerDraftPreview } from "@/components/assistant-ui/composer-draft-p
 import { PromptQueueList } from "@/components/assistant-ui/lazy-prompt-queue-list";
 import { QueueResumeIcon } from "@/components/assistant-ui/queue-resume-icon";
 import { ProgressiveMessages } from "@/components/assistant-ui/progressive-messages";
-import { AgentHistoryMessages } from "@/components/assistant-ui/agent-history-messages";
+import { AgentHistoryScrollMessages } from "@/components/assistant-ui/agent-history-scroll-messages";
 import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
 import { MessageMenuTime } from "@/components/assistant-ui/message-menu-time";
 import { UserMessageActionBar, UserMessageFooter } from "@/components/assistant-ui/user-message-actions";
@@ -2200,9 +2200,10 @@ export const Thread: FC<{
             reason: React's bail-out needs one shared element per row. See
             progressive-mount-controller.ts. */}
             {agentHistoryEnabled ? (
-              <AgentHistoryMessages
+              <AgentHistoryScrollMessages
                 renderMessage={renderThreadMessage}
                 resetKey={runtimeThreadId}
+                viewportRef={viewportElRef}
               />
             ) : (
               <ProgressiveMessages
