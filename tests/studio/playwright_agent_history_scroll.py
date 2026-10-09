@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 import uuid
-import sys
 from pathlib import Path
 
 # Executed as a standalone Playwright driver from the checkout root.
@@ -39,7 +39,7 @@ def create_fixture(base: str, auth, count: int) -> str:
     thread_id = str(uuid.uuid4())
     now = int(time.time() * 1000) - count * 1000
     auth_request_json(
-        auth, f"{base}/api/chat/threads", method="POST",
+        auth, f"{base}/api/chat/threads", method = "POST",
         body={
             "id": thread_id, "title": "agent-history-e2e-" + thread_id,
             "modelType": "base", "modelId": "agent-history-fixture",
@@ -63,8 +63,8 @@ def create_fixture(base: str, auth, count: int) -> str:
         parent = message_id
     auth_request_json(
         auth, f"{base}/api/chat/threads/{thread_id}/messages",
-        method="PUT", timeout=120,
-        body={"messages": messages, "pruneMissing": True},
+        method = "PUT", timeout = 120,
+        body = {"messages": messages, "pruneMissing": True},
     )
     persisted = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
     if len(persisted.get("messages", [])) != count:
@@ -132,9 +132,9 @@ def run(url: str, username: str, password: str, messages: int) -> None:
     try:
         thread_id = create_fixture(base, auth, messages)
         with sync_playwright() as driver:
-            browser = driver.chromium.launch(headless=True)
+            browser = driver.chromium.launch(headless = True)
             try:
-                context = browser.new_context(viewport={"width": 1440, "height": 960})
+                context = browser.new_context(viewport = {"width": 1440, "height": 960})
                 context.add_init_script(seed_init_script(
                     auth, [], {"unsloth_agent_chat_history_v1": {
                         "state": {"enabledThreads": {thread_id: True}},
@@ -143,13 +143,13 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 ))
                 page = context.new_page()
                 page.goto(f"{base}/chat?thread={thread_id}",
-                          wait_until="domcontentloaded", timeout=120_000)
-                page.locator(LIST).wait_for(state="attached", timeout=60_000)
+                          wait_until = "domcontentloaded", timeout = 120_000)
+                page.locator(LIST).wait_for(state = "attached", timeout = 60_000)
                 page.wait_for_function(
                     """expected => document.querySelectorAll(
                       '[data-agent-history-row][aria-setsize="' + expected + '"]'
                     ).length > 0""",
-                    arg=messages, timeout=60_000,
+                    arg = messages, timeout = 60_000,
                 )
                 tail = census(page, messages, "initial")
                 if tail["ordinal"][-1] != messages:
@@ -157,14 +157,14 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 top = scroll_to(page, 0, messages, "top")
                 middle = scroll_to(page, 0.5, messages, "middle")
                 bottom = scroll_to(page, 1, messages, "bottom")
-                page.reload(wait_until="domcontentloaded", timeout=120_000)
-                page.locator(LIST).wait_for(state="attached", timeout=60_000)
+                page.reload(wait_until = "domcontentloaded", timeout = 120_000)
+                page.locator(LIST).wait_for(state = "attached", timeout = 60_000)
                 page.wait_for_function(
                     """expected => Array.from(document.querySelectorAll(
                       '[data-agent-history-row]')).some(
                         row => row.getAttribute('aria-setsize') === String(expected)
                       )""",
-                    arg=messages, timeout=60_000,
+                    arg = messages, timeout = 60_000,
                 )
                 after_reload = census(page, messages, "reload")
                 if after_reload["ordinal"][-1] != messages:
@@ -182,23 +182,23 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                     "mounted_bottom": bottom["mounted"],
                     "mounted_reload": after_reload["mounted"],
                     "transcript_preserved": True,
-                }, sort_keys=True))
+                }, sort_keys = True))
             finally:
                 browser.close()
     finally:
         if thread_id is not None:
             auth_request_json(
                 auth, f"{base}/api/chat/threads",
-                method="DELETE", body={"ids": [thread_id]},
+                method = "DELETE", body = {"ids": [thread_id]},
             )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--url", required=True, help="Disposable Studio instance only")
-    parser.add_argument("--username", default="unsloth")
-    parser.add_argument("--password", required=True)
-    parser.add_argument("--messages", type=int, default=400)
+    parser.add_argument("--url", required = True, help = "Disposable Studio instance only")
+    parser.add_argument("--username", default = "unsloth")
+    parser.add_argument("--password", required = True)
+    parser.add_argument("--messages", type = int, default = 400)
     args = parser.parse_args()
     if args.messages < 128 or args.messages % 2:
         parser.error("--messages must be even and at least 128")
