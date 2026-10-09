@@ -18,6 +18,7 @@ import {
 import { createRowNotificationGate } from "./row-notification-gate";
 import {
   agentHistorySlice,
+  agentHistoryPageForMessage,
   initialAgentHistoryPage,
   newerAgentHistoryPage,
   olderAgentHistoryPage,
@@ -41,13 +42,19 @@ export const AgentHistoryMessages: FC<{
   const isRunning = useAuiState(({ thread }) => thread.isRunning);
   const aui = useAui();
   const gate = useMemo(() => createRowNotificationGate(aui), [aui]);
+  const lastUserIndex = useAuiState(({ thread }) => {
+    for (let i = thread.messages.length - 1; i >= 0; i--) {
+      if (thread.messages[i].role === "user") return i;
+    }
+    return -1;
+  });
   const [page, setPage] = useState<AgentHistoryPage>(() => initialAgentHistoryPage(count));
-  const [seen, setSeen] = useState({ count, key: resetKey });
+  const [seen, setSeen] = useState({ count, key: resetKey, running: isRunning });
 
   if (seen.key !== resetKey) {
-    setSeen({ count, key: resetKey });
+    setSeen({ count, key: resetKey, running: isRunning });
     setPage(initialAgentHistoryPage(count));
-  } else if (seen.count !== count) {
+  } else if (seen.count !== count || seen.running !== isRunning) {
     setSeen({ count, key: resetKey });
     setPage(reconcileAgentHistoryPage(page, seen.count, count, isRunning));
   }
@@ -72,7 +79,7 @@ export const AgentHistoryMessages: FC<{
 
   return (
     <>
-      {count > 0 && (slice.older || slice.newer) && (
+      {count > 0 && (slice.older || slice.newer || lastUserIndex >= 0) && (
         <nav
           aria-label="Agenten-Chatverlauf"
           data-agent-history-navigation="true"
@@ -81,6 +88,11 @@ export const AgentHistoryMessages: FC<{
           <span aria-live="polite">
             Nachrichten {slice.start + 1}–{slice.end} von {count}
           </span>
+          {lastUserIndex >= 0 && (lastUserIndex < slice.start || lastUserIndex >= slice.end) && (
+            <button type="button" className="rounded-md border px-2 py-1 hover:bg-muted" onClick={() => setPage(agentHistoryPageForMessage(lastUserIndex, count))}>
+              Letzte Eingabe
+            </button>
+          )}
           {slice.older && (
             <button
               type="button"
