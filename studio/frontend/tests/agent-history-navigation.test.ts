@@ -34,6 +34,15 @@ test("a newer search invalidates stale layout/animation completions", () => {
   assert.deepEqual(completeAgentHistoryReveal(atLast, second.epoch, true), { kind: "reader", epoch: 2 });
 });
 
+test("repeating a one-result search requires a new navigation commit even on the same row", () => {
+  const first = requestAgentHistoryReveal(initialAgentHistoryNavigation(), 5, 400);
+  const firstDone = completeAgentHistoryReveal(markAgentHistoryRevealPositioned(first, first.epoch), first.epoch, true);
+  const repeated = requestAgentHistoryReveal(firstDone, 5, 400);
+  assert.deepEqual(repeated, { kind: "search", epoch: 2, row: 5, positioned: false });
+  assert.equal(allowsPassiveAgentScroll(repeated), false);
+  assert.deepEqual(completeAgentHistoryReveal(repeated, first.epoch, true), repeated);
+});
+
 test("manual reader gesture cancels search ownership and invalidates in-flight completion", () => {
   const requested = requestAgentHistoryReveal(initialAgentHistoryNavigation(), 200, 400);
   const interrupted = interruptAgentHistoryReveal(requested);
