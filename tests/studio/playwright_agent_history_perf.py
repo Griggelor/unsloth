@@ -48,7 +48,9 @@ def percentile(values: list[float], fraction: float) -> float | None:
 
 
 def snapshot(cdp) -> dict[str, float]:
-    return {item["name"]: float(item["value"]) for item in cdp.send("Performance.getMetrics")["metrics"]}
+    return {
+        item["name"]: float(item["value"]) for item in cdp.send("Performance.getMetrics")["metrics"]
+    }
 
 
 def measure_mode(browser, base: str, auth, thread_id: str, count: int, opt_in: bool) -> dict:
@@ -149,22 +151,25 @@ def measure_mode(browser, base: str, auth, thread_id: str, count: int, opt_in: b
             after = snapshot(cdp)
             response = page.evaluate("() => window.__agentPerf")
             if response["total"] != KEYS_PER_BATCH:
-                raise AssertionError(f"Expected {KEYS_PER_BATCH} actual printable keydowns: {response['total']}")
+                raise AssertionError(
+                    f"Expected {KEYS_PER_BATCH} actual printable keydowns: {response['total']}"
+                )
             busy = {
                 key + "_ms_per_key": round(
-                    max(0.0, after.get(key, 0.0) - before.get(key, 0.0))
-                    * 1000 / KEYS_PER_BATCH,
+                    max(0.0, after.get(key, 0.0) - before.get(key, 0.0)) * 1000 / KEYS_PER_BATCH,
                     4,
                 )
                 for key in METRICS
             }
-            samples.append({
-                "keys": KEYS_PER_BATCH,
-                "wall_ms_per_key": round(elapsed_ms / KEYS_PER_BATCH, 3),
-                "event_to_two_frames_p50_ms": percentile(response["samples"], 0.5),
-                "event_to_two_frames_p95_ms": percentile(response["samples"], 0.95),
-                **busy,
-            })
+            samples.append(
+                {
+                    "keys": KEYS_PER_BATCH,
+                    "wall_ms_per_key": round(elapsed_ms / KEYS_PER_BATCH, 3),
+                    "event_to_two_frames_p50_ms": percentile(response["samples"], 0.5),
+                    "event_to_two_frames_p95_ms": percentile(response["samples"], 0.95),
+                    **busy,
+                }
+            )
         if page_errors:
             raise AssertionError(f"Uncaught browser exceptions: {page_errors[:5]}")
         medians = {
@@ -200,7 +205,9 @@ def run(base: str, username: str, password: str, output: Path) -> None:
             try:
                 for count in (2000, 4000):
                     thread_id = create_fixture(base, auth, count)
-                    original = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
+                    original = auth_request_json(
+                        auth, f"{base}/api/chat/threads/{thread_id}/messages"
+                    )
                     try:
                         # Alternate mode order to reduce warm-cache/order bias.
                         modes = (False, True) if count == 2000 else (True, False)
@@ -208,9 +215,13 @@ def run(base: str, username: str, password: str, output: Path) -> None:
                             record = measure_mode(browser, base, auth, thread_id, count, opt_in)
                             cases.append(record)
                             print(json.dumps(record, sort_keys = True), flush = True)
-                        stored = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
+                        stored = auth_request_json(
+                            auth, f"{base}/api/chat/threads/{thread_id}/messages"
+                        )
                         if original["messages"] != stored["messages"]:
-                            raise AssertionError(f"Stored messages changed during {count}-message typing benchmark")
+                            raise AssertionError(
+                                f"Stored messages changed during {count}-message typing benchmark"
+                            )
                     finally:
                         auth_request_json(
                             auth,
@@ -223,21 +234,26 @@ def run(base: str, username: str, password: str, output: Path) -> None:
     finally:
         output.parent.mkdir(parents = True, exist_ok = True)
         output.write_text(
-            json.dumps({
-                "status": "PASS" if len(cases) == 4 else "INCOMPLETE",
-                "methodology": {
-                    "browser": "Chromium/Playwright/CDP",
-                    "counts": [2000, 4000],
-                    "modes": ["default", "virtual_opt_in"],
-                    "sample_batches": BATCHES,
-                    "printable_keys_per_batch": KEYS_PER_BATCH,
-                    "key_delay_ms": KEY_DELAY_MS,
-                    "metrics_are_browser_main_thread_busy_time_proxies": True,
-                    "inference_is_not_measured": True,
-                    "relative_speedup_is_not_asserted": True,
+            json.dumps(
+                {
+                    "status": "PASS" if len(cases) == 4 else "INCOMPLETE",
+                    "methodology": {
+                        "browser": "Chromium/Playwright/CDP",
+                        "counts": [2000, 4000],
+                        "modes": ["default", "virtual_opt_in"],
+                        "sample_batches": BATCHES,
+                        "printable_keys_per_batch": KEYS_PER_BATCH,
+                        "key_delay_ms": KEY_DELAY_MS,
+                        "metrics_are_browser_main_thread_busy_time_proxies": True,
+                        "inference_is_not_measured": True,
+                        "relative_speedup_is_not_asserted": True,
+                    },
+                    "cases": cases,
                 },
-                "cases": cases,
-            }, sort_keys = True, indent = 2) + "\n",
+                sort_keys = True,
+                indent = 2,
+            )
+            + "\n",
             encoding = "utf-8",
         )
     if len(cases) != 4:
