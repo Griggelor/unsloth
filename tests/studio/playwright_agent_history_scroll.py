@@ -235,9 +235,42 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
 
     def choose(size: int) -> None:
         trigger.click()
-        page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
+        submenu = page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
             has_text = "Agentenfenster:"
-        ).hover()
+        )
+        try:
+            submenu.hover()
+        except Exception as exc:
+            # Do not retry/skip a disappearing menu: capture its real state.
+            # This instance and its settings contain only synthetic fixture data.
+            try:
+                diagnostic = page.evaluate("""() => ({
+                  triggerExpanded: document.querySelector(
+                    '[data-test-id="chat-header-more-menu-trigger"]'
+                  )?.getAttribute('aria-expanded') ?? null,
+                  menuItems: [...document.querySelectorAll('[role="menuitem"]')]
+                    .map(el => (el.textContent ?? '').trim()),
+                  activeMenus: [...document.querySelectorAll('[role="menu"]')]
+                    .map(el => (el.textContent ?? '').slice(0, 1000)),
+                  mountedRows: document.querySelectorAll('[data-agent-history-row]').length,
+                  agentHistoryPreference: JSON.parse(
+                    localStorage.getItem('unsloth_agent_chat_history_v1') || '{}'
+                  ).state ?? null
+                })""")
+            except Exception as snapshot_error:
+                diagnostic = {"snapshotError": str(snapshot_error)}
+            evidence_dir = Path("logs/agent-history")
+            evidence_dir.mkdir(parents = True, exist_ok = True)
+            (evidence_dir / "menu-hover-failure.json").write_text(
+                json.dumps(diagnostic, indent = 2), encoding = "utf-8"
+            )
+            try:
+                page.screenshot(path = str(evidence_dir / "menu-hover-failure.png"))
+            except Exception:
+                pass
+            raise AssertionError(
+                f"Agent window submenu hover failed: {diagnostic}"
+            ) from exc
         page.locator(f'[data-test-id="agent-window-size-{size}"]').click()
         page.wait_for_function(
             """size => {
@@ -303,17 +336,19 @@ def run(url: str, username: str, password: str, messages: int) -> None:
             browser = driver.chromium.launch(headless = True)
             try:
                 context = browser.new_context(viewport = {"width": 1440, "height": 960})
+                # The auth bootstrap is rerun on each navigation. Preferences must
+                # only be seeded once, or reloading wipes the value under test.
+                history_state = {
+                    "state": {"enabledThreads": {thread_id: True}},
+                    "version": 0,
+                }
+                context.add_init_script(seed_init_script(auth, []))
                 context.add_init_script(
-                    seed_init_script(
-                        auth,
-                        [],
-                        {
-                            "unsloth_agent_chat_history_v1": {
-                                "state": {"enabledThreads": {thread_id: True}},
-                                "version": 0,
-                            }
-                        },
-                    )
+                    "(() => { const key = 'unsloth_agent_chat_history_v1';"
+                    " if (localStorage.getItem(key) !== null) return;"
+                    " localStorage.setItem(key, "
+                    + json.dumps(json.dumps(history_state))
+                    + "); })();"
                 )
                 page = context.new_page()
                 page.goto(
