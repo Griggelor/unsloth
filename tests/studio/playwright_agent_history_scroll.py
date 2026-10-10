@@ -290,7 +290,6 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 )
                 if not selected:
                     raise AssertionError("Visible virtualized row could not be selected")
-                page.locator('[data-agent-history-row="5"]').focus()
                 page.keyboard.press("Control+c")
                 copied = page.evaluate("async () => navigator.clipboard.readText()")
                 if "agent-history-e2e-row-00005" not in copied:
