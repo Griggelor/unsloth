@@ -226,6 +226,14 @@ def test_a_kept_wrapper_trains_through_peft():
     from unsloth.models.vision import _text_trainable_core
 
     model = _text_trainable_core(_tiny_omni(), text_intent = False)
+    if not has_real_cuda():
+        # This test checks that the kept Omni wrapper trains LoRA through PEFT.
+        # CPU runners have no Triton device for Unsloth's globally patched
+        # GPU-only fused CE kernel. Use the stock differentiable CPU loss here;
+        # GPU runners keep exercising the fused loss as before.
+        from transformers.loss.loss_utils import ForCausalLMLoss
+
+        model.thinker.loss_function = ForCausalLMLoss
     # Reentrant checkpointing with frozen embeddings trains LoRA only when the embedding
     # output requires grad, which goes through the wrapper's get_input_embeddings.
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs = {"use_reentrant": True})
