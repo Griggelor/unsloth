@@ -86,11 +86,16 @@ def test_static_cache_generate_matches_dynamic(unpatched):
             raise
         before_patch = None
 
+    # An earlier unsloth_zoo patch can install an independent callable in
+    # the dispatcher. Our swap only replaces exact references to unpatched;
+    # silently overwriting an unrelated pre-existing wrapper would lose it.
+    before_mapping = masking_utils.LAYER_PATTERN_TO_MASK_FUNCTION_MAPPING["chunked_attention"]
     fix_transformers_chunked_mask_block_sequence_ids()
     patched = masking_utils.create_chunked_causal_mask
     assert getattr(patched, _CHUNKED_MASK_PATCH_FLAG, False)
     assert patched.__wrapped__ is unpatched
-    assert masking_utils.LAYER_PATTERN_TO_MASK_FUNCTION_MAPPING["chunked_attention"] is patched
+    actual_mapping = masking_utils.LAYER_PATTERN_TO_MASK_FUNCTION_MAPPING["chunked_attention"]
+    assert actual_mapping is (patched if before_mapping is unpatched else before_mapping)
     from transformers.models.llama4 import modeling_llama4
 
     assert modeling_llama4.create_chunked_causal_mask is patched
