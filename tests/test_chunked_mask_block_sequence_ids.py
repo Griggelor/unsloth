@@ -74,8 +74,18 @@ def test_static_cache_generate_matches_dynamic(unpatched):
     if not _chunked_mask_rejects_block_sequence_ids(masking_utils):
         pytest.skip("this transformers does not pass block_sequence_ids to chunked masks")
     model = _tiny_llama4()
+    # Prove that the original API cannot accept the keyword independently of
+    # which attention path this transformers release chooses for generation.
     with pytest.raises(TypeError, match = "block_sequence_ids"):
-        _generate(model, "static")
+        unpatched(block_sequence_ids = torch.ones((1, 1), dtype = torch.long))
+    try:
+        before_patch = _generate(model, "static")
+    except TypeError as exc:
+        # The affected generation route still fails on versions that pass
+        # block_sequence_ids into the original chunked-mask function.
+        if "block_sequence_ids" not in str(exc):
+            raise
+        before_patch = None
 
     fix_transformers_chunked_mask_block_sequence_ids()
     patched = masking_utils.create_chunked_causal_mask
@@ -96,6 +106,10 @@ def test_static_cache_generate_matches_dynamic(unpatched):
     dynamic = _generate(model, None)
     assert static.shape == (1, 7)
     assert torch.equal(static, dynamic)
+    # In some versions the generation route already succeeds without calling
+    # the incompatible mask. It must remain numerically identical after patch.
+    if before_patch is not None:
+        assert torch.equal(static, before_patch)
 
     fix_transformers_chunked_mask_block_sequence_ids()
     assert masking_utils.create_chunked_causal_mask is patched
