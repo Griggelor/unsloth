@@ -149,7 +149,7 @@ jobs:
     # was. Tightening a timeout to fit the expected duration converts that kind of
     # infrastructure stall from a slow pass into a red build, and a timeout is there to
     # catch a hang, not to police the mean.
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       # Two shards, split where the job already split itself.
       #
@@ -954,6 +954,19 @@ jobs:
         run: |
           python tests/studio/playwright_agent_history_scroll.py --url http://127.0.0.1:18899 --username unsloth --password "$AGENT_HISTORY_PW" --messages 400
 
+      - name: Agent-history long transcript (4000 messages)
+        if: matrix.shard == 'extra'
+        timeout-minutes: 10
+        run: |
+          python tests/studio/playwright_agent_history_scroll.py --url http://127.0.0.1:18899 --username unsloth --password "$AGENT_HISTORY_PW" --messages 4000
+
+      - name: Measure typing and main-thread work (2000 and 4000 messages)
+        if: matrix.shard == 'extra'
+        timeout-minutes: 12
+        run: |
+          mkdir -p logs/agent-history
+          python -m tests.studio.playwright_agent_history_perf --url http://127.0.0.1:18899 --username unsloth --password "$AGENT_HISTORY_PW" --output logs/agent-history/perf.json
+
       - name: Stop isolated Agent-history Studio
         if: (always()) && (matrix.shard == 'extra')
         run: |
@@ -989,6 +1002,7 @@ jobs:
             logs/studio_modelcfg.log
             logs/studio_ime.log
             logs/studio_agent_history.log
+            logs/agent-history/
             logs/install.log
             logs/server-logs/
             logs/playwright
