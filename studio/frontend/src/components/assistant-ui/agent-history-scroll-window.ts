@@ -4,6 +4,12 @@
 /** Normal-flow virtualization: only window boundaries change; rows are never absolutely positioned. */
 export const AGENT_INITIAL_ROWS = 32;
 export const AGENT_MAX_ROWS = 96;
+/** Per-chat runtime window sizes. Defaults remain compatible with 32/96. */
+export const AGENT_WINDOW_SIZES = [2, 5, 8, 16, 32] as const;
+export type AgentWindowSize = (typeof AGENT_WINDOW_SIZES)[number];
+export function isAgentWindowSize(value: unknown): value is AgentWindowSize {
+  return typeof value === "number" && (AGENT_WINDOW_SIZES as readonly number[]).includes(value);
+}
 export const AGENT_ROW_ESTIMATE_PX = 720;
 export type AgentScrollWindow = Readonly<{ start: number; end: number }>;
 
@@ -11,8 +17,11 @@ function clamp(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, value));
 }
 
-export function latestAgentWindow(count: number): AgentScrollWindow {
-  return { start: Math.max(0, count - AGENT_INITIAL_ROWS), end: count };
+export function latestAgentWindow(
+  count: number,
+  windowRows: number = AGENT_INITIAL_ROWS,
+): AgentScrollWindow {
+  return { start: Math.max(0, count - windowRows), end: count };
 }
 
 /** Reuse existing mounted rows until the reader nears an edge; never shift on each token. */
@@ -20,19 +29,22 @@ export function agentWindowAtIndex(
   count: number,
   index: number,
   current?: AgentScrollWindow,
+  windowRows: number = AGENT_INITIAL_ROWS,
 ): AgentScrollWindow {
-  if (count <= AGENT_INITIAL_ROWS) return { start: 0, end: count };
+  if (count <= windowRows) return { start: 0, end: count };
   const target = clamp(Math.floor(index), 0, count - 1);
+  const maxRows = windowRows === AGENT_INITIAL_ROWS ? AGENT_MAX_ROWS : windowRows;
   if (current && current.start >= 0 && current.end <= count &&
-      current.end > current.start &&
+      current.end > current.start && current.end - current.start <= maxRows &&
       target >= current.start + Math.min(8, Math.floor((current.end-current.start)/4)) &&
       target < current.end - Math.min(8, Math.floor((current.end-current.start)/4))) {
     return current;
   }
-  if (target === 0) return { start: 0, end: AGENT_INITIAL_ROWS };
-  if (target === count - 1) return latestAgentWindow(count);
-  const start = clamp(target - 12, 0, count - AGENT_INITIAL_ROWS);
-  return { start, end: start + AGENT_INITIAL_ROWS };
+  if (target === 0) return { start: 0, end: windowRows };
+  if (target === count - 1) return latestAgentWindow(count, windowRows);
+  const lead = windowRows === AGENT_INITIAL_ROWS ? 12 : Math.floor((windowRows - 1) / 2);
+  const start = clamp(target - lead, 0, count - windowRows);
+  return { start, end: start + windowRows };
 }
 
 /** Appending at the tail never shifts the mounted rows on the first append. */
@@ -41,11 +53,14 @@ export function agentWindowOnAppend(
   oldCount: number,
   count: number,
   following: boolean,
+  windowRows: number = AGENT_INITIAL_ROWS,
 ): AgentScrollWindow {
-  if (count < oldCount) return latestAgentWindow(count);
-  if (oldCount === 0) return latestAgentWindow(count);
+  if (count < oldCount) return latestAgentWindow(count, windowRows);
+  if (oldCount === 0) return latestAgentWindow(count, windowRows);
   if (!following || previous.end !== oldCount) return previous;
-  if (count - previous.start > AGENT_MAX_ROWS) return latestAgentWindow(count);
+  // Only the legacy default may grow to 96 rows. Small windows are strict bounds.
+  const maxRows = windowRows === AGENT_INITIAL_ROWS ? AGENT_MAX_ROWS : windowRows;
+  if (count - previous.start > maxRows) return latestAgentWindow(count, windowRows);
   return { start: previous.start, end: count };
 }
 

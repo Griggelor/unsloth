@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AgentHeightIndex, agentIndexAtScrollPosition, latestAgentWindow, agentWindowAtIndex, agentWindowOnAppend, AGENT_MAX_ROWS } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
+import { AgentHeightIndex, agentIndexAtScrollPosition, latestAgentWindow, agentWindowAtIndex, agentWindowOnAppend, AGENT_MAX_ROWS, AGENT_WINDOW_SIZES } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
 
 test("first and last 32 messages are reachable without paging buttons", () => {
   assert.deepEqual(latestAgentWindow(1000), { start: 968, end: 1000 });
@@ -85,4 +85,41 @@ test("scroll position uses the top spacer as document origin even at a distant w
   heights.measure(400, 20_000);
   const scrollTop = heights.offset(500);
   assert.equal(agentIndexAtScrollPosition(heights, viewTop - scrollTop, viewTop, scrollTop, viewHeight), 500);
+});
+
+test("2/5/8/16/32 windows reach every index forward and backward", () => {
+  for (const rows of AGENT_WINDOW_SIZES) {
+    for (const count of [1, 2, 5, 6, 31, 32, 33, 400, 4000]) {
+      let window = latestAgentWindow(count, rows);
+      assert.equal(window.end - window.start, Math.min(count, rows));
+      for (let index = count - 1; index >= 0; index--) {
+        window = agentWindowAtIndex(count, index, window, rows);
+        assert.ok(index >= window.start && index < window.end, `${rows}: up ${index}`);
+        assert.ok(window.end - window.start <= rows);
+      }
+      for (let index = 0; index < count; index++) {
+        window = agentWindowAtIndex(count, index, window, rows);
+        assert.ok(index >= window.start && index < window.end, `${rows}: down ${index}`);
+        assert.ok(window.end - window.start <= rows);
+      }
+      for (const changedTo of AGENT_WINDOW_SIZES) {
+        const changed = agentWindowAtIndex(count, Math.min(count - 1, 3), undefined, changedTo);
+        assert.ok(changed.end - changed.start <= changedTo);
+      }
+    }
+  }
+});
+
+test("small windows do not expand during append, legacy 32 may expand to 96", () => {
+  for (const size of AGENT_WINDOW_SIZES) {
+    let window = latestAgentWindow(100, size);
+    let count = 100;
+    for (let i = 0; i < 150; i++) {
+      window = agentWindowOnAppend(window, count, count + 1, true, size);
+      count++;
+      assert.equal(window.end, count);
+      assert.ok(window.end - window.start <= (size === 32 ? AGENT_MAX_ROWS : size));
+    }
+    assert.deepEqual(agentWindowOnAppend(window, count, count + 1, false, size), window);
+  }
 });
