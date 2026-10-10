@@ -3,6 +3,8 @@
 import { AuiProvider, MessageByIndexProvider, useAui, useAuiState } from "@assistant-ui/react";
 import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRowNotificationGate } from "./row-notification-gate";
+import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
+import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
 import { AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 
@@ -32,6 +34,9 @@ export const AgentHistoryScrollMessages: FC<{
   const jump = useRef<"top" | "bottom" | null>(null);
   const [state, setState] = useState(() => ({ key: resetKey, count, range: latestAgentWindow(count) }));
   const [heightRevision, setHeightRevision] = useState(0);
+  const [searchHit, setSearchHit] = useState(-1);
+  const searchHitRef = useRef(-1);
+  const pendingReveal = useRef<number | null>(null);
   const heightFrame = useRef<number | null>(null);
   const requestHeightRevision = useCallback(() => {
     if (heightFrame.current !== null) return;
@@ -79,9 +84,95 @@ export const AgentHistoryScrollMessages: FC<{
     setState(old => ({ ...old, range: next }));
   }, [jumpBottom, viewportRef]);
 
+  const revealSearchRow = useCallback((index: number) => {
+    if (index < 0 || index >= countRef.current) return;
+    searchHitRef.current = index;
+    setSearchHit(index);
+    pendingReveal.current = index;
+    const next = agentWindowAtIndex(countRef.current, index, rangeRef.current);
+    if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
+      rangeRef.current = next;
+      setState(old => ({ ...old, range: next }));
+    } else {
+      // The row already exists; there will be no range-layout effect.
+      requestAnimationFrame(() => {
+        const viewport = viewportRef.current;
+        const row = viewport?.querySelector<HTMLElement>('[data-agent-history-row="' + index + '"]');
+        if (!viewport || !row) return;
+        pendingReveal.current = null;
+        viewport.scrollTop += row.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 72;
+      });
+    }
+  }, [viewportRef]);
+
+  // Register a search target only for the opt-in virtualized thread. The normal
+  // find engine can keep its existing DOM semantics without mounting the history.
+  useEffect(() => {
+    let query = "";
+    let matches: AgentFindMatch[] = [];
+    let active = -1;
+    let result: FindTargetResult = { count: 0, active: -1 };
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const recalculate = (fresh: boolean) => {
+      const state = aui.thread().getState();
+      const found = findAgentTextMatches(state.messages, query);
+      const former = !fresh && active >= 0 ? matches[active] : null;
+      matches = found.matches;
+      active = former ? matches.findIndex(hit =>
+        hit.row === former.row && hit.offset === former.offset) : -1;
+      if (active < 0 && matches.length > 0) {
+        const firstVisible = matches.findIndex(hit => hit.row >= rangeRef.current.start);
+        active = firstVisible >= 0 ? firstVisible : 0;
+      }
+      result = { count: matches.length, active, capped: found.capped };
+      if (active >= 0 && fresh) revealSearchRow(matches[active].row);
+      else if (active < 0) { searchHitRef.current = -1; setSearchHit(-1); }
+      notifyFindTargets();
+    };
+    const target = {
+      id: "agent-chat-history:" + (resetKey ?? "current"),
+      available: () => viewportRef.current !== null,
+      contains: (node: Node) => viewportRef.current?.contains(node) ?? false,
+      search: (value: string) => {
+        if (query === value) return;
+        query = value;
+        recalculate(true);
+      },
+      step: (delta: -1 | 1) => {
+        if (!matches.length) return;
+        active = (active + delta + matches.length) % matches.length;
+        result = { ...result, active };
+        revealSearchRow(matches[active].row);
+        notifyFindTargets();
+      },
+      result: () => result,
+    };
+    const unregister = registerFindTarget(target);
+    const unsubscribe = aui.subscribe(() => {
+      if (!query || timer !== null) return;
+      timer = setTimeout(() => {
+        timer = null;
+        recalculate(false);
+      }, 300);
+    });
+    return () => {
+      unregister();
+      unsubscribe();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [aui, resetKey, viewportRef, revealSearchRow]);
+
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
+    const match = pendingReveal.current;
+    if (match !== null) {
+      const row = viewport.querySelector<HTMLElement>('[data-agent-history-row="' + match + '"]');
+      if (row) {
+        pendingReveal.current = null;
+        viewport.scrollTop += row.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 72;
+      }
+    }
     const action = jump.current;
     jump.current = null;
     const oldAnchor = anchor.current;
@@ -160,12 +251,12 @@ export const AgentHistoryScrollMessages: FC<{
     const element = renderMessage();
     const result: ReactElement[] = [];
     for (let index = range.start; index < range.end; index++) {
-      result.push(<div key={index} data-agent-history-row={index} role="listitem" aria-posinset={index + 1} aria-setsize={count} className="min-w-0">
+      result.push(<div key={index} data-agent-history-row={index} data-agent-history-find-active={searchHit === index ? "true" : undefined} role="listitem" aria-current={searchHit === index ? "location" : undefined} aria-posinset={index + 1} aria-setsize={count} className={searchHit === index ? "min-w-0 rounded ring-2 ring-primary/70" : "min-w-0"}>
         <AuiProvider value={gate.row(index)}><MessageByIndexProvider index={index}>{element}</MessageByIndexProvider></AuiProvider>
       </div>);
     }
     return result;
-  }, [range.start, range.end, renderMessage, gate, count]);
+  }, [range.start, range.end, renderMessage, gate, count, searchHit]);
   // Reclaim row clients from previously visited windows after React has
   // finished unmounting their subscriptions. Keep the mounted window stable.
   useEffect(() => {

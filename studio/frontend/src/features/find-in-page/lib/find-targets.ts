@@ -4,7 +4,7 @@
 // Something besides the chat the find bar can search (the browser's page), doing its own matching.
 
 /** A target's answer for the current query. `count` is null when it can only step, not count. */
-export type FindTargetResult = { count: number | null; active: number };
+export type FindTargetResult = { count: number | null; active: number; capped?: boolean; truncated?: boolean };
 
 export type FindTarget = {
   id: string;
