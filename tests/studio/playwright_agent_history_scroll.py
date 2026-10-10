@@ -200,6 +200,35 @@ def require_visible_search_row(page, row_index: int, label: str) -> None:
     )
 
 
+def check_chat_header_menu(page, messages: int) -> None:
+    """Exercise the real header menu, which lives outside AssistantRuntimeProvider."""
+    trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
+    trigger.wait_for(state = "visible", timeout = 30_000)
+    trigger.click()
+    disable = page.get_by_role("menuitem", name = "Agenten-Chatverlauf deaktivieren")
+    disable.wait_for(state = "visible", timeout = 30_000)
+    if messages != 400:
+        page.keyboard.press("Escape")
+        return
+
+    # On 400 rows also verify the complete user-facing opt-in/off path.
+    disable.click()
+    page.wait_for_function(
+        """() => document.querySelector('[data-agent-history-scroll-list="true"]') === null""",
+        timeout = 30_000,
+    )
+    trigger.click()
+    page.get_by_role("menuitem", name = "Agenten-Chatverlauf aktivieren").click()
+    page.wait_for_function(
+        """expected => !!document.querySelector(
+          '[data-agent-history-row][aria-setsize="' + expected + '"]'
+        )""",
+        arg = messages,
+        timeout = 30_000,
+    )
+    census(page, messages, "menu-toggled-on")
+
+
 def run(url: str, username: str, password: str, messages: int) -> None:
     from playwright.sync_api import sync_playwright
 
@@ -243,6 +272,7 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                     timeout = 60_000,
                 )
                 tail = census(page, messages, "initial")
+                check_chat_header_menu(page, messages)
                 if tail["ordinal"][-1] != messages:
                     raise AssertionError(f"initial window not at transcript tail: {tail}")
                 top = scroll_to(page, 0, messages, "top")
@@ -294,7 +324,9 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 page.keyboard.press("Control+c")
                 copied = page.evaluate("async () => navigator.clipboard.readText()")
                 if "agent-history-e2e-row-00005" not in copied:
-                    raise AssertionError(f"Copy of visible virtualized message differs: {copied[:160]!r}")
+                    raise AssertionError(
+                        f"Copy of visible virtualized message differs: {copied[:160]!r}"
+                    )
                 page.evaluate("() => window.getSelection()?.removeAllRanges()")
                 # Scrolling away from an active one-result query then pressing
                 # Enter must re-seek even if React's selected hit is unchanged.

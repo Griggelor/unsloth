@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useChatFavoritesStore } from "@/features/library/chats/favorites-store";
 import { useAgentHistoryModeStore } from "../stores/agent-history-mode-store";
-import { useAuiState } from "@assistant-ui/react";
+import { useChatRuntimeStore } from "../stores/chat-runtime-store";
 import { useShortcutLabel } from "@/features/settings";
 import type { ShortcutId } from "@/features/settings";
 import { useT } from "@/i18n";
@@ -152,7 +152,13 @@ function TemporaryChatButton({
 
 function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
   const t = useT();
-  const running = useAuiState(({ thread }) => thread.isRunning);
+  // The header is outside ChatRuntimeProvider: read the canonical run registry,
+  // not assistant-ui context. "__default" covers a run still acquiring its thread ID.
+  const running = useChatRuntimeStore(
+    (state) =>
+      state.runningByThreadId[menu.item.id] === true ||
+      state.runningByThreadId.__default === true,
+  );
   const agentHistoryEnabled = useAgentHistoryModeStore(
     (state) => state.enabledThreads[menu.item.id] === true,
   );
@@ -387,6 +393,7 @@ export function ChatHeaderMenu({
             <button
               type="button"
               aria-label={label}
+              data-test-id="chat-header-more-menu-trigger"
               className={CHAT_MENU_TRIGGER}
             >
               <HugeiconsIcon

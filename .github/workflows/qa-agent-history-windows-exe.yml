@@ -9,6 +9,9 @@ on:
       - 'tests/studio/playwright_agent_history_scroll.py'
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   windows-exe:
     name: Windows unsigned QA executable
