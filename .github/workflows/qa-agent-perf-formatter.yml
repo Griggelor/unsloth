@@ -1,0 +1,32 @@
+name: QA Agent Benchmark Formatter
+on:
+  push:
+    branches: [qa/agent-history-perf-format-probe-20261010]
+permissions:
+  contents: read
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ruff==0.6.9
+      - name: Normalize benchmark and verify pinned fixed point
+        run: |
+          python scripts/run_ruff_format.py tests/studio/playwright_agent_history_perf.py
+          python - <<'PY'
+          import base64, hashlib, subprocess, sys
+          from pathlib import Path
+          p = Path('tests/studio/playwright_agent_history_perf.py')
+          before = hashlib.sha256(p.read_bytes()).hexdigest()
+          subprocess.run([sys.executable,'scripts/run_ruff_format.py',str(p)], check=True)
+          assert before == hashlib.sha256(p.read_bytes()).hexdigest(), 'NOT_FIXED_POINT'
+          print('FIXED_POINT_VERIFIED')
+          print('FORMATTED_BENCHMARK_BEGIN')
+          print(base64.b64encode(p.read_bytes()).decode())
+          print('FORMATTED_BENCHMARK_END')
+          PY
