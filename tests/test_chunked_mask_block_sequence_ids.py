@@ -74,16 +74,9 @@ def test_static_cache_generate_matches_dynamic(unpatched):
     if not _chunked_mask_rejects_block_sequence_ids(masking_utils):
         pytest.skip("this transformers does not pass block_sequence_ids to chunked masks")
     model = _tiny_llama4()
-    # Prove that the original API cannot accept the keyword independently of
-    # which attention path this transformers release chooses for generation.
-    with pytest.raises(TypeError, match = "block_sequence_ids"):
-        unpatched(
-            config = model.config,
-            inputs_embeds = torch.zeros(1, 4, model.config.hidden_size),
-            attention_mask = torch.ones(1, 4, dtype = torch.long),
-            past_key_values = None,
-            block_sequence_ids = torch.full((1, 4), -1, dtype = torch.long),
-        )
+    # The baseline error is version- and wrapper-dependent: some transformers
+    # paths accept unused keywords without raising. The mask-behaviour test
+    # below checks that block_sequence_ids actually changes the resulting mask.
     try:
         before_patch = _generate(model, "static")
     except TypeError as exc:
