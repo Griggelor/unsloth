@@ -235,9 +235,42 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
 
     def choose(size: int) -> None:
         trigger.click()
-        page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
+        submenu = page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
             has_text = "Agentenfenster:"
-        ).hover()
+        )
+        try:
+            submenu.hover()
+        except Exception as exc:
+            # Do not retry/skip a disappearing menu: capture its real state.
+            # This instance and its settings contain only synthetic fixture data.
+            try:
+                diagnostic = page.evaluate("""() => ({
+                  triggerExpanded: document.querySelector(
+                    '[data-test-id="chat-header-more-menu-trigger"]'
+                  )?.getAttribute('aria-expanded') ?? null,
+                  menuItems: [...document.querySelectorAll('[role="menuitem"]')]
+                    .map(el => (el.textContent ?? '').trim()),
+                  activeMenus: [...document.querySelectorAll('[role="menu"]')]
+                    .map(el => (el.textContent ?? '').slice(0, 1000)),
+                  mountedRows: document.querySelectorAll('[data-agent-history-row]').length,
+                  agentHistoryPreference: JSON.parse(
+                    localStorage.getItem('unsloth_agent_chat_history_v1') || '{}'
+                  ).state ?? null
+                })""")
+            except Exception as snapshot_error:
+                diagnostic = {"snapshotError": str(snapshot_error)}
+            evidence_dir = Path("logs/agent-history")
+            evidence_dir.mkdir(parents = True, exist_ok = True)
+            (evidence_dir / "menu-hover-failure.json").write_text(
+                json.dumps(diagnostic, indent = 2), encoding = "utf-8"
+            )
+            try:
+                page.screenshot(path = str(evidence_dir / "menu-hover-failure.png"))
+            except Exception:
+                pass
+            raise AssertionError(
+                f"Agent window submenu hover failed: {diagnostic}"
+            ) from exc
         page.locator(f'[data-test-id="agent-window-size-{size}"]').click()
         page.wait_for_function(
             """size => {
