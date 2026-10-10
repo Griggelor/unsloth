@@ -352,9 +352,7 @@ def test_dpo_trains_on_cpu(tmp_path, monkeypatch):
             ):
                 logits = torch.nn.functional.linear(hidden, weight, bias).float() * logit_scale
                 if final_logit_softcapping is not None:
-                    logits = final_logit_softcapping * torch.tanh(
-                        logits / final_logit_softcapping
-                    )
+                    logits = final_logit_softcapping * torch.tanh(logits / final_logit_softcapping)
                 logits = logits / temperature
                 log_probs = logits.log_softmax(dim = -1)
                 selected = log_probs.gather(-1, targets.unsqueeze(-1)).squeeze(-1)

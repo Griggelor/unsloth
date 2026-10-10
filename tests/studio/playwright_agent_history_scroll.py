@@ -41,7 +41,9 @@ def create_fixture(base: str, auth, count: int) -> str:
     thread_id = str(uuid.uuid4())
     now = int(time.time() * 1000) - count * 1000
     auth_request_json(
-        auth, f"{base}/api/chat/threads", method = "POST",
+        auth,
+        f"{base}/api/chat/threads",
+        method = "POST",
         body = {
             "id": thread_id,
             "title": "agent-history-e2e-" + thread_id,
@@ -163,7 +165,13 @@ def search_snapshot(page) -> dict:
     }""")
 
 
-def require_search_state(page, script: str, label: str, timeout: int = 15_000, arg = None) -> None:
+def require_search_state(
+    page,
+    script: str,
+    label: str,
+    timeout: int = 15_000,
+    arg = None,
+) -> None:
     try:
         page.wait_for_function(script, arg = arg, timeout = timeout)
     except Exception as exc:
@@ -240,7 +248,7 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 # 32 rows mounted at the transcript tail, without disabling
                 # bounded virtualization or changing the persisted history.
                 page.keyboard.press("Control+f")
-                find_input = page.locator('[data-find-bar-layer] input')
+                find_input = page.locator("[data-find-bar-layer] input")
                 find_input.wait_for(state = "visible", timeout = 30_000)
                 find_input.fill("row-00005")
                 # Distinguish indexing / count from seek / mount / scroll.
@@ -295,14 +303,13 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                       '[data-agent-history-row]')).some(
                         row => row.getAttribute('aria-setsize') === String(expected)
                       )""",
-                    arg = messages, timeout = 60_000,
+                    arg = messages,
+                    timeout = 60_000,
                 )
                 after_reload = census(page, messages, "reload")
                 if after_reload["ordinal"][-1] != messages:
                     raise AssertionError("Reload lost the transcript tail")
-                stored = auth_request_json(
-                    auth, f"{base}/api/chat/threads/{thread_id}/messages"
-                )
+                stored = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
                 if len(stored.get("messages", [])) != messages:
                     raise AssertionError("Virtual scrolling changed the persisted transcript")
                 print(
@@ -325,13 +332,15 @@ def run(url: str, username: str, password: str, messages: int) -> None:
     finally:
         if thread_id is not None:
             auth_request_json(
-                auth, f"{base}/api/chat/threads",
-                method = "DELETE", body = {"ids": [thread_id]},
+                auth,
+                f"{base}/api/chat/threads",
+                method = "DELETE",
+                body = {"ids": [thread_id]},
             )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description = __doc__)
     parser.add_argument("--url", required = True, help = "Disposable Studio instance only")
     parser.add_argument("--username", default = "unsloth")
     parser.add_argument("--password", required = True)

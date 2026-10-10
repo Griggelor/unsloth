@@ -166,9 +166,9 @@ def test_explicit_loss_type_still_wins():
         expected = requested
         if requested == "chunked_nll" and Version(trl.__version__) >= Version("1.15.0"):
             expected = "nll"
-        assert cfg.loss_type == expected, (
-            f"explicit loss_type {requested!r} resolved to {cfg.loss_type!r}, expected {expected!r}"
-        )
+        assert (
+            cfg.loss_type == expected
+        ), f"explicit loss_type {requested!r} resolved to {cfg.loss_type!r}, expected {expected!r}"
 
 
 def _skip_if_unsloth_refuses_grpo():
@@ -247,9 +247,9 @@ def test_pristine_trl_sft_config_keeps_an_explicit_loss_type():
         expected = wanted
         if wanted == "chunked_nll" and Version(trl.__version__) >= Version("1.15.0"):
             expected = "nll"
-        assert got == expected, (
-            f"explicit loss_type {wanted!r} resolved to {got!r}, expected {expected!r}"
-        )
+        assert (
+            got == expected
+        ), f"explicit loss_type {wanted!r} resolved to {got!r}, expected {expected!r}"
 
 
 def test_dataclass_field_default_is_nll_for_hfargumentparser():
