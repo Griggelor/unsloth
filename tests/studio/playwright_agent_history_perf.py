@@ -17,8 +17,12 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
+import sys
 import time
 from pathlib import Path
+
+# Support execution as a standalone CI driver from the repository checkout.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tests.studio.playwright_agent_history_scroll import create_fixture
 from tests.studio.studiobench.runtime.lifecycle import (
