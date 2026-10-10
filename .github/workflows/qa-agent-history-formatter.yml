@@ -1,0 +1,46 @@
+name: One-off Agent History Formatter QA
+on:
+  push:
+    branches:
+      - qa/agent-history-formatter-20261010
+permissions:
+  contents: read
+jobs:
+  verify-pinned-formatter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install exact project formatter
+        run: python -m pip install ruff==0.6.9
+      - name: Format three pre-existing failing files and prove fixed point
+        shell: bash
+        run: |
+          python scripts/run_ruff_format.py \
+            tests/studio/playwright_agent_history_scroll.py \
+            tests/version_compat/test_trl_fake_train_cpu.py \
+            tests/version_compat/test_trl_loss_normalization_contract.py
+          python - <<'PY'
+          import base64
+          import hashlib
+          import pathlib
+          import subprocess
+          import sys
+          paths = [
+              'tests/studio/playwright_agent_history_scroll.py',
+              'tests/version_compat/test_trl_fake_train_cpu.py',
+              'tests/version_compat/test_trl_loss_normalization_contract.py',
+          ]
+          before = [hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths]
+          subprocess.run([sys.executable, 'scripts/run_ruff_format.py', *paths], check=True)
+          after = [hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths]
+          if before != after:
+              raise SystemExit('formatter not a fixed point')
+          print('FIXED_POINT_VERIFIED', flush=True)
+          for path in paths:
+              print('FORMATTED_FILE_BEGIN::' + path, flush=True)
+              print(base64.b64encode(pathlib.Path(path).read_bytes()).decode('ascii'), flush=True)
+              print('FORMATTED_FILE_END::' + path, flush=True)
+          PY
