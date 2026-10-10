@@ -303,17 +303,19 @@ def run(url: str, username: str, password: str, messages: int) -> None:
             browser = driver.chromium.launch(headless = True)
             try:
                 context = browser.new_context(viewport = {"width": 1440, "height": 960})
+                # The auth bootstrap is rerun on each navigation. Preferences must
+                # only be seeded once, or reloading wipes the value under test.
+                history_state = {
+                    "state": {"enabledThreads": {thread_id: True}},
+                    "version": 0,
+                }
+                context.add_init_script(seed_init_script(auth, []))
                 context.add_init_script(
-                    seed_init_script(
-                        auth,
-                        [],
-                        {
-                            "unsloth_agent_chat_history_v1": {
-                                "state": {"enabledThreads": {thread_id: True}},
-                                "version": 0,
-                            }
-                        },
-                    )
+                    "(() => { const key = 'unsloth_agent_chat_history_v1';"
+                    " if (localStorage.getItem(key) !== null) return;"
+                    " localStorage.setItem(key, "
+                    + json.dumps(json.dumps(history_state))
+                    + "); })();"
                 )
                 page = context.new_page()
                 page.goto(

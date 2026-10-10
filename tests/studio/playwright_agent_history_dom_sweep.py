@@ -38,7 +38,7 @@ from tests.studio.studiobench.runtime.lifecycle import (
 )
 
 LIST = '[data-agent-history-scroll-list="true"]'
-ROW = '[data-agent-history-row]'
+ROW = "[data-agent-history-row]"
 EDITOR = ".aui-composer-input[aria-label='Message input']"
 SIZES = (32, 5, 2, 8, 16, 32)
 METRICS = ("TaskDuration", "ScriptDuration", "LayoutDuration", "RecalcStyleDuration")
@@ -90,6 +90,7 @@ INSTALL_INPUT_PROBE = """() => {
   }, true);
 }"""
 
+
 def select_rows(page, rows: int) -> None:
     if rows != 32 or page.evaluate(
         "() => document.querySelectorAll('[data-agent-history-row]').length !== 32"
@@ -101,7 +102,8 @@ def select_rows(page, rows: int) -> None:
         page.locator(f'[data-test-id="agent-window-size-{rows}"]').click()
     page.wait_for_function(
         """rows => document.querySelectorAll('[data-agent-history-row]').length === rows""",
-        arg = rows, timeout = 30_000,
+        arg = rows,
+        timeout = 30_000,
     )
 
 
@@ -126,7 +128,8 @@ def condition(page, cdp, rows: int, cards_per_row: int, keys: int) -> dict:
     page.keyboard.type("a" * keys, delay = 6)
     page.wait_for_function(
         "count => window.__agentDomProbe.samples.length >= count",
-        arg = keys, timeout = 90_000,
+        arg = keys,
+        timeout = 90_000,
     )
     wall_ms = 1000 * (time.perf_counter() - start)
     after = snapshot(cdp)
@@ -156,14 +159,15 @@ def condition(page, cdp, rows: int, cards_per_row: int, keys: int) -> dict:
         "after_typing": post,
         "key_events": keys,
         "wall_ms_per_key": round(wall_ms / keys, 3),
-        "event_to_two_frames_p50_ms": percentile(samples, .5),
-        "event_to_two_frames_p95_ms": percentile(samples, .95),
+        "event_to_two_frames_p50_ms": percentile(samples, 0.5),
+        "event_to_two_frames_p95_ms": percentile(samples, 0.95),
         **measurements,
     }
 
 
-def run(base: str, username: str, password: str, output: Path,
-        cards_per_row: int, keys: int) -> dict:
+def run(
+    base: str, username: str, password: str, output: Path, cards_per_row: int, keys: int
+) -> dict:
     from playwright.sync_api import sync_playwright
 
     auth = authenticate(base, username, password)
@@ -179,19 +183,28 @@ def run(base: str, username: str, password: str, output: Path,
             browser = pw.chromium.launch(headless = True)
             try:
                 context = browser.new_context(viewport = {"width": 1440, "height": 960})
-                context.add_init_script(seed_init_script(auth, [], {
-                    "unsloth_agent_chat_history_v1": {
-                        "state": {"enabledThreads": {thread_id: True}},
-                        "version": 0,
-                    },
-                }))
+                context.add_init_script(
+                    seed_init_script(
+                        auth,
+                        [],
+                        {
+                            "unsloth_agent_chat_history_v1": {
+                                "state": {"enabledThreads": {thread_id: True}},
+                                "version": 0,
+                            },
+                        },
+                    )
+                )
                 page = context.new_page()
                 errors = []
                 page.on("pageerror", lambda err: errors.append(str(err)))
                 cdp = context.new_cdp_session(page)
                 cdp.send("Performance.enable")
-                page.goto(f"{base}/chat?thread={thread_id}",
-                          wait_until = "domcontentloaded", timeout = 120_000)
+                page.goto(
+                    f"{base}/chat?thread={thread_id}",
+                    wait_until = "domcontentloaded",
+                    timeout = 120_000,
+                )
                 page.locator(LIST).wait_for(state = "attached", timeout = 60_000)
                 page.wait_for_function(
                     "() => document.querySelectorAll('[data-agent-history-row]').length === 32",
@@ -234,24 +247,37 @@ def run(base: str, username: str, password: str, output: Path,
             "metrics_are_observational_not_timing_gates": True,
             "cases": results,
             "p50_wall_ms_by_window": {
-                str(row): round(statistics.median(
-                    r["wall_ms_per_key"] for r in results if r["window_rows"] == row
-                ), 3) for row in (2, 5, 8, 16, 32)
+                str(row): round(
+                    statistics.median(
+                        r["wall_ms_per_key"] for r in results if r["window_rows"] == row
+                    ),
+                    3,
+                )
+                for row in (2, 5, 8, 16, 32)
             },
         }
         succeeded = True
         return report
     finally:
-        auth_request_json(auth, f"{base}/api/chat/threads",
-                          method = "DELETE", body = {"ids": [thread_id]})
+        auth_request_json(
+            auth, f"{base}/api/chat/threads", method = "DELETE", body = {"ids": [thread_id]}
+        )
         output.parent.mkdir(parents = True, exist_ok = True)
         # Persist even partial results to make CI failures inspectable.
-        output.write_text(json.dumps({
-            "case": "live-studio-4k-history-synthetic-100k-dom",
-            "message_count": 4000,
-            "status": "PASS" if succeeded else "INCOMPLETE",
-            "cases": results,
-        }, indent = 2, sort_keys = True) + "\n", encoding = "utf-8")
+        output.write_text(
+            json.dumps(
+                {
+                    "case": "live-studio-4k-history-synthetic-100k-dom",
+                    "message_count": 4000,
+                    "status": "PASS" if succeeded else "INCOMPLETE",
+                    "cases": results,
+                },
+                indent = 2,
+                sort_keys = True,
+            )
+            + "\n",
+            encoding = "utf-8",
+        )
 
 
 def main() -> None:
@@ -265,12 +291,25 @@ def main() -> None:
     args = parser.parse_args()
     if not (700 <= args.cards_per_row <= 1200) or not (6 <= args.keys <= 40):
         parser.error("The synthetic fixture needs 700..1200 cards/row and 6..40 keys")
-    report = run(args.url.rstrip("/"), args.username, args.password,
-                 Path(args.output), args.cards_per_row, args.keys)
-    print(json.dumps({
-        "status": report["status"], "elapsed_s": report["elapsed_s"],
-        "p50_wall_ms_by_window": report["p50_wall_ms_by_window"],
-    }, sort_keys = True), flush = True)
+    report = run(
+        args.url.rstrip("/"),
+        args.username,
+        args.password,
+        Path(args.output),
+        args.cards_per_row,
+        args.keys,
+    )
+    print(
+        json.dumps(
+            {
+                "status": report["status"],
+                "elapsed_s": report["elapsed_s"],
+                "p50_wall_ms_by_window": report["p50_wall_ms_by_window"],
+            },
+            sort_keys = True,
+        ),
+        flush = True,
+    )
 
 
 if __name__ == "__main__":
