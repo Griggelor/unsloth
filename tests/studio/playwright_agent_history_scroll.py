@@ -272,6 +272,30 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 )
                 require_visible_search_row(page, 5, "search-early-visible")
                 census(page, messages, "search-early-message")
+                # Prove actual browser copy of a selected mounted message works
+                # under the bounded renderer. This does NOT claim that Ctrl+A
+                # across the *entire* transcript is yet equivalent to default.
+                context.grant_permissions(["clipboard-read", "clipboard-write"])
+                selected = page.evaluate(
+                    """() => {
+                      const row = document.querySelector('[data-agent-history-row="5"]');
+                      if (!row) return false;
+                      const selection = window.getSelection();
+                      const range = document.createRange();
+                      range.selectNodeContents(row);
+                      selection.removeAllRanges();
+                      selection.addRange(range);
+                      return !selection.isCollapsed && selection.toString().includes('row-00005');
+                    }"""
+                )
+                if not selected:
+                    raise AssertionError("Visible virtualized row could not be selected")
+                page.locator('[data-agent-history-row="5"]').focus()
+                page.keyboard.press("Control+c")
+                copied = page.evaluate("async () => navigator.clipboard.readText()")
+                if "agent-history-e2e-row-00005" not in copied:
+                    raise AssertionError(f"Copy of visible virtualized message differs: {copied[:160]!r}")
+                page.evaluate("() => window.getSelection()?.removeAllRanges()")
                 # Scrolling away from an active one-result query then pressing
                 # Enter must re-seek even if React's selected hit is unchanged.
                 scroll_to(page, 1, messages, "search-reader-scroll-away")
@@ -333,6 +357,7 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                             "mounted_bottom": bottom["mounted"],
                             "mounted_reload": after_reload["mounted"],
                             "transcript_preserved": True,
+                            "visible_message_clipboard_copy": True,
                         },
                         sort_keys = True,
                     )
