@@ -93,8 +93,37 @@ def measure_mode(browser, base: str, auth, thread_id: str, count: int, opt_in: b
                 state = "attached", timeout = 30_000
             )
         loaded_ms = round((time.perf_counter() - started) * 1000, 3)
-        # Give asynchronous hydration and layout a fixed settling interval.
-        page.wait_for_timeout(1500)
+        # The upstream renderer progressively mounts 32 more messages per
+        # animation frame. Seeing the last message does NOT prove that mounting
+        # has finished. Wait for every expected role row, then require eight
+        # consecutive animation frames with unchanged DOM size and scroll height.
+        # A timeout is a failed measurement, never a partial success.
+        page.wait_for_function(
+            """expected => {
+                const viewport = document.querySelector('.aui-thread-viewport');
+                const roleRows = viewport?.querySelectorAll('[data-role]').length ?? 0;
+                const virtual = document.querySelector('[data-agent-history-scroll-list="true"]');
+                const complete = virtual
+                    ? roleRows > 0 && roleRows <= 96
+                    : roleRows === expected;
+                const state = window.__agentPerfSettling ??= {
+                    frames: 0, count: -1, height: -1, lastFrame: -1,
+                };
+                const frame = Math.floor(performance.now() / 16);
+                if (frame !== state.lastFrame) {
+                    const height = viewport?.scrollHeight ?? 0;
+                    state.frames = complete && state.count === roleRows && state.height === height
+                        ? state.frames + 1 : 0;
+                    state.count = roleRows;
+                    state.height = height;
+                    state.lastFrame = frame;
+                }
+                return complete && state.frames >= 8;
+            }""",
+            arg = count,
+            polling = "raf",
+            timeout = 120_000,
+        )
         dom = page.evaluate(
             """() => {
                 const viewport = document.querySelector('.aui-thread-viewport');
@@ -103,6 +132,8 @@ def measure_mode(browser, base: str, auth, thread_id: str, count: int, opt_in: b
                     viewportNodes: viewport ? viewport.querySelectorAll('*').length : null,
                     virtualRows: rows.length,
                     messageElements: document.querySelectorAll('.aui-thread-message').length,
+                    renderedRoleRows: viewport?.querySelectorAll('[data-role]').length ?? null,
+                    settledFrames: window.__agentPerfSettling?.frames ?? null,
                 };
             }"""
         )
@@ -110,6 +141,8 @@ def measure_mode(browser, base: str, auth, thread_id: str, count: int, opt_in: b
             raise AssertionError(f"opt-in DOM mounting is not bounded: {dom}")
         if not opt_in and dom["virtualRows"] != 0:
             raise AssertionError(f"default mode unexpectedly enabled virtual rows: {dom}")
+        if not opt_in and dom["renderedRoleRows"] != count:
+            raise AssertionError(f"default renderer not fully mounted before typing: {dom}")
 
         # The observer only samples keydowns targeted at the actual composer.
         # No network/inference is involved, and only printable characters count.
@@ -247,6 +280,8 @@ def run(base: str, username: str, password: str, output: Path) -> None:
                         "metrics_are_browser_main_thread_busy_time_proxies": True,
                         "inference_is_not_measured": True,
                         "relative_speedup_is_not_asserted": True,
+                    "fully_mounted_default_required": True,
+                    "stable_animation_frames_required": 8,
                     },
                     "cases": cases,
                 },
