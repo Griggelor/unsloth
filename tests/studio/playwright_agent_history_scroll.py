@@ -292,7 +292,7 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 find_input.fill(f"row-{messages - 1:05d}")
                 require_search_state(
                     page,
-                    """() => !!document.querySelector(
+                    """expected => !!document.querySelector(
                       '[data-agent-history-row="' + String(expected - 1) + '"][data-agent-history-find-active="true"]'
                     )""",
                     "search-last-row",
