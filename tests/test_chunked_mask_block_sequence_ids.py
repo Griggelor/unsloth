@@ -77,7 +77,13 @@ def test_static_cache_generate_matches_dynamic(unpatched):
     # Prove that the original API cannot accept the keyword independently of
     # which attention path this transformers release chooses for generation.
     with pytest.raises(TypeError, match = "block_sequence_ids"):
-        unpatched(block_sequence_ids = torch.ones((1, 1), dtype = torch.long))
+        unpatched(
+            config = model.config,
+            inputs_embeds = torch.zeros(1, 4, model.config.hidden_size),
+            attention_mask = torch.ones(1, 4, dtype = torch.long),
+            past_key_values = None,
+            block_sequence_ids = torch.full((1, 4), -1, dtype = torch.long),
+        )
     try:
         before_patch = _generate(model, "static")
     except TypeError as exc:
