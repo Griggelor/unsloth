@@ -18,7 +18,7 @@ function messageText(message: unknown): string {
       part !== null && typeof part === "object" &&
       (part as { type?: unknown }).type === "text" &&
       typeof (part as { text?: unknown }).text === "string")
-    .map((part: { text: string }) => part.text)
+    .map((part: unknown) => (part as { text: string }).text)
     .join("\n");
 }
 
