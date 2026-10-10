@@ -23,6 +23,7 @@ import {
 import { useChatFavoritesStore } from "@/features/library/chats/favorites-store";
 import { useAgentHistoryModeStore } from "../stores/agent-history-mode-store";
 import {
+  AGENT_DEFAULT_ROWS,
   AGENT_WINDOW_SIZES,
   isAgentWindowSize,
 } from "@/components/assistant-ui/agent-history-scroll-window";
@@ -169,7 +170,7 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
     (state) => state.enabledThreads[menu.item.id] === true,
   );
   const agentWindowRows = useAgentHistoryModeStore(
-    (state) => state.windowRowsByThreadId[menu.item.id] ?? 32,
+    (state) => state.windowRowsByThreadId[menu.item.id] ?? AGENT_DEFAULT_ROWS,
   );
   const favorite = useChatFavoritesStore((state) =>
     state.chatIds.includes(menu.item.id),

@@ -2,9 +2,11 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 
 /** Normal-flow virtualization: only window boundaries change; rows are never absolutely positioned. */
+/** New opt-in preference; 32 remains the legacy capacity/headroom special case. */
+export const AGENT_DEFAULT_ROWS = 5;
 export const AGENT_INITIAL_ROWS = 32;
 export const AGENT_MAX_ROWS = 96;
-/** Per-chat runtime window sizes. Defaults remain compatible with 32/96. */
+/** 32 retains its legacy append headroom of 96; other choices stay strict. */
 export const AGENT_WINDOW_SIZES = [2, 5, 8, 16, 32] as const;
 export type AgentWindowSize = (typeof AGENT_WINDOW_SIZES)[number];
 export function isAgentWindowSize(value: unknown): value is AgentWindowSize {

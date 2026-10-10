@@ -3,7 +3,17 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AgentHeightIndex, agentIndexAtScrollPosition, latestAgentWindow, agentWindowAtIndex, agentWindowOnAppend, AGENT_MAX_ROWS, AGENT_WINDOW_SIZES } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
+import { AgentHeightIndex, agentIndexAtScrollPosition, latestAgentWindow, agentWindowAtIndex, agentWindowOnAppend, AGENT_DEFAULT_ROWS, AGENT_INITIAL_ROWS, AGENT_MAX_ROWS, AGENT_WINDOW_SIZES } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
+
+test("new agent mode defaults to five while explicit 32 preserves legacy 96-row append headroom", () => {
+  assert.equal(AGENT_DEFAULT_ROWS, 5);
+  assert.equal(AGENT_INITIAL_ROWS, 32);
+  assert.ok(AGENT_WINDOW_SIZES.includes(AGENT_DEFAULT_ROWS));
+  assert.deepEqual(latestAgentWindow(400, AGENT_DEFAULT_ROWS), { start: 395, end: 400 });
+  assert.deepEqual(latestAgentWindow(400, AGENT_INITIAL_ROWS), { start: 368, end: 400 });
+  assert.deepEqual(agentWindowOnAppend({ start: 368, end: 400 }, 400, 401, true, 32), { start: 368, end: 401 });
+  assert.deepEqual(agentWindowOnAppend({ start: 395, end: 400 }, 400, 401, true, 5), { start: 396, end: 401 });
+});
 
 test("first and last 32 messages are reachable without paging buttons", () => {
   assert.deepEqual(latestAgentWindow(1000), { start: 968, end: 1000 });

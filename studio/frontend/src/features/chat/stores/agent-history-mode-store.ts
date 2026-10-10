@@ -4,7 +4,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  AGENT_INITIAL_ROWS,
+  AGENT_DEFAULT_ROWS,
   isAgentWindowSize,
   type AgentWindowSize,
 } from "../../../components/assistant-ui/agent-history-scroll-window";
@@ -26,7 +26,7 @@ export const useAgentHistoryModeStore = create<AgentHistoryModeState>()(
         if (!threadId || !isAgentWindowSize(rows)) return;
         set((state) => {
           const windowRowsByThreadId = { ...state.windowRowsByThreadId };
-          if (rows === AGENT_INITIAL_ROWS) delete windowRowsByThreadId[threadId];
+          if (rows === AGENT_DEFAULT_ROWS) delete windowRowsByThreadId[threadId];
           else windowRowsByThreadId[threadId] = rows;
           return { windowRowsByThreadId };
         });
@@ -54,7 +54,7 @@ export const useAgentHistoryModeStore = create<AgentHistoryModeState>()(
           : [];
         const savedRows = (persisted as { windowRowsByThreadId?: unknown } | null)?.windowRowsByThreadId;
         const rowEntries = savedRows && typeof savedRows === "object" && !Array.isArray(savedRows)
-          ? Object.entries(savedRows).filter(([id, rows]) => id.length > 0 && isAgentWindowSize(rows) && rows !== AGENT_INITIAL_ROWS)
+          ? Object.entries(savedRows).filter(([id, rows]) => id.length > 0 && isAgentWindowSize(rows) && rows !== AGENT_DEFAULT_ROWS)
           : [];
         return {
           ...current,
