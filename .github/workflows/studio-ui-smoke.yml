@@ -931,6 +931,35 @@ jobs:
           kill "${STUDIO_IME_PID}" 2>/dev/null || true
           sleep 2
 
+      # This script rotates bootstrap credentials: give it its own disposable server.
+      - name: Boot isolated Agent-history Studio (port 18899)
+        if: matrix.shard == 'extra'
+        run: |
+          bash .github/scripts/boot-studio-api-only.sh --port 18899 --log logs/studio_agent_history.log --pid-var STUDIO_AGENT_HISTORY_PID
+
+      - name: Wait for isolated Agent-history Studio
+        if: matrix.shard == 'extra'
+        run: |
+          bash .github/scripts/wait-for-health.sh --port 18899 --log logs/studio_agent_history.log --tmp /tmp/health_agent_history.json
+
+      - name: Capture Agent-history bootstrap password
+        if: matrix.shard == 'extra'
+        run: |
+          OLD="$(cat ~/.unsloth/studio/auth/.bootstrap_password)"
+          echo "::add-mask::$OLD"
+          echo "AGENT_HISTORY_PW=$OLD" >> "$GITHUB_ENV"
+
+      - name: Agent-history windowed scroll (Playwright)
+        if: matrix.shard == 'extra'
+        run: |
+          python tests/studio/playwright_agent_history_scroll.py --url http://127.0.0.1:18899 --username unsloth --password "$AGENT_HISTORY_PW" --messages 400
+
+      - name: Stop isolated Agent-history Studio
+        if: (always()) && (matrix.shard == 'extra')
+        run: |
+          kill "${STUDIO_AGENT_HISTORY_PID:-}" 2>/dev/null || true
+          sleep 2
+
       # Every shard, not just the one that happened to own the last Unsloth.
       #
       # This copy used to sit inside the step above, with a comment saying all three
@@ -959,6 +988,7 @@ jobs:
             logs/studio_extra.log
             logs/studio_modelcfg.log
             logs/studio_ime.log
+            logs/studio_agent_history.log
             logs/install.log
             logs/server-logs/
             logs/playwright
