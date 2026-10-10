@@ -965,7 +965,7 @@ jobs:
         timeout-minutes: 12
         run: |
           mkdir -p logs/agent-history
-          python -m tests.studio.playwright_agent_history_perf --url http://127.0.0.1:18899 --username unsloth --password "$AGENT_HISTORY_PW" --output logs/agent-history/perf.json
+          python tests/studio/playwright_agent_history_perf.py --url http://127.0.0.1:18899 --username unsloth --password "$AGENT_HISTORY_PW" --output logs/agent-history/perf.json
 
       - name: Stop isolated Agent-history Studio
         if: (always()) && (matrix.shard == 'extra')
