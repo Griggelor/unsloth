@@ -83,6 +83,8 @@ function useTargetFind(target: FindTarget | undefined, query: string) {
   return {
     count: result.count,
     active: result.active,
+    capped: result.capped ?? false,
+    truncated: result.truncated ?? false,
     next: () => target?.step(1),
     previous: () => target?.step(-1),
   };
