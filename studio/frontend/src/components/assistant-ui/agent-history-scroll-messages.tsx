@@ -45,6 +45,7 @@ export const AgentHistoryScrollMessages: FC<{
   const [state, setState] = useState(() => ({ key: resetKey, count, range: latestAgentWindow(count) }));
   const [heightRevision, setHeightRevision] = useState(0);
   const [searchHit, setSearchHit] = useState(-1);
+  const [revealRevision, setRevealRevision] = useState(0);
   const searchHitRef = useRef(-1);
   const navigation = useRef<AgentHistoryNavigation>(initialAgentHistoryNavigation());
   const revealFrame = useRef<number | null>(null);
@@ -110,6 +111,9 @@ export const AgentHistoryScrollMessages: FC<{
     jump.current = null;
     searchHitRef.current = index;
     setSearchHit(index);
+    // A repeated hit may already be mounted, and setSearchHit(sameIndex)
+    // does not produce a render. Force a fresh layout navigation transaction.
+    setRevealRevision(v => v + 1);
     const next = agentWindowAtIndex(countRef.current, index, rangeRef.current);
     if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
       rangeRef.current = next;
@@ -212,7 +216,7 @@ export const AgentHistoryScrollMessages: FC<{
       const row = viewport.querySelector<HTMLElement>('[data-agent-history-row="' + oldAnchor.index + '"]');
       if (row) correctAnchor(row.getBoundingClientRect().top - oldAnchor.top);
     }
-  }, [range.start, range.end, searchHit, viewportRef, jumpBottom, correctAnchor, navigateViewport]);
+  }, [range.start, range.end, searchHit, revealRevision, viewportRef, jumpBottom, correctAnchor, navigateViewport]);
 
   // Passive, one sample per frame. No React work per pixel or token.
   useEffect(() => {
@@ -242,7 +246,7 @@ export const AgentHistoryScrollMessages: FC<{
       });
     };
     viewport.addEventListener("scroll", onScroll, { passive: true });
-  // Actual reader gestures supersede a pending search. Synthetic scroll
+    // Actual reader gestures supersede a pending search. Synthetic scroll
     // events from explicit navigation and from layout measurement do not.
     const interrupt = () => {
       navigation.current = interruptAgentHistoryReveal(navigation.current);
