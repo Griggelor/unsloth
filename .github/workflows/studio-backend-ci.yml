@@ -117,7 +117,52 @@ env:
 
 
 jobs:
+  # Stage 1: critical regression gate before any of the full CPU matrices.
+  critical-history:
+    name: Critical backend regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install critical-test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r studio/backend/requirements/studio.txt
+          pip install python-multipart aiofiles sqlalchemy cryptography psutil pyyaml jinja2 \
+            mammoth unpdf requests typer 'numpy<3' pytest pytest-asyncio pytest-timeout httpx \
+            'transformers>=4.51,<=5.17.0' sentence-transformers
+          pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple \
+            'torch>=2.4,<2.11' 'torchvision<0.26' 'torchaudio<2.11'
+          pip install 'bitsandbytes>=0.45'
+          pip install "unsloth_zoo @ git+https://github.com/unslothai/unsloth-zoo"
+          pip install -e . --no-deps
+          pin="$(python -c 'import sys; sys.path.insert(0, "scripts"); import run_ruff_format as r; print(r.pinned_ruff_version(r.CONFIG.read_text(encoding = "utf-8")) or "")')"
+          test -n "$pin"
+          pip install "ruff==$pin"
+      - name: Known-red mask identity, CPU Omni and formatter fixed point
+        env:
+          UNSLOTH_COMPILE_DISABLE: '1'
+          PYTHONPATH: ${{ github.workspace }}/studio
+        run: |
+          python -m pytest -q --tb=short --timeout=330 \
+            tests/test_chunked_mask_block_sequence_ids.py \
+            tests/test_omni_text_only_load.py \
+            tests/test_formatter_fixed_point.py
+      - name: History and CI contract tests
+        env:
+          UNSLOTH_COMPILE_DISABLE: '1'
+          PYTHONPATH: ${{ github.workspace }}/studio
+        run: |
+          python -m pytest -q --tb=short --timeout=330 \
+            tests/studio/test_playwright_suites_run_in_ci.py
+
   pytest:
+    needs: critical-history
     name: (Python ${{ matrix.python }}, ${{ matrix.shard }})
     runs-on: ubuntu-24.04
     # Hang backstop, not a performance budget; the per-test --timeout names hangs.
@@ -320,6 +365,7 @@ jobs:
           cache-hit: ${{ steps.pip-cache.outputs.cache-hit }}
 
   repo-cpu-tests:
+    needs: critical-history
     # Auto-discovers non-GPU tests; tests/conftest.py mocks torch.cuda.is_available for the import chain.
     name: Repo tests (CPU, ${{ matrix.shard }})
     runs-on: ubuntu-24.04
@@ -593,6 +639,7 @@ jobs:
           cache-hit: ${{ steps.pip-cache.outputs.cache-hit }}
 
   shell-installer-tests:
+    needs: critical-history
     # Hermetic bash suites in their own job, off the Python install's critical path (#10849, #10861).
     name: Shell installer tests
     runs-on: ubuntu-24.04
