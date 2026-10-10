@@ -8,6 +8,8 @@ export type FindTargetResult = { count: number | null; active: number; capped?: 
 
 export type FindTarget = {
   id: string;
+  /** A chat target replaces DOM-only chat search; other targets remain selectable. */
+  kind?: "chat";
   available: () => boolean;
   /** Whether `node` is inside it, so the chord opens the bar searching it from there. */
   contains: (node: Node) => boolean;
@@ -54,6 +56,20 @@ export function findTarget(id: string): FindTarget | undefined {
 
 export function availableFindTargets(): FindTarget[] {
   return [...targets.values()].filter((target) => target.available());
+}
+
+/** Resolve the Chat scope independently from the external-browser scope.
+ * Do not infer its type from an implementation-specific target id prefix. */
+export function resolveFindScopeTargets(
+  available: readonly FindTarget[],
+  scope: string | null,
+): { selected: FindTarget | undefined; external: FindTarget[] } {
+  return {
+    selected: scope === null
+      ? available.find((target) => target.kind === "chat")
+      : available.find((target) => target.id === scope),
+    external: available.filter((target) => target.kind !== "chat"),
+  };
 }
 
 export function findTargetHolding(node: Node | null): FindTarget | undefined {

@@ -131,6 +131,7 @@ export const AgentHistoryScrollMessages: FC<{
     };
     const target = {
       id: "agent-chat-history:" + (resetKey ?? "current"),
+      kind: "chat" as const,
       available: () => viewportRef.current !== null,
       contains: (node: Node) => viewportRef.current?.contains(node) ?? false,
       search: (value: string) => {

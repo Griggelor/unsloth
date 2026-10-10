@@ -137,6 +137,38 @@ def scroll_to(page, fraction: float, expected: int, label: str) -> dict:
     return state
 
 
+def search_snapshot(page) -> dict:
+    """Read-only diagnostics. A missing search result is always a hard failure."""
+    return page.evaluate("""() => {
+      const bar = document.querySelector('[data-find-bar-layer]');
+      const input = bar?.querySelector('input');
+      const counter = bar?.querySelector('[aria-live="polite"]');
+      const viewport = document.querySelector('.aui-thread-viewport');
+      const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+      const marked = [...document.querySelectorAll('[data-agent-history-find-active="true"]')];
+      return {
+        query: input?.value ?? null,
+        counter: counter?.textContent?.trim() ?? null,
+        focused: document.activeElement === input,
+        barVisible: !!bar && !bar.hidden,
+        currentRows: [rows[0]?.getAttribute('data-agent-history-row') ?? null,
+                      rows.at(-1)?.getAttribute('data-agent-history-row') ?? null],
+        mounted: rows.length,
+        searchHitRows: marked.map(row => row.getAttribute('data-agent-history-row')),
+        scrollTop: viewport?.scrollTop ?? null,
+        scrollHeight: viewport?.scrollHeight ?? null,
+        pageErrors: window.__agentSearchErrors ?? null
+      };
+    }""")
+
+
+def require_search_state(page, script: str, label: str, timeout: int = 15_000, arg = None) -> None:
+    try:
+        page.wait_for_function(script, arg = arg, timeout = timeout)
+    except Exception as exc:
+        raise AssertionError(f"{label}: {search_snapshot(page)}") from exc
+
+
 def run(url: str, username: str, password: str, messages: int) -> None:
     from playwright.sync_api import sync_playwright
 
@@ -188,34 +220,39 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 find_input = page.locator('[data-find-bar-layer] input')
                 find_input.wait_for(state = "visible", timeout = 30_000)
                 find_input.fill("row-00005")
-                page.wait_for_function(
-                    """() => {
-                      const row = document.querySelector(
-                        '[data-agent-history-row="5"][data-agent-history-find-active="true"]'
-                      );
-                      const counter = document.querySelector(
-                        '[data-find-bar-layer] [aria-live="polite"]'
-                      );
-                      return !!row && counter?.textContent?.includes('1/1');
-                    }""",
-                    timeout = 60_000,
+                # Distinguish indexing / count from seek / mount / scroll.
+                require_search_state(
+                    page,
+                    """() => document.querySelector(
+                      '[data-find-bar-layer] [aria-live="polite"]'
+                    )?.textContent?.includes('1/1') ?? false""",
+                    "search-index",
+                )
+                require_search_state(
+                    page,
+                    """() => !!document.querySelector(
+                      '[data-agent-history-row="5"][data-agent-history-find-active="true"]'
+                    )""",
+                    "search-reveal",
                 )
                 census(page, messages, "search-early-message")
                 find_input.fill("unique-fixture")
-                page.wait_for_function(
+                require_search_state(
+                    page,
                     """expected => document.querySelector(
                       '[data-find-bar-layer] [aria-live="polite"]'
                     )?.textContent?.includes('1/' + expected) ?? false""",
+                    "search-all-rows",
                     arg = messages,
-                    timeout = 60_000,
                 )
                 census(page, messages, "search-full-thread")
                 find_input.fill("row-00399")
-                page.wait_for_function(
+                require_search_state(
+                    page,
                     """() => !!document.querySelector(
                       '[data-agent-history-row="399"][data-agent-history-find-active="true"]'
                     )""",
-                    timeout = 60_000,
+                    "search-last-row",
                 )
                 census(page, messages, "search-latest-message")
                 page.keyboard.press("Escape")

@@ -19,6 +19,7 @@ import {
   findTarget,
   findTargetsVersion,
   subscribeFindTargets,
+  resolveFindScopeTargets,
 } from "../lib/find-targets.ts";
 import { isFindScopeBackgrounded } from "../lib/find-backgrounded.ts";
 import {
@@ -111,11 +112,9 @@ export default function FindBar({
   // The targets with something to search; a target that loses its page hands the bar back to chat.
   useSyncExternalStore(subscribeFindTargets, findTargetsVersion);
   const targets = availableFindTargets();
-  // The virtual Agenten-Chatverlauf is the chat scope, not a second browser tab.
-  // Its full transcript is searchable despite unmounted rows.
-  const virtualChat = targets.find((candidate) => candidate.id.startsWith("agent-chat-history:"));
-  const visibleTargets = targets.filter((candidate) => !candidate.id.startsWith("agent-chat-history:"));
-  const target = scope === null ? virtualChat : targets.find((candidate) => candidate.id === scope);
+  // A virtualized chat replaces the normal chat DOM index, without becoming
+  // an extra browser scope button. External target behaviour is unchanged.
+  const { selected: target, external: visibleTargets } = resolveFindScopeTargets(targets, scope);
   useEffect(() => {
     if (scope !== null && !findTarget(scope)?.available()) setScope(null);
   });
