@@ -26,7 +26,10 @@ export const AgentHistoryScrollMessages: FC<{
   renderMessage: () => ReactElement;
   resetKey: string | undefined;
   viewportRef: RefObject<HTMLElement | null>;
-}> = memo(function AgentHistoryScrollMessages({ renderMessage, resetKey, viewportRef }) {
+  windowRows?: number;
+}> = memo(function AgentHistoryScrollMessages({
+  renderMessage, resetKey, viewportRef, windowRows = 32,
+}) {
   const count = useAuiState(({ thread }) => thread.messages.length);
   const aui = useAui();
   const gate = useMemo(() => createRowNotificationGate(aui), [aui]);
@@ -42,7 +45,11 @@ export const AgentHistoryScrollMessages: FC<{
   const topSpacer = useRef<HTMLDivElement>(null);
   const anchor = useRef<{ index: number; top: number } | null>(null);
   const jump = useRef<"top" | "bottom" | null>(null);
-  const [state, setState] = useState(() => ({ key: resetKey, count, range: latestAgentWindow(count) }));
+  const [state, setState] = useState(() => ({
+    key: resetKey, count, windowRows, range: latestAgentWindow(count, windowRows),
+  }));
+  const visibleIndex = useRef(Math.max(0, count - 1));
+  const lastWindowRows = useRef(windowRows);
   const [heightRevision, setHeightRevision] = useState(0);
   const [searchHit, setSearchHit] = useState(-1);
   const [revealRevision, setRevealRevision] = useState(0);
@@ -65,19 +72,25 @@ export const AgentHistoryScrollMessages: FC<{
   }, []);
 
   // Async history arrival must not mount the entire conversation in one commit.
-  const range = state.key !== resetKey ? latestAgentWindow(count)
-    : state.count !== count
-      ? agentWindowOnAppend(state.range, state.count, count, following.current)
-      : state.range;
-  if (state.key !== resetKey || state.count !== count) {
-    setState({ key: resetKey, count, range });
+  const range = state.key !== resetKey ? latestAgentWindow(count, windowRows)
+    : state.windowRows !== windowRows
+      ? following.current
+        ? latestAgentWindow(count, windowRows)
+        : agentWindowAtIndex(
+            count, Math.min(visibleIndex.current, Math.max(0, count - 1)), undefined, windowRows,
+          )
+      : state.count !== count
+        ? agentWindowOnAppend(state.range, state.count, count, following.current, windowRows)
+        : state.range;
+  if (state.key !== resetKey || state.count !== count || state.windowRows !== windowRows) {
+    setState({ key: resetKey, count, windowRows, range });
   }
   const rangeRef = useRef<AgentScrollWindow>(range);
   rangeRef.current = range;
 
   const seek = useCallback((index: number, snap?: "top" | "bottom") => {
     const viewport = viewportRef.current;
-    const next = agentWindowAtIndex(countRef.current, index, rangeRef.current);
+    const next = agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
     if (next.start === rangeRef.current.start && next.end === rangeRef.current.end) {
       if (snap === "bottom") jumpBottom("auto");
       if (snap === "top" && viewport) navigateViewport(0);
@@ -97,7 +110,7 @@ export const AgentHistoryScrollMessages: FC<{
     jump.current = snap ?? null;
     rangeRef.current = next;
     setState(old => ({ ...old, range: next }));
-  }, [jumpBottom, navigateViewport, viewportRef]);
+  }, [jumpBottom, navigateViewport, viewportRef, windowRows]);
 
   const revealSearchRow = useCallback((index: number) => {
     const nextIntent = requestAgentHistoryReveal(navigation.current, index, countRef.current);
@@ -114,12 +127,21 @@ export const AgentHistoryScrollMessages: FC<{
     // A repeated hit may already be mounted, and setSearchHit(sameIndex)
     // does not produce a render. Force a fresh layout navigation transaction.
     setRevealRevision(v => v + 1);
-    const next = agentWindowAtIndex(countRef.current, index, rangeRef.current);
+    const next = agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
     if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
       rangeRef.current = next;
       setState(old => ({ ...old, range: next }));
     }
-  }, []);
+  }, [windowRows]);
+
+  // Changing the preference should not strand the reader at a stale scroll offset.
+  // Keep height measurements; only the mounted window changes.
+  useLayoutEffect(() => {
+    if (lastWindowRows.current === windowRows) return;
+    lastWindowRows.current = windowRows;
+    if (following.current) jumpBottom("auto");
+    else navigateViewport(heights.offset(visibleIndex.current));
+  }, [windowRows, range.start, range.end, heights, jumpBottom, navigateViewport]);
 
   // Register a search target only for the opt-in virtualized thread. The normal
   // find engine can keep its existing DOM semantics without mounting the history.
@@ -242,6 +264,7 @@ export const AgentHistoryScrollMessages: FC<{
           viewport.scrollTop,
           viewport.clientHeight,
         );
+        visibleIndex.current = index;
         seek(index);
       });
     };

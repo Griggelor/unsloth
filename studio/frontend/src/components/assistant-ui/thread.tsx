@@ -1961,6 +1961,9 @@ export const Thread: FC<{
   const agentHistoryEnabled = useAgentHistoryModeStore((state) =>
     threadId ? state.enabledThreads[threadId] === true : false,
   );
+  const agentWindowRows = useAgentHistoryModeStore((state) =>
+    threadId ? (state.windowRowsByThreadId[threadId] ?? 32) : 32,
+  );
   const aui = useAui();
   useThreadForkCounts();
   useTrackForkBoundaryAnchor(threadId);
@@ -2217,6 +2220,7 @@ export const Thread: FC<{
                 renderMessage={renderThreadMessage}
                 resetKey={runtimeThreadId}
                 viewportRef={viewportElRef}
+                windowRows={agentWindowRows}
               />
             ) : (
               <ProgressiveMessages
