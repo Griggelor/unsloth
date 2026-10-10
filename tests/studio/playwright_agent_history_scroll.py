@@ -9,7 +9,8 @@ Run ONLY against an isolated disposable Studio instance, not a production instal
 Requires the repository's Playwright/Chromium test prerequisites and a running backend.
 This test writes and then deletes ONE uniquely named fixture thread on that instance.
 Missing prerequisites, auth failures, missing virtualizer and any incomplete traversal
-are hard failures, not skipped or counted as passes. It does not test find/copy parity.
+are hard failures, not skipped or counted as passes. It checks bounded find/reveal
+navigation, but not clipboard/export parity.
 """
 
 from __future__ import annotations
@@ -169,6 +170,28 @@ def require_search_state(page, script: str, label: str, timeout: int = 15_000, a
         raise AssertionError(f"{label}: {search_snapshot(page)}") from exc
 
 
+def require_visible_search_row(page, row_index: int, label: str) -> None:
+    """Indexing + DOM mounting is not enough: the hit must intersect the viewport."""
+    require_search_state(
+        page,
+        """index => {
+          const viewport = document.querySelector('.aui-thread-viewport');
+          const row = document.querySelector(
+            '[data-agent-history-row="' + index +
+            '"][data-agent-history-find-active="true"]'
+          );
+          if (!viewport || !row || !viewport.contains(row)) return false;
+          const view = viewport.getBoundingClientRect();
+          const hit = row.getBoundingClientRect();
+          return hit.width > 0 && hit.height > 0 &&
+            hit.bottom > view.top + 8 && hit.top < view.bottom - 8 &&
+            document.querySelectorAll('[data-agent-history-row]').length <= 96;
+        }""",
+        label,
+        arg = row_index,
+    )
+
+
 def run(url: str, username: str, password: str, messages: int) -> None:
     from playwright.sync_api import sync_playwright
 
@@ -235,7 +258,15 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                     )""",
                     "search-reveal",
                 )
+                require_visible_search_row(page, 5, "search-early-visible")
                 census(page, messages, "search-early-message")
+                # Scrolling away from an active one-result query then pressing
+                # Enter must re-seek even if React's selected hit is unchanged.
+                scroll_to(page, 1, messages, "search-reader-scroll-away")
+                find_input.focus()
+                find_input.press("Enter")
+                require_visible_search_row(page, 5, "search-repeat-visible")
+                census(page, messages, "search-repeat-single-result")
                 find_input.fill("unique-fixture")
                 require_search_state(
                     page,
@@ -254,6 +285,7 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                     )""",
                     "search-last-row",
                 )
+                require_visible_search_row(page, messages - 1, "search-last-visible")
                 census(page, messages, "search-latest-message")
                 page.keyboard.press("Escape")
                 page.reload(wait_until = "domcontentloaded", timeout = 120_000)
