@@ -6,6 +6,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuSub,
@@ -20,6 +22,10 @@ import {
 } from "@/components/ui/tooltip";
 import { useChatFavoritesStore } from "@/features/library/chats/favorites-store";
 import { useAgentHistoryModeStore } from "../stores/agent-history-mode-store";
+import {
+  AGENT_WINDOW_SIZES,
+  isAgentWindowSize,
+} from "@/components/assistant-ui/agent-history-scroll-window";
 import { useChatRuntimeStore } from "../stores/chat-runtime-store";
 import { useShortcutLabel } from "@/features/settings";
 import type { ShortcutId } from "@/features/settings";
@@ -162,6 +168,9 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
   const agentHistoryEnabled = useAgentHistoryModeStore(
     (state) => state.enabledThreads[menu.item.id] === true,
   );
+  const agentWindowRows = useAgentHistoryModeStore(
+    (state) => state.windowRowsByThreadId[menu.item.id] ?? 32,
+  );
   const favorite = useChatFavoritesStore((state) =>
     state.chatIds.includes(menu.item.id),
   );
@@ -241,6 +250,38 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
           ? "Agenten-Chatverlauf deaktivieren"
           : "Agenten-Chatverlauf aktivieren"}
       </Item>
+      {agentHistoryEnabled && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger disabled={running} className="gap-2.5">
+            <HugeiconsIcon icon={LayerIcon} strokeWidth={1.75} className={ICON} />
+            Agentenfenster: {agentWindowRows} Nachrichten
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className={cn(MENU, "w-56")}>
+            <DropdownMenuLabel className={LABEL}>
+              Sichtbare Nachrichten (pro Chat)
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={String(agentWindowRows)}
+              onValueChange={(value) => {
+                const rows = Number(value);
+                if (isAgentWindowSize(rows)) {
+                  useAgentHistoryModeStore.getState().setWindowRows(menu.item.id, rows);
+                }
+              }}
+            >
+              {AGENT_WINDOW_SIZES.map((rows) => (
+                <DropdownMenuRadioItem
+                  key={rows}
+                  value={String(rows)}
+                  data-test-id={`agent-window-size-${rows}`}
+                >
+                  {rows} Nachrichten{rows === 2 ? " (experimentell)" : ""}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
       <Item
         glyph={<HugeiconsIcon icon={ForkIcon} strokeWidth={1.75} className={ICON} />}
         onSelect={menu.fork}

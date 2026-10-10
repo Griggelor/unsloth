@@ -229,6 +229,64 @@ def check_chat_header_menu(page, messages: int) -> None:
     census(page, messages, "menu-toggled-on")
 
 
+def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
+    """Change row limits through the real menu, verify DOM and persisted per-chat scope."""
+    trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
+
+    def choose(size: int) -> None:
+        trigger.click()
+        page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
+            has_text = "Agentenfenster:"
+        ).hover()
+        page.locator(f'[data-test-id="agent-window-size-{size}"]').click()
+        page.wait_for_function(
+            """size => {
+              const rows = document.querySelectorAll('[data-agent-history-row]');
+              return rows.length === size;
+            }""",
+            arg = size,
+            timeout = 30_000,
+        )
+        state = census(page, messages, f"window-{size}")
+        if state["mounted"] != size:
+            raise AssertionError(f"window-{size}: expected exactly {size} mounted rows: {state}")
+
+    choose(5)
+    stored = page.evaluate(
+        """threadId => JSON.parse(localStorage.getItem(
+          'unsloth_agent_chat_history_v1'
+        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? 32""",
+        thread_id,
+    )
+    if stored != 5:
+        raise AssertionError(f"Small window preference not persisted: {stored}")
+
+    # Preserve the bounded navigation contract at the recommended small setting.
+    scroll_to(page, 0, messages, "five-top")
+    scroll_to(page, 1, messages, "five-bottom")
+
+    page.reload(wait_until = "domcontentloaded")
+    page.locator(LIST).wait_for(state = "attached", timeout = 60_000)
+    page.wait_for_function(
+        """() => document.querySelectorAll('[data-agent-history-row]').length === 5""",
+        timeout = 60_000,
+    )
+    census(page, messages, "five-after-reload")
+    choose(2)
+    choose(8)
+    choose(16)
+    choose(32)
+    stored = page.evaluate(
+        """threadId => JSON.parse(localStorage.getItem(
+          'unsloth_agent_chat_history_v1'
+        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? 32""",
+        thread_id,
+    )
+    if stored != 32:
+        raise AssertionError(f"Default window preference not restored: {stored}")
+    census(page, messages, "window-default-restored")
+
+
 def run(url: str, username: str, password: str, messages: int) -> None:
     from playwright.sync_api import sync_playwright
 
@@ -273,6 +331,8 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 )
                 tail = census(page, messages, "initial")
                 check_chat_header_menu(page, messages)
+                if messages == 400:
+                    check_runtime_window_size(page, thread_id, messages)
                 if tail["ordinal"][-1] != messages:
                     raise AssertionError(f"initial window not at transcript tail: {tail}")
                 top = scroll_to(page, 0, messages, "top")
