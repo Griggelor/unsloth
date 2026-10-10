@@ -208,6 +208,10 @@ def run(url: str, username: str, password: str, messages: int) -> None:
     thread_id = None
     try:
         thread_id = create_fixture(base, auth, messages)
+        # Read-after-write snapshot before any browser rendering, navigation or
+        # search. A mere message count cannot detect silent edits or reordering.
+        baseline = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
+        baseline_messages = baseline["messages"]
         with sync_playwright() as driver:
             browser = driver.chromium.launch(headless = True)
             try:
@@ -311,7 +315,12 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                     raise AssertionError("Reload lost the transcript tail")
                 stored = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
                 if len(stored.get("messages", [])) != messages:
-                    raise AssertionError("Virtual scrolling changed the persisted transcript")
+                    raise AssertionError("Virtual scrolling changed the persisted transcript count")
+                if stored["messages"] != baseline_messages:
+                    raise AssertionError(
+                        "Virtual scrolling or search altered persisted message content, "
+                        "metadata, identity or order"
+                    )
                 print(
                     json.dumps(
                         {
