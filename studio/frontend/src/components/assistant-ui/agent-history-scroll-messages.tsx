@@ -5,7 +5,7 @@ import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffec
 import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
-import { AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
+import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
   allowsPassiveAgentScroll,
@@ -28,7 +28,7 @@ export const AgentHistoryScrollMessages: FC<{
   viewportRef: RefObject<HTMLElement | null>;
   windowRows?: number;
 }> = memo(function AgentHistoryScrollMessages({
-  renderMessage, resetKey, viewportRef, windowRows = 32,
+  renderMessage, resetKey, viewportRef, windowRows = AGENT_DEFAULT_ROWS,
 }) {
   const count = useAuiState(({ thread }) => thread.messages.length);
   const aui = useAui();

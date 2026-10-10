@@ -288,7 +288,7 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
     stored = page.evaluate(
         """threadId => JSON.parse(localStorage.getItem(
           'unsloth_agent_chat_history_v1'
-        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? 32""",
+        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? 5""",
         thread_id,
     )
     if stored != 5:
@@ -308,15 +308,26 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
     choose(2)
     choose(8)
     choose(16)
+    # Explicit legacy mode is retained as a per-thread override.
     choose(32)
+    legacy = page.evaluate(
+        """threadId => JSON.parse(localStorage.getItem(
+          'unsloth_agent_chat_history_v1'
+        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? 5""",
+        thread_id,
+    )
+    if legacy != 32:
+        raise AssertionError(f"Explicit legacy 32 preference not persisted: {legacy}")
+    # Choosing the new default must remove the override without disabling the mode.
+    choose(5)
     stored = page.evaluate(
         """threadId => JSON.parse(localStorage.getItem(
           'unsloth_agent_chat_history_v1'
-        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? 32""",
+        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? null""",
         thread_id,
     )
-    if stored != 32:
-        raise AssertionError(f"Default window preference not restored: {stored}")
+    if stored is not None:
+        raise AssertionError(f"Default window should not store an override: {stored}")
     census(page, messages, "window-default-restored")
 
 
@@ -365,6 +376,8 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                     timeout = 60_000,
                 )
                 tail = census(page, messages, "initial")
+                if tail["mounted"] != 5:
+                    raise AssertionError(f"New agent-history default must mount five rows: {tail}")
                 check_chat_header_menu(page, messages)
                 if messages == 400:
                     check_runtime_window_size(page, thread_id, messages)

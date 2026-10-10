@@ -189,7 +189,10 @@ def run(
                         [],
                         {
                             "unsloth_agent_chat_history_v1": {
-                                "state": {"enabledThreads": {thread_id: True}},
+                                "state": {
+                                    "enabledThreads": {thread_id: True},
+                                    "windowRowsByThreadId": {thread_id: 32},
+                                },
                                 "version": 0,
                             },
                         },
