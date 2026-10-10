@@ -104,7 +104,50 @@ permissions:
   contents: read
 
 jobs:
+  # Stage 1: fast, high-signal feature and previously red tests. No broad
+  # frontend build or browser matrix should start before this is green.
+  critical-history:
+    name: Critical frontend regressions (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 18
+    defaults:
+      run:
+        shell: bash
+        working-directory: studio/frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      # Audit before installing third-party dependencies, as in the existing job.
+      - name: Lockfile supply-chain audit (before install)
+        working-directory: ${{ github.workspace }}
+        run: python scripts/lockfile_supply_chain_audit.py
+      - run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Known-red Windows grapheme/find-index regression
+        run: node --experimental-strip-types --test tests/find-in-page.test.ts
+      - name: Opt-in history, scroll ownership and keystroke regressions
+        run: |
+          node --experimental-strip-types --test \
+            tests/agent-history-navigation.test.ts \
+            tests/agent-history-scroll-window.test.ts \
+            tests/agent-history-search.test.ts \
+            tests/find-scope-targets.test.ts \
+            tests/row-notification-gate.test.ts \
+            tests/progressive-mount-controller.test.ts \
+            tests/progressive-mount-glue.test.ts \
+            tests/composer-keystroke-subscription-budget.test.ts \
+            tests/chat-autoscroll-frame-budget.test.ts \
+            tests/thread-fast-copy.test.ts
+
+  # Stage 2: existing mandatory breadth, preserving the old job/check names.
   build:
+    needs: critical-history
     name: Frontend build + bundle sanity
     runs-on: ubuntu-latest
     # Two browser smokes (~50s) plus the Chromium install now sit inside this.
@@ -648,6 +691,7 @@ jobs:
   # runner's core.autocrlf says, and the assertions that match on exact source
   # substrings see the bytes in the repo.
   windows:
+    needs: critical-history
     name: Frontend unit tests (Windows)
     runs-on: windows-latest
     # 30, not 15. The cap stopped fitting the job's own steps once the browser smokes

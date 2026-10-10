@@ -248,6 +248,11 @@ def test_a_kept_wrapper_trains_through_peft():
     from unsloth.models.vision import _text_trainable_core
 
     model = _text_trainable_core(_tiny_omni(), text_intent = False)
+    if not has_real_cuda():
+        # Keep CPU PEFT backward coverage without invoking the CUDA-only Triton loss.
+        # The fused path stays exercised by GPU runs.
+        from transformers.loss.loss_utils import ForCausalLMLoss
+        model.thinker.loss_function = ForCausalLMLoss
     # Reentrant checkpointing with frozen embeddings trains LoRA only when the embedding
     # output requires grad, which goes through the wrapper's get_input_embeddings.
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs = {"use_reentrant": True})

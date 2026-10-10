@@ -149,7 +149,7 @@ jobs:
     # was. Tightening a timeout to fit the expected duration converts that kind of
     # infrastructure stall from a slow pass into a red build, and a timeout is there to
     # catch a hang, not to police the mean.
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       # Two shards, split where the job already split itself.
       #
@@ -931,6 +931,48 @@ jobs:
           kill "${STUDIO_IME_PID}" 2>/dev/null || true
           sleep 2
 
+      # This script rotates bootstrap credentials: give it its own disposable server.
+      - name: Boot isolated Agent-history Studio (port 18899)
+        if: matrix.shard == 'extra'
+        run: |
+          bash .github/scripts/boot-studio-api-only.sh --port 18899 --log logs/studio_agent_history.log --pid-var STUDIO_AGENT_HISTORY_PID
+
+      - name: Wait for isolated Agent-history Studio
+        if: matrix.shard == 'extra'
+        run: |
+          bash .github/scripts/wait-for-health.sh --port 18899 --log logs/studio_agent_history.log --tmp /tmp/health_agent_history.json
+
+      - name: Capture Agent-history bootstrap password
+        if: matrix.shard == 'extra'
+        run: |
+          OLD="$(cat ~/.unsloth/studio/auth/.bootstrap_password)"
+          echo "::add-mask::$OLD"
+          echo "AGENT_HISTORY_PW=$OLD" >> "$GITHUB_ENV"
+
+      - name: Agent-history windowed scroll (Playwright)
+        if: matrix.shard == 'extra'
+        run: |
+          python tests/studio/playwright_agent_history_scroll.py --url http://127.0.0.1:18899 --username unsloth --password "$AGENT_HISTORY_PW" --messages 400
+
+      - name: Agent-history long transcript (4000 messages)
+        if: matrix.shard == 'extra'
+        timeout-minutes: 10
+        run: |
+          python tests/studio/playwright_agent_history_scroll.py --url http://127.0.0.1:18899 --username unsloth --password "$AGENT_HISTORY_PW" --messages 4000
+
+      - name: Measure typing and main-thread work (2000 and 4000 messages)
+        if: matrix.shard == 'extra'
+        timeout-minutes: 12
+        run: |
+          mkdir -p logs/agent-history
+          python tests/studio/playwright_agent_history_perf.py --url http://127.0.0.1:18899 --username unsloth --password "$AGENT_HISTORY_PW" --output logs/agent-history/perf.json
+
+      - name: Stop isolated Agent-history Studio
+        if: (always()) && (matrix.shard == 'extra')
+        run: |
+          kill "${STUDIO_AGENT_HISTORY_PID:-}" 2>/dev/null || true
+          sleep 2
+
       # Every shard, not just the one that happened to own the last Unsloth.
       #
       # This copy used to sit inside the step above, with a comment saying all three
@@ -959,6 +1001,8 @@ jobs:
             logs/studio_extra.log
             logs/studio_modelcfg.log
             logs/studio_ime.log
+            logs/studio_agent_history.log
+            logs/agent-history/
             logs/install.log
             logs/server-logs/
             logs/playwright
