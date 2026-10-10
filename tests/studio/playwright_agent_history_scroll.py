@@ -181,6 +181,44 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 top = scroll_to(page, 0, messages, "top")
                 middle = scroll_to(page, 0.5, messages, "middle")
                 bottom = scroll_to(page, 1, messages, "bottom")
+                # Reproduction: a query for message 6 must reach beyond the
+                # 32 rows mounted at the transcript tail, without disabling
+                # bounded virtualization or changing the persisted history.
+                page.keyboard.press("Control+f")
+                find_input = page.locator('[data-find-bar-layer] input')
+                find_input.wait_for(state = "visible", timeout = 30_000)
+                find_input.fill("row-00005")
+                page.wait_for_function(
+                    """() => {
+                      const row = document.querySelector(
+                        '[data-agent-history-row="5"][data-agent-history-find-active="true"]'
+                      );
+                      const counter = document.querySelector(
+                        '[data-find-bar-layer] [aria-live="polite"]'
+                      );
+                      return !!row && counter?.textContent?.includes('1/1');
+                    }""",
+                    timeout = 60_000,
+                )
+                census(page, messages, "search-early-message")
+                find_input.fill("unique-fixture")
+                page.wait_for_function(
+                    """expected => document.querySelector(
+                      '[data-find-bar-layer] [aria-live="polite"]'
+                    )?.textContent?.includes('1/' + expected) ?? false""",
+                    arg = messages,
+                    timeout = 60_000,
+                )
+                census(page, messages, "search-full-thread")
+                find_input.fill("row-00399")
+                page.wait_for_function(
+                    """() => !!document.querySelector(
+                      '[data-agent-history-row="399"][data-agent-history-find-active="true"]'
+                    )""",
+                    timeout = 60_000,
+                )
+                census(page, messages, "search-latest-message")
+                page.keyboard.press("Escape")
                 page.reload(wait_until = "domcontentloaded", timeout = 120_000)
                 page.locator(LIST).wait_for(state = "attached", timeout = 60_000)
                 page.wait_for_function(
