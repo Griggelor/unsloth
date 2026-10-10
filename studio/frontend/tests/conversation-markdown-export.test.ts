@@ -162,3 +162,52 @@ test("renderer tokens never leave a thread, downloaded or copied", async () => {
   assert.ok(!copied.includes("[[img:"));
   assert.ok(copied.includes(stripped));
 });
+
+test("a 400-message transcript copies and downloads from storage without a mounted DOM", async () => {
+  const messages = Array.from({ length: 400 }, (_, index): TestMessage => ({
+    role: index % 2 === 0 ? "user" : "assistant",
+    text: `unique-copy-fixture-row-${String(index).padStart(5, "0")}`,
+  }));
+  const loadMessages = async (threadId: string) => {
+    assert.equal(threadId, "thread-1");
+    return messages;
+  };
+  const renderMessage = (message: TestMessage) => message.text;
+  const copy = createConversationMarkdownBuilder<TestMessage>({
+    loadMessages,
+    renderMessage,
+  });
+  const downloads: Array<{ content: string; filename: string; mimeType: string }> = [];
+  const download = createConversationMarkdownExporter<TestMessage>({
+    loadMessages,
+    renderMessage,
+    download: async (content, filename, mimeType) => {
+      downloads.push({ content, filename, mimeType });
+    },
+    exportTimestamp: () => "2026-10-10T00-00-00",
+    notifyNoContent: () => assert.fail("400-message transcript cannot be empty"),
+  });
+  const copied = await copy("thread-1");
+  await download("thread-1");
+  assert.ok(copied);
+  assert.equal(downloads[0].content, copied);
+  for (let index = 0; index < messages.length; index++) {
+    const marker = messages[index].text;
+    assert.equal(copied.split(marker).length - 1, 1, `missing or duplicate row ${index}`);
+  }
+  assert.ok(copied.indexOf(messages[0].text) < copied.indexOf(messages[399].text));
+});
+
+test("copying a displayed fork branch excludes siblings not present in the selected history", async () => {
+  const displayed: readonly TestMessage[] = [
+    { role: "user", text: "first-branch-message" },
+    { role: "assistant", text: "selected-fork-response" },
+  ];
+  const build = createConversationMarkdownBuilder<TestMessage>({
+    loadMessages: async () => displayed,
+    renderMessage: (message) => message.text,
+  });
+  const result = await build("thread-1");
+  assert.ok(result?.includes("selected-fork-response"));
+  assert.ok(!result?.includes("hidden-sibling-response"));
+});
