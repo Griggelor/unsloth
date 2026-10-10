@@ -289,13 +289,14 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                     arg = messages,
                 )
                 census(page, messages, "search-full-thread")
-                find_input.fill("row-00399")
+                find_input.fill(f"row-{messages - 1:05d}")
                 require_search_state(
                     page,
                     """() => !!document.querySelector(
-                      '[data-agent-history-row="399"][data-agent-history-find-active="true"]'
+                      '[data-agent-history-row="' + String(expected - 1) + '"][data-agent-history-find-active="true"]'
                     )""",
                     "search-last-row",
+                    arg = messages,
                 )
                 require_visible_search_row(page, messages - 1, "search-last-visible")
                 census(page, messages, "search-latest-message")
