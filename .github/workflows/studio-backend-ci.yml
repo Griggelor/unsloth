@@ -117,8 +117,42 @@ env:
 
 
 jobs:
-  # Stage 1: critical regression gate before any of the full CPU matrices.
+  # Chunk 0: fast policy/CI-contract/formatter guard, without GPU/torch/model setup.
+  # All long-running backend checks stay queued when this catches an invalid workflow.
+  critical-contracts:
+    name: Critical CI contracts and formatter
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install policy-test and pinned formatter dependencies
+        run: |
+          python -m pip install pytest pyyaml
+          pin="$(python -c 'import sys; sys.path.insert(0, "scripts"); import run_ruff_format as r; print(r.pinned_ruff_version(r.CONFIG.read_text(encoding = "utf-8")) or "")')"
+          test -n "$pin"
+          python -m pip install "ruff==$pin"
+      - name: Existing workflow security, age reporting and driver coverage contracts
+        run: |
+          python -m pytest --noconftest -q --tb=short \
+            tests/studio/test_actions_are_pinned_to_commits.py \
+            tests/studio/test_merge_ref_age_is_reported.py \
+            tests/studio/test_playwright_suites_run_in_ci.py
+      - name: Repository-wide pinned Ruff fixed point
+        run: |
+          python -m pytest --noconftest -q --tb=short \
+            tests/test_formatter_fixed_point.py
+      - name: Report stale PR merge ref on failure
+        if: failure() && github.event_name == 'pull_request'
+        uses: ./.github/actions/merge-ref-age
+
+  # Chunk 1: narrow numerical/model feature regressions, only after policy checks.
   critical-history:
+    needs: critical-contracts
     name: Critical backend regressions
     runs-on: ubuntu-24.04
     timeout-minutes: 24
@@ -144,23 +178,19 @@ jobs:
           pin="$(python -c 'import sys; sys.path.insert(0, "scripts"); import run_ruff_format as r; print(r.pinned_ruff_version(r.CONFIG.read_text(encoding = "utf-8")) or "")')"
           test -n "$pin"
           pip install "ruff==$pin"
-      - name: Known-red mask identity, CPU Omni and formatter fixed point
+      - name: Previously red mask and CPU Omni functionality
         env:
           UNSLOTH_COMPILE_DISABLE: '1'
           PYTHONPATH: ${{ github.workspace }}/studio
         run: |
           python -m pytest -q --tb=short --timeout=330 \
             tests/test_chunked_mask_block_sequence_ids.py \
-            tests/test_omni_text_only_load.py \
-            tests/test_formatter_fixed_point.py
-      - name: History and CI contract tests
-        env:
-          UNSLOTH_COMPILE_DISABLE: '1'
-          PYTHONPATH: ${{ github.workspace }}/studio
-        run: |
-          python -m pytest -q --tb=short --timeout=330 \
-            tests/studio/test_playwright_suites_run_in_ci.py
+            tests/test_omni_text_only_load.py
+      - name: Report stale PR merge ref on failure
+        if: failure() && github.event_name == 'pull_request'
+        uses: ./.github/actions/merge-ref-age
 
+  # Chunk 2: existing exhaustive mandatory jobs and matrices, with unchanged names.
   pytest:
     needs: critical-history
     name: (Python ${{ matrix.python }}, ${{ matrix.shard }})
