@@ -967,6 +967,13 @@ jobs:
           mkdir -p logs/agent-history
           python tests/studio/playwright_agent_history_perf.py --url http://127.0.0.1:18899 --username unsloth --password "$AGENT_HISTORY_PW" --output logs/agent-history/perf.json
 
+      - name: Agent-history DOM stress and window-size performance sweep
+        if: matrix.shard == 'extra'
+        timeout-minutes: 8
+        run: |
+          mkdir -p logs/agent-history
+          python tests/studio/playwright_agent_history_dom_sweep.py --url http://127.0.0.1:18899 --username unsloth --password "$AGENT_HISTORY_PW" --output logs/agent-history/dom-sweep.json
+
       - name: Stop isolated Agent-history Studio
         if: (always()) && (matrix.shard == 'extra')
         run: |
