@@ -47,7 +47,7 @@ CARDS_PER_ROW = 700
 
 # No user data. Five descendants/card: wrapper, button, svg, path, span.
 # The DOM is visually similar to repeated collapsed tool-call controls.
-INJECT = """({cards}) => {{
+INJECT = """({cards}) => {
   const rows = Array.from(document.querySelectorAll('[data-agent-history-row]'));
   const template = document.createElement('template');
   template.innerHTML = '<div class="agent-perf-tool-card">' +
@@ -57,7 +57,7 @@ INJECT = """({cards}) => {{
   const item = template.innerHTML;
   // Always reset synthetic material after a menu switch. React owns the actual
   // messages; this diagnostic intentionally owns only its marked children.
-  for (const row of rows) {{
+  for (const row of rows) {
     row.querySelectorAll('[data-agent-perf-fixture]').forEach(node => node.remove());
     const wrapper = document.createElement('div');
     wrapper.dataset.agentPerfFixture = 'true';
@@ -67,28 +67,28 @@ INJECT = """({cards}) => {{
     const owner = row.querySelector('[data-role]');
     if (!owner) throw Error('Virtual row has no [data-role] child');
     owner.appendChild(wrapper);
-  }}
-  return {{
+  }
+  return {
     rows: rows.length,
-    descendants: document.querySelector(LIST)?.querySelectorAll('*').length ?? 0,
+    descendants: document.querySelector('[data-agent-history-scroll-list="true"]')?.querySelectorAll('*').length ?? 0,
     syntheticCards: document.querySelectorAll('[data-agent-perf-fixture] .agent-perf-tool-card').length,
     totalDom: document.querySelectorAll('*').length,
-  }};
-}}"""
+  };
+}"""
 
-INSTALL_INPUT_PROBE = """() => {{
-  window.__agentDomProbe = {{samples: [], received: 0}};
-  document.addEventListener('keydown', (event) => {{
+INSTALL_INPUT_PROBE = """() => {
+  window.__agentDomProbe = {samples: [], received: 0};
+  document.addEventListener('keydown', (event) => {
     if (!(event.target instanceof Element) ||
         !event.target.closest('.aui-composer-input') ||
         event.key.length !== 1 || event.metaKey || event.ctrlKey) return;
     const begin = performance.now();
     window.__agentDomProbe.received += 1;
-    requestAnimationFrame(() => requestAnimationFrame(() => {{
+    requestAnimationFrame(() => requestAnimationFrame(() => {
       window.__agentDomProbe.samples.push(performance.now() - begin);
-    }}));
-  }}, true);
-}}"""
+    }));
+  }, true);
+}"""
 
 def select_rows(page, rows: int) -> None:
     if rows != 32 or page.evaluate(
@@ -169,6 +169,7 @@ def run(base: str, username: str, password: str, output: Path,
     auth = authenticate(base, username, password)
     thread_id = create_fixture(base, auth, 4000)
     results = []
+    succeeded = False
     started = time.perf_counter()
     try:
         persisted = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
@@ -238,6 +239,7 @@ def run(base: str, username: str, password: str, output: Path,
                 ), 3) for row in (2, 5, 8, 16, 32)
             },
         }
+        succeeded = True
         return report
     finally:
         auth_request_json(auth, f"{base}/api/chat/threads",
@@ -247,7 +249,7 @@ def run(base: str, username: str, password: str, output: Path,
         output.write_text(json.dumps({
             "case": "live-studio-4k-history-synthetic-100k-dom",
             "message_count": 4000,
-            "status": "PASS" if len(results) == len(SIZES) else "INCOMPLETE",
+            "status": "PASS" if succeeded else "INCOMPLETE",
             "cases": results,
         }, indent = 2, sort_keys = True) + "\n", encoding = "utf-8")
 
