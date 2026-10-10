@@ -6,7 +6,16 @@ import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
 import { AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
-import { useAdjustForContentInsertedAbove, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
+import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
+import {
+  allowsPassiveAgentScroll,
+  completeAgentHistoryReveal,
+  initialAgentHistoryNavigation,
+  interruptAgentHistoryReveal,
+  markAgentHistoryRevealPositioned,
+  requestAgentHistoryReveal,
+} from "./agent-history-navigation";
+import type { AgentHistoryNavigation } from "./agent-history-navigation";
 
 /**
  * Experimental opt-in renderer. All messages remain in the assistant-ui store
@@ -25,6 +34,7 @@ export const AgentHistoryScrollMessages: FC<{
   heights.resize(count);
   const jumpBottom = useScrollThreadToBottom();
   const correctAnchor = useAdjustForContentInsertedAbove();
+  const navigateViewport = useNavigateThreadViewport();
   const following = useRef(true);
   const countRef = useRef(count);
   countRef.current = count;
@@ -36,7 +46,11 @@ export const AgentHistoryScrollMessages: FC<{
   const [heightRevision, setHeightRevision] = useState(0);
   const [searchHit, setSearchHit] = useState(-1);
   const searchHitRef = useRef(-1);
-  const pendingReveal = useRef<number | null>(null);
+  const navigation = useRef<AgentHistoryNavigation>(initialAgentHistoryNavigation());
+  const revealFrame = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (revealFrame.current !== null) cancelAnimationFrame(revealFrame.current);
+  }, []);
   const heightFrame = useRef<number | null>(null);
   const requestHeightRevision = useCallback(() => {
     if (heightFrame.current !== null) return;
@@ -65,7 +79,7 @@ export const AgentHistoryScrollMessages: FC<{
     const next = agentWindowAtIndex(countRef.current, index, rangeRef.current);
     if (next.start === rangeRef.current.start && next.end === rangeRef.current.end) {
       if (snap === "bottom") jumpBottom("auto");
-      if (snap === "top" && viewport) viewport.scrollTop = 0;
+      if (snap === "top" && viewport) navigateViewport(0);
       return;
     }
     anchor.current = null;
@@ -82,28 +96,26 @@ export const AgentHistoryScrollMessages: FC<{
     jump.current = snap ?? null;
     rangeRef.current = next;
     setState(old => ({ ...old, range: next }));
-  }, [jumpBottom, viewportRef]);
+  }, [jumpBottom, navigateViewport, viewportRef]);
 
   const revealSearchRow = useCallback((index: number) => {
-    if (index < 0 || index >= countRef.current) return;
+    const nextIntent = requestAgentHistoryReveal(navigation.current, index, countRef.current);
+    if (nextIntent === navigation.current) return;
+    navigation.current = nextIntent;
+    // A search command is reader navigation, never permission to continue
+    // following a streaming tail. The viewport owner also detaches BEFORE
+    // writing scrollTop once the destination row has mounted.
+    following.current = false;
+    anchor.current = null;
+    jump.current = null;
     searchHitRef.current = index;
     setSearchHit(index);
-    pendingReveal.current = index;
     const next = agentWindowAtIndex(countRef.current, index, rangeRef.current);
     if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
       rangeRef.current = next;
       setState(old => ({ ...old, range: next }));
-    } else {
-      // The row already exists; there will be no range-layout effect.
-      requestAnimationFrame(() => {
-        const viewport = viewportRef.current;
-        const row = viewport?.querySelector<HTMLElement>('[data-agent-history-row="' + index + '"]');
-        if (!viewport || !row) return;
-        pendingReveal.current = null;
-        viewport.scrollTop += row.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 72;
-      });
     }
-  }, [viewportRef]);
+  }, []);
 
   // Register a search target only for the opt-in virtualized thread. The normal
   // find engine can keep its existing DOM semantics without mounting the history.
@@ -166,25 +178,41 @@ export const AgentHistoryScrollMessages: FC<{
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
-    const match = pendingReveal.current;
-    if (match !== null) {
-      const row = viewport.querySelector<HTMLElement>('[data-agent-history-row="' + match + '"]');
+    const intent = navigation.current;
+    if (intent.kind === "search") {
+      const row = viewport.querySelector<HTMLElement>('[data-agent-history-row="' + intent.row + '"]');
       if (row) {
-        pendingReveal.current = null;
-        viewport.scrollTop += row.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 72;
+        if (revealFrame.current !== null) cancelAnimationFrame(revealFrame.current);
+        // `instant` is required: the viewport has scroll-smooth styling.
+        // The common intent-aware owner detaches follow and commits scrollTop.
+        const desired = viewport.scrollTop +
+          row.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 72;
+        navigateViewport(desired);
+        navigation.current = markAgentHistoryRevealPositioned(navigation.current, intent.epoch);
+        revealFrame.current = requestAnimationFrame(() => {
+          revealFrame.current = null;
+          const active = navigation.current;
+          if (active.kind !== "search" || active.epoch !== intent.epoch) return;
+          const rendered = viewport.querySelector<HTMLElement>('[data-agent-history-row="' + intent.row + '"]');
+          const bounds = rendered?.getBoundingClientRect();
+          const viewportBounds = viewport.getBoundingClientRect();
+          const visible = !!bounds && bounds.bottom > viewportBounds.top &&
+            bounds.top < viewportBounds.bottom;
+          navigation.current = completeAgentHistoryReveal(active, intent.epoch, visible);
+        });
       }
     }
     const action = jump.current;
     jump.current = null;
     const oldAnchor = anchor.current;
     anchor.current = null;
-    if (action === "top") viewport.scrollTop = 0;
+    if (action === "top") navigateViewport(0);
     else if (action === "bottom") jumpBottom("auto");
     else if (oldAnchor) {
       const row = viewport.querySelector<HTMLElement>('[data-agent-history-row="' + oldAnchor.index + '"]');
       if (row) correctAnchor(row.getBoundingClientRect().top - oldAnchor.top);
     }
-  }, [range.start, range.end, viewportRef, jumpBottom, correctAnchor]);
+  }, [range.start, range.end, searchHit, viewportRef, jumpBottom, correctAnchor, navigateViewport]);
 
   // Passive, one sample per frame. No React work per pixel or token.
   useEffect(() => {
@@ -194,6 +222,7 @@ export const AgentHistoryScrollMessages: FC<{
       if (animation.current !== null) return;
       animation.current = requestAnimationFrame(() => {
         animation.current = null;
+        if (!allowsPassiveAgentScroll(navigation.current)) return;
         const total = countRef.current;
         if (!total) return;
         const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 24;
@@ -213,8 +242,21 @@ export const AgentHistoryScrollMessages: FC<{
       });
     };
     viewport.addEventListener("scroll", onScroll, { passive: true });
+  // Actual reader gestures supersede a pending search. Synthetic scroll
+    // events from explicit navigation and from layout measurement do not.
+    const interrupt = () => {
+      navigation.current = interruptAgentHistoryReveal(navigation.current);
+      if (revealFrame.current !== null) {
+        cancelAnimationFrame(revealFrame.current);
+        revealFrame.current = null;
+      }
+    };
+    viewport.addEventListener("wheel", interrupt, { passive: true });
+    viewport.addEventListener("touchmove", interrupt, { passive: true });
     return () => {
       viewport.removeEventListener("scroll", onScroll);
+      viewport.removeEventListener("wheel", interrupt);
+      viewport.removeEventListener("touchmove", interrupt);
       if (animation.current !== null) cancelAnimationFrame(animation.current);
       animation.current = null;
     };
@@ -263,7 +305,11 @@ export const AgentHistoryScrollMessages: FC<{
   useEffect(() => {
     gate.pruneOutside(range.start, range.end);
   }, [gate, range.start, range.end]);
-  const backToLatest = () => { following.current = true; seek(countRef.current - 1, "bottom"); };
+  const backToLatest = () => {
+    navigation.current = interruptAgentHistoryReveal(navigation.current);
+    following.current = true;
+    seek(countRef.current - 1, "bottom");
+  };
   return <div data-agent-history-scroll-list="true" role="list" className="flex min-w-0 flex-col">
     {range.end < count && <button type="button" className="sticky top-2 z-20 mx-auto rounded-full border bg-background px-3 py-1 text-xs shadow" onClick={backToLatest}>Zur neuesten Ausgabe</button>}
     <div ref={topSpacer} data-agent-history-spacer="top" aria-hidden="true" style={{ height: heights.offset(range.start), flexShrink: 0 }} />
