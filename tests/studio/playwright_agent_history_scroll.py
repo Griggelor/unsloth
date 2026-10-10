@@ -276,6 +276,7 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 # under the bounded renderer. This does NOT claim that Ctrl+A
                 # across the *entire* transcript is yet equivalent to default.
                 context.grant_permissions(["clipboard-read", "clipboard-write"])
+                page.locator('[data-agent-history-row="5"]').click()
                 selected = page.evaluate(
                     """() => {
                       const row = document.querySelector('[data-agent-history-row="5"]');
