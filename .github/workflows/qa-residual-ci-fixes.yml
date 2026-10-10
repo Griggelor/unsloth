@@ -1,0 +1,26 @@
+name: Residual CI Fix Validation
+on:
+  push:
+    branches: [qa/ci-residuals-20261010]
+permissions:
+  contents: read
+jobs:
+  formatter-and-static-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ruff==0.6.9
+      - name: Format files and report content for application to PR 7
+        run: |
+          python scripts/run_ruff_format.py tests/test_chunked_mask_block_sequence_ids.py tests/studio/playwright_queue_localization.py
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          for file in ['tests/test_chunked_mask_block_sequence_ids.py', 'tests/studio/playwright_queue_localization.py']:
+              print('QA_FILE_BEGIN::' + file)
+              print(base64.b64encode(Path(file).read_bytes()).decode())
+              print('QA_FILE_END::' + file)
+          PY
