@@ -201,24 +201,33 @@ def require_visible_search_row(page, row_index: int, label: str) -> None:
 
 
 def check_chat_header_menu(page, messages: int) -> None:
-    """Exercise the real header menu, which lives outside AssistantRuntimeProvider."""
+    """Exercise global/per-thread DOM modes through the real header menu."""
     trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
     trigger.wait_for(state = "visible", timeout = 30_000)
-    trigger.click()
-    disable = page.get_by_role("menuitem", name = "Agenten-Chatverlauf deaktivieren")
-    disable.wait_for(state = "visible", timeout = 30_000)
     if messages != 400:
+        trigger.click()
         page.keyboard.press("Escape")
         return
 
-    # On 400 rows also verify the complete user-facing opt-in/off path.
-    disable.click()
+    def choose(level: str) -> None:
+        trigger.click()
+        submenu = page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
+            has_text = "DOM-Optimierung"
+        )
+        submenu.wait_for(state = "visible", timeout = 30_000)
+        submenu.focus()
+        submenu.press("ArrowRight")
+        option = page.locator(f'[data-test-id="agent-dom-level-{level}"]')
+        option.wait_for(state = "visible", timeout = 30_000)
+        option.focus()
+        option.press("Enter")
+
+    choose("off")
     page.wait_for_function(
         """() => document.querySelector('[data-agent-history-scroll-list="true"]') === null""",
         timeout = 30_000,
     )
-    trigger.click()
-    page.get_by_role("menuitem", name = "Agenten-Chatverlauf aktivieren").click()
+    choose("inherit")
     page.wait_for_function(
         """expected => !!document.querySelector(
           '[data-agent-history-row][aria-setsize="' + expected + '"]'
@@ -226,8 +235,12 @@ def check_chat_header_menu(page, messages: int) -> None:
         arg = messages,
         timeout = 30_000,
     )
-    census(page, messages, "menu-toggled-on")
-
+    if page.evaluate(
+        """() => Object.values(JSON.parse(localStorage.getItem(
+          'unsloth_agent_chat_history_v1') || '{}').state?.domLevelByThreadId || {}).includes('off')"""
+    ):
+        raise AssertionError("Per-chat Off override remained after selecting global inheritance")
+    census(page, messages, "dom-mode-off-then-inherit")
 
 def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
     """Change row limits through the real menu, verify DOM and persisted per-chat scope."""
