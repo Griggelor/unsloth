@@ -461,9 +461,10 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                       const counter = document.querySelector(
                         '[data-find-bar-layer] [aria-live="polite"]'
                       )?.textContent?.trim() ?? '';
-                      const match = /^(\\d+)\\/(\\d+)$/.exec(counter);
-                      return !!match && Number(match[2]) === expected &&
-                        Number(match[1]) >= 1 && Number(match[1]) <= expected;
+                      const fields = counter.split('/');
+                      const current = Number(fields[0]);
+                      return fields.length === 2 && Number(fields[1]) === expected &&
+                        Number.isInteger(current) && current >= 1 && current <= expected;
                     }""",
                     "search-all-rows",
                     arg = messages,
