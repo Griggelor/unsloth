@@ -138,6 +138,8 @@ const PLUS_MENU_SETTINGS: {
 export function ChatTab() {
   const t = useT();
   const navigate = useNavigate();
+  const globalDomLevel = useAgentHistoryModeStore((state) => state.globalDomLevel);
+  const setGlobalDomLevel = useAgentHistoryModeStore((state) => state.setGlobalDomLevel);
   const globalAgentEnabled = useAgentHistoryModeStore((state) => state.globalEnabled);
   const globalAgentWindowRows = useAgentHistoryModeStore((state) => state.globalWindowRows);
   const setGlobalAgentEnabled = useAgentHistoryModeStore((state) => state.setGlobalEnabled);
@@ -485,13 +487,25 @@ export function ChatTab() {
           label={t("settings.chat.agentHistoryGlobal")}
           description={t("settings.chat.agentHistoryGlobalDescription")}
         >
-          <Switch
-            aria-label={t("settings.chat.agentHistoryGlobal")}
-            checked={globalAgentEnabled}
-            onCheckedChange={setGlobalAgentEnabled}
-          />
+          <Select
+            value={globalDomLevel ?? (globalAgentEnabled ? "low" : "off")}
+            onValueChange={value => {
+              if (value === "off" || value === "low" || value === "high") {
+                setGlobalDomLevel(value);
+              }
+            }}
+          >
+            <SelectTrigger className="w-36" aria-label={t("settings.chat.agentHistoryGlobal")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">Aus</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+            </SelectContent>
+          </Select>
         </SettingsRow>
-        <SettingsRow
+        {globalDomLevel === undefined && globalAgentEnabled && <SettingsRow
           label={t("settings.chat.agentHistoryRows")}
           description={t("settings.chat.agentHistoryRowsDescription")}
         >
@@ -513,7 +527,7 @@ export function ChatTab() {
               ))}
             </SelectContent>
           </Select>
-        </SettingsRow>
+        </SettingsRow>}
         <SettingsRow
           label={t("settings.chat.webSearch.images")}
           description={t("settings.chat.webSearch.imagesDescription")}
