@@ -307,6 +307,20 @@ export const AgentHistoryScrollMessages: FC<{
   }, [viewportRef, heights, seek]);
 
   const budgetFrame = useRef<number | null>(null);
+  const lastBudgetProbe = useRef(0);
+  const scheduleBudgetRebalance = useCallback(() => {
+    if (!budget || budgetFrame.current !== null) return;
+    budgetFrame.current = requestAnimationFrame(() => {
+      budgetFrame.current = null;
+      const target = following.current ? countRef.current - 1 : visibleIndex.current;
+      const next = agentBudgetWindow(countRef.current, target, costs, budget);
+      if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
+        if (following.current) jump.current = "bottom";
+        rangeRef.current = next;
+        setState(old => ({ ...old, range: next }));
+      }
+    });
+  }, [budget, costs]);
   useEffect(() => () => {
     if (budgetFrame.current !== null) cancelAnimationFrame(budgetFrame.current);
   }, []);
@@ -323,18 +337,8 @@ export const AgentHistoryScrollMessages: FC<{
         changed = costs.measure(index, el.querySelectorAll("*").length + 1) || changed;
       }
     }
-    if (changed && budgetFrame.current === null) {
-      budgetFrame.current = requestAnimationFrame(() => {
-        budgetFrame.current = null;
-        const target = following.current ? countRef.current - 1 : visibleIndex.current;
-        const next = agentBudgetWindow(countRef.current, target, costs, budget);
-        if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
-          rangeRef.current = next;
-          setState(old => ({ ...old, range: next }));
-        }
-      });
-    }
-  }, [budget, costs, range.start, range.end, viewportRef]);
+    if (changed) scheduleBudgetRebalance();
+  }, [budget, costs, range.start, range.end, viewportRef, scheduleBudgetRebalance]);
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
@@ -346,7 +350,18 @@ export const AgentHistoryScrollMessages: FC<{
         const raw = row.closest<HTMLElement>("[data-agent-history-row]")?.dataset.agentHistoryRow;
         if (raw === undefined) continue;
         const index = Number(raw);
-        if (Number.isSafeInteger(index)) changed = heights.measure(index, row.getBoundingClientRect().height) || changed;
+        if (Number.isSafeInteger(index)) {
+          changed = heights.measure(index, row.getBoundingClientRect().height) || changed;
+          // Tool output may grow within an already-mounted message. Recheck at
+          // most once per second; never schedule a React update per token.
+          if (budget && performance.now() - lastBudgetProbe.current >= 1_000) {
+            lastBudgetProbe.current = performance.now();
+            const wrapper = row.closest<HTMLElement>("[data-agent-history-row]");
+            if (wrapper && costs.measure(index, wrapper.querySelectorAll("*").length + 1)) {
+              scheduleBudgetRebalance();
+            }
+          }
+        }
       }
       if (changed) requestHeightRevision();
     });
@@ -360,7 +375,7 @@ export const AgentHistoryScrollMessages: FC<{
       observer.observe(row);
     }
     return () => observer.disconnect();
-  }, [range.start, range.end, count, viewportRef, heights, requestHeightRevision]);
+  }, [range.start, range.end, count, viewportRef, heights, requestHeightRevision, budget, costs, scheduleBudgetRebalance]);
 
   // A ResizeObserver measurement must update both spacers, not merely the ledger.
   void heightRevision;
