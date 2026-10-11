@@ -36,8 +36,11 @@ export function agentWindowAtIndex(
   if (count <= windowRows) return { start: 0, end: count };
   const target = clamp(Math.floor(index), 0, count - 1);
   const maxRows = windowRows === AGENT_INITIAL_ROWS ? AGENT_MAX_ROWS : windowRows;
+  // A partially staged window is not a stable reader window. If staging was
+  // interrupted, recalculate a full window rather than retaining a lone row.
   if (current && current.start >= 0 && current.end <= count &&
-      current.end > current.start && current.end - current.start <= maxRows &&
+      current.end > current.start && current.end - current.start >= windowRows &&
+      current.end - current.start <= maxRows &&
       target >= current.start + Math.min(8, Math.floor((current.end-current.start)/4)) &&
       target < current.end - Math.min(8, Math.floor((current.end-current.start)/4))) {
     return current;
