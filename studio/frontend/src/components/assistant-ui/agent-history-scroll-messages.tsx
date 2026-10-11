@@ -150,6 +150,7 @@ export const AgentHistoryScrollMessages: FC<{
     const nextIntent = requestAgentHistoryReveal(navigation.current, index, countRef.current);
     if (nextIntent === navigation.current) return;
     navigation.current = nextIntent;
+    staged.current = null;
     // A search command is reader navigation, never permission to continue
     // following a streaming tail. The viewport owner also detaches BEFORE
     // writing scrollTop once the destination row has mounted.
@@ -282,7 +283,7 @@ export const AgentHistoryScrollMessages: FC<{
       if (animation.current !== null) return;
       animation.current = requestAnimationFrame(() => {
         animation.current = null;
-        if (!allowsPassiveAgentScroll(navigation.current)) return;
+        if (!allowsPassiveAgentScroll(navigation.current) || staged.current !== null) return;
         const total = countRef.current;
         if (!total) return;
         const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 24;
@@ -306,6 +307,7 @@ export const AgentHistoryScrollMessages: FC<{
     // Actual reader gestures supersede a pending search. Synthetic scroll
     // events from explicit navigation and from layout measurement do not.
     const interrupt = () => {
+      staged.current = null;
       navigation.current = interruptAgentHistoryReveal(navigation.current);
       if (revealFrame.current !== null) {
         cancelAnimationFrame(revealFrame.current);
@@ -368,6 +370,7 @@ export const AgentHistoryScrollMessages: FC<{
   }, [gate, range.start, range.end]);
   const backToLatest = () => {
     navigation.current = interruptAgentHistoryReveal(navigation.current);
+    staged.current = null;
     following.current = true;
     seek(countRef.current - 1, "bottom");
   };
