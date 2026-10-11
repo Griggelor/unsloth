@@ -457,9 +457,14 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 find_input.fill("unique-fixture")
                 require_search_state(
                     page,
-                    """expected => document.querySelector(
-                      '[data-find-bar-layer] [aria-live="polite"]'
-                    )?.textContent?.includes('1/' + expected) ?? false""",
+                    """expected => {
+                      const counter = document.querySelector(
+                        '[data-find-bar-layer] [aria-live="polite"]'
+                      )?.textContent?.trim() ?? '';
+                      const match = /^(\\d+)\\/(\\d+)$/.exec(counter);
+                      return !!match && Number(match[2]) === expected &&
+                        Number(match[1]) >= 1 && Number(match[1]) <= expected;
+                    }""",
                     "search-all-rows",
                     arg = messages,
                 )
