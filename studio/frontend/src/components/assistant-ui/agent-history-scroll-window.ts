@@ -50,21 +50,24 @@ export function agentWindowAtIndex(
 }
 
 /**
- * Admit no more than one previously unmounted message per animation frame.
- * Call only while staging a distant passive scroll seek; search and explicit
- * end-of-thread navigation keep their existing immediate behavior.
+ * Admit at most two previously unmounted messages per animation frame.
+ * One extra DOM/style/layout pass per row raised total work during 200k/400k
+ * stress runs; admitting a small batch balances latency against long tasks.
+ * Only use for a distant passive scroll seek.
  */
 export function nextProgressiveAgentWindow(
   current: AgentScrollWindow,
   destination: AgentScrollWindow,
+  maxAddedRows = 2,
 ): AgentScrollWindow {
-  if (current.end < destination.end) {
-    return { start: current.start, end: current.end + 1 };
+  if (!Number.isSafeInteger(maxAddedRows) || maxAddedRows < 1) return current;
+  let { start, end } = current;
+  for (let added = 0; added < maxAddedRows; added++) {
+    if (start > destination.start) start--;
+    else if (end < destination.end) end++;
+    else break;
   }
-  if (current.start > destination.start) {
-    return { start: current.start - 1, end: current.end };
-  }
-  return current;
+  return { start, end };
 }
 
 /** Appending at the tail never shifts the mounted rows on the first append. */
