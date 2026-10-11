@@ -211,9 +211,7 @@ def check_chat_header_menu(page, messages: int) -> None:
 
     def choose(level: str) -> None:
         trigger.click()
-        submenu = page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
-            has_text = "DOM-Optimierung"
-        )
+        submenu = page.locator('[data-test-id="agent-dom-level-trigger"]')
         submenu.wait_for(state = "visible", timeout = 30_000)
         submenu.focus()
         submenu.press("ArrowRight")
