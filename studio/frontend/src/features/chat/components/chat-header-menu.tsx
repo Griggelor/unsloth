@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useChatFavoritesStore } from "@/features/library/chats/favorites-store";
 import { useAgentHistoryModeStore } from "../stores/agent-history-mode-store";
-import { agentHistoryEnabledFor, agentHistoryWindowFor } from "../stores/agent-history-preference-policy";
+import { agentHistoryLevelFor, agentHistoryWindowFor } from "../stores/agent-history-preference-policy";
 import {
   AGENT_WINDOW_SIZES,
   isAgentWindowSize,
@@ -166,9 +166,11 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
       state.runningByThreadId[menu.item.id] === true ||
       state.runningByThreadId.__default === true,
   );
-  const agentHistoryEnabled = useAgentHistoryModeStore(
-    (state) => agentHistoryEnabledFor(state, menu.item.id),
+  const globalDomLevel = useAgentHistoryModeStore(state => state.globalDomLevel);
+  const agentHistoryLevel = useAgentHistoryModeStore(
+    (state) => agentHistoryLevelFor(state, menu.item.id),
   );
+  const agentHistoryEnabled = agentHistoryLevel !== "off";
   const agentWindowRows = useAgentHistoryModeStore(
     (state) => agentHistoryWindowFor(state, menu.item.id),
   );
@@ -240,7 +242,39 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
         )}
       </Item>
       <DropdownMenuSeparator className="mx-3" />
-      <Item
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger data-test-id="agent-dom-level-trigger" disabled={running} className="gap-2.5">
+          <HugeiconsIcon icon={LayerIcon} strokeWidth={1.75} className={ICON} />
+          {t("settings.chat.agentHistoryChatMode")}: {agentHistoryLevel === "legacy" ? t("settings.chat.agentHistoryLegacy") : agentHistoryLevel === "off" ? t("settings.chat.agentHistoryModeOff") : agentHistoryLevel === "low" ? t("settings.chat.agentHistoryModeLow") : t("settings.chat.agentHistoryModeHigh")}
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className={cn(MENU, "w-60")}>
+          <DropdownMenuLabel className={LABEL}>{t("settings.chat.agentHistoryChatMode")}</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={useAgentHistoryModeStore.getState().domLevelByThreadId?.[menu.item.id] ?? "inherit"}
+            onValueChange={value => {
+              if (value === "inherit" || value === "off" ||
+                  value === "low" || value === "high") {
+                useAgentHistoryModeStore.getState().setThreadDomLevel(
+                  menu.item.id, value === "inherit" ? null : value,
+                );
+              }
+            }}
+          >
+            {([
+              ["inherit", t("settings.chat.agentHistoryInherit")],
+              ["off", t("settings.chat.agentHistoryModeOff")],
+              ["low", t("settings.chat.agentHistoryModeLow")],
+              ["high", t("settings.chat.agentHistoryModeHigh")],
+            ] as const).map(([value, label]) => (
+              <DropdownMenuRadioItem key={value} value={value}
+                data-test-id={`agent-dom-level-${value}`}>
+                {label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+      {globalDomLevel === undefined && <Item
         icon={agentHistoryEnabled ? ViewIcon : ViewOffSlashIcon}
         disabled={running}
         onSelect={() =>
@@ -250,8 +284,8 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
         {agentHistoryEnabled
           ? "Agenten-Chatverlauf deaktivieren"
           : "Agenten-Chatverlauf aktivieren"}
-      </Item>
-      {agentHistoryEnabled && (
+      </Item>}
+      {agentHistoryLevel === "legacy" && (
         <DropdownMenuSub>
           <DropdownMenuSubTrigger disabled={running} className="gap-2.5">
             <HugeiconsIcon icon={LayerIcon} strokeWidth={1.75} className={ICON} />

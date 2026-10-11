@@ -2577,6 +2577,12 @@ export const sv = {
       },
     },
     chat: {
+      agentHistoryModeOff: "Av",
+      agentHistoryModeLow: "Låg",
+      agentHistoryModeHigh: "Hög",
+      agentHistoryChatMode: "DOM-optimering",
+      agentHistoryInherit: "Använd global inställning",
+      agentHistoryLegacy: "Tidigare inställning",
       agentHistoryGlobal: "Virtualisera chatthistorik",
       agentHistoryGlobalDescription: "Rendera bara några få meddelanden åt gången i alla chattar. Hela historiken finns kvar; undantag per chatt har företräde.",
       agentHistoryRows: "Synliga meddelanden per chatt",

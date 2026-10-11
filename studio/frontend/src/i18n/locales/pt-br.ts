@@ -2422,6 +2422,12 @@ export const ptBR = {
       },
     },
     chat: {
+      agentHistoryModeOff: "Desativado",
+      agentHistoryModeLow: "Baixo",
+      agentHistoryModeHigh: "Alto",
+      agentHistoryChatMode: "Otimização do DOM",
+      agentHistoryInherit: "Usar configuração global",
+      agentHistoryLegacy: "Configuração anterior",
       agentHistoryGlobal: "Virtualizar o histórico de conversas",
       agentHistoryGlobalDescription: "Renderizar apenas algumas mensagens de cada vez em todas as conversas. O histórico completo permanece acessível; as exceções por conversa têm prioridade.",
       agentHistoryRows: "Mensagens visíveis por conversa",

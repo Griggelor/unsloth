@@ -2400,6 +2400,12 @@ export const it = {
       },
     },
     chat: {
+      agentHistoryModeOff: "Disattivato",
+      agentHistoryModeLow: "Basso",
+      agentHistoryModeHigh: "Alto",
+      agentHistoryChatMode: "Ottimizzazione DOM",
+      agentHistoryInherit: "Usa impostazione globale",
+      agentHistoryLegacy: "Impostazione precedente",
       agentHistoryGlobal: "Virtualizza la cronologia delle chat",
       agentHistoryGlobalDescription: "Mostra solo pochi messaggi alla volta in ogni chat. La cronologia completa resta accessibile; prevalgono le eccezioni per singola chat.",
       agentHistoryRows: "Messaggi visibili per chat",

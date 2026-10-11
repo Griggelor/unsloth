@@ -36,7 +36,7 @@ import { QueueResumeIcon } from "@/components/assistant-ui/queue-resume-icon";
 import { ProgressiveMessages } from "@/components/assistant-ui/progressive-messages";
 import { AgentHistoryScrollMessages } from "@/components/assistant-ui/agent-history-scroll-messages";
 import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
-import { agentHistoryEnabledFor, agentHistoryWindowFor } from "@/features/chat/stores/agent-history-preference-policy";
+import { agentHistoryLevelFor, agentHistoryWindowFor } from "@/features/chat/stores/agent-history-preference-policy";
 import { MessageMenuTime } from "@/components/assistant-ui/message-menu-time";
 import { UserMessageActionBar, UserMessageFooter } from "@/components/assistant-ui/user-message-actions";
 import { useActionBarFocusReveal } from "@/components/assistant-ui/use-action-bar-focus-reveal";
@@ -1959,9 +1959,10 @@ export const Thread: FC<{
   );
   const activeThreadId = useChatRuntimeStore((s) => s.activeThreadId);
   const threadId = targetThreadId ?? activeThreadId ?? null;
-  const agentHistoryEnabled = useAgentHistoryModeStore((state) =>
-    agentHistoryEnabledFor(state, threadId),
+  const agentHistoryLevel = useAgentHistoryModeStore((state) =>
+    agentHistoryLevelFor(state, threadId),
   );
+  const agentHistoryEnabled = agentHistoryLevel !== "off";
   const agentWindowRows = useAgentHistoryModeStore((state) =>
     agentHistoryWindowFor(state, threadId),
   );
@@ -2222,6 +2223,7 @@ export const Thread: FC<{
                 resetKey={runtimeThreadId}
                 viewportRef={viewportElRef}
                 windowRows={agentWindowRows}
+                domLevel={agentHistoryLevel === "low" || agentHistoryLevel === "high" ? agentHistoryLevel : undefined}
               />
             ) : (
               <ProgressiveMessages
