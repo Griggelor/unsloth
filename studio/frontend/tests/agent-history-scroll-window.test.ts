@@ -134,20 +134,23 @@ test("small windows do not expand during append, legacy 32 may expand to 96", ()
   }
 });
 
-test("distant passive seeks can admit one new mounted row per frame", () => {
+test("distant passive seeks admit at most two new rows per frame", () => {
   const destination = agentWindowAtIndex(1000, 250, undefined, 5);
   let current = { start: 250, end: 251 };
   assert.ok(destination.start <= 250 && destination.end > 250);
   let steps = 0;
   while (current.start !== destination.start || current.end !== destination.end) {
     const next = nextProgressiveAgentWindow(current, destination);
-    assert.equal((next.end - next.start) - (current.end - current.start), 1);
+    const admitted = (next.end - next.start) - (current.end - current.start);
+    assert.ok(admitted >= 1 && admitted <= 2);
     assert.ok(next.start <= 250 && next.end > 250);
     current = next;
     steps++;
-    assert.ok(steps <= 4);
+    assert.ok(steps <= 2);
   }
   assert.deepEqual(current, destination);
-  assert.equal(steps, 4);
+  assert.equal(steps, 2);
   assert.deepEqual(nextProgressiveAgentWindow(current, destination), destination);
+  assert.deepEqual(nextProgressiveAgentWindow({ start: 250, end: 251 }, destination, 0),
+    { start: 250, end: 251 });
 });
