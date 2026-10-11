@@ -234,7 +234,9 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
     trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
 
     def choose(size: int) -> None:
+        before_click = trigger.get_attribute("aria-expanded")
         trigger.click()
+        after_click = trigger.get_attribute("aria-expanded")
         submenu = page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
             has_text = "Agentenfenster:"
         )
@@ -265,6 +267,8 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
                 })""")
             except Exception as snapshot_error:
                 diagnostic = {"snapshotError": str(snapshot_error)}
+            diagnostic["triggerBeforeClick"] = before_click
+            diagnostic["triggerAfterClick"] = after_click
             evidence_dir = Path("logs/agent-history")
             evidence_dir.mkdir(parents = True, exist_ok = True)
             (evidence_dir / "menu-submenu-failure.json").write_text(
