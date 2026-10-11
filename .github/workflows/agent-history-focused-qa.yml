@@ -185,6 +185,13 @@ jobs:
           python tests/studio/playwright_agent_history_foreground_burst.py \
             --url http://127.0.0.1:18899 --password "$AGENT_HISTORY_PW" \
             --output logs/agent-history/foreground-10s.json
+      - name: Print exact pinned Ruff formatting patch for foreground scenario
+        if: matrix.suite == 'foreground-10s'
+        run: |
+          python -m pip install 'ruff==0.6.9'
+          python scripts/run_ruff_format.py tests/studio/playwright_agent_history_foreground_burst.py
+          git --no-pager diff -- tests/studio/playwright_agent_history_foreground_burst.py
+          git diff --exit-code -- tests/studio/playwright_agent_history_foreground_burst.py
       - name: Cleanup and diagnostics
         if: always()
         run: |
