@@ -73,14 +73,50 @@ def check_settings(page):
     option = page.get_by_role("option", name = re.compile(r"^(⌘|Ctrl) \+ Enter always$"))
     modified_label = option.inner_text()
     option.click()
+    # Record native key/input/focus events on this disposable fixture. Do not
+    # relax the typed-text assertion: a lost character is a real regression.
+    # The trace distinguishes browser dispatch, focus loss and React reconciliation.
+    page.evaluate("""() => {
+      const events = [];
+      window.__composerInputTrace = events;
+      for (const kind of [
+        'focusin', 'focusout', 'keydown', 'keyup', 'beforeinput', 'input',
+        'compositionstart', 'compositionend'
+      ]) {
+        document.addEventListener(kind, event => {
+          const target = event.target;
+          const active = document.activeElement;
+          const editor = document.querySelector('textarea[aria-label="Message"]');
+          events.push({
+            kind, key: event.key ?? null, data: event.data ?? null,
+            inputType: event.inputType ?? null,
+            target: target?.getAttribute?.('aria-label') ?? target?.tagName ?? null,
+            active: active?.getAttribute?.('aria-label') ?? active?.tagName ?? null,
+            value: editor?.value ?? null,
+            timeMs: Math.round(performance.now()),
+          });
+          if (events.length > 250) events.shift();
+        }, true);
+      }
+    }""")
     editor.fill("First line")
     editor.press("End")
     editor.press("Enter")
-    # Chrome 152 on macOS dropped the final keystrokes from type() while
-    # React was updating the controlled composer input. Deliver distinct
-    # key events with a small gap so this asserts the real multiline shortcut.
     editor.press_sequentially("Second line", delay = 30)
-    expect(editor).to_have_value("First line\nSecond line")
+    # Closing the Radix send-shortcut select must never reclaim focus from
+    # the composer during later text entry (observed on macOS Edge/Chrome).
+    expect(editor).to_be_focused()
+    try:
+        expect(editor).to_have_value("First line\nSecond line")
+    except AssertionError:
+        diagnostic = page.evaluate("""() => ({
+          active: document.activeElement?.getAttribute?.('aria-label') ??
+            document.activeElement?.tagName ?? null,
+          value: document.querySelector('textarea[aria-label="Message"]')?.value ?? null,
+          events: window.__composerInputTrace ?? []
+        })""")
+        print("Composer lost-keystroke evidence:", json.dumps(diagnostic), flush = True)
+        raise
     expect(submitted).to_have_text("[]")
     editor.press("Meta+Enter")
     expect(editor).to_have_value("")

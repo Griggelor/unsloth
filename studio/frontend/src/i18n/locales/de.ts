@@ -2443,6 +2443,10 @@ export const de = {
       },
     },
     chat: {
+      agentHistoryGlobal: "Chatverlauf virtualisieren",
+      agentHistoryGlobalDescription: "In allen Chats nur wenige Nachrichten gleichzeitig rendern. Die gesamte Historie bleibt erreichbar; Ausnahmen pro Chat haben Vorrang.",
+      agentHistoryRows: "Sichtbare Nachrichten pro Chat",
+      agentHistoryRowsDescription: "Standardgröße des virtuellen Fensters (5 empfohlen). Individuelle Chat-Einstellungen haben Vorrang.",
       groups: {
         conversations: { title: "Gespräche" },
         files: { title: "Dateien und Einfügen" },

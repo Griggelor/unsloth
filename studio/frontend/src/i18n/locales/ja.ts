@@ -2391,6 +2391,10 @@ export const ja = {
       },
     },
     chat: {
+      agentHistoryGlobal: "チャット履歴を仮想化",
+      agentHistoryGlobalDescription: "各チャットで一度に表示するメッセージを少数に限定します。履歴全体は保持され、チャット個別の設定が優先されます。",
+      agentHistoryRows: "チャットごとの表示メッセージ数",
+      agentHistoryRowsDescription: "仮想ウィンドウの初期サイズ（推奨：5）。チャット個別の設定が優先されます。",
       groups: {
         conversations: { title: "会話" },
         files: { title: "ファイルと貼り付け" },

@@ -2440,6 +2440,10 @@ export const fr = {
       },
     },
     chat: {
+      agentHistoryGlobal: "Virtualiser l’historique des discussions",
+      agentHistoryGlobalDescription: "N’afficher qu’un petit nombre de messages dans chaque discussion. L’historique reste accessible ; les exceptions par discussion sont prioritaires.",
+      agentHistoryRows: "Messages visibles par discussion",
+      agentHistoryRowsDescription: "Nombre de messages affichés par défaut (5 recommandé). Les réglages propres à chaque discussion sont prioritaires.",
       groups: {
         conversations: { title: "Conversations" },
         files: { title: "Fichiers et collage" },
