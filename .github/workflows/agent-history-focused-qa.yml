@@ -52,6 +52,12 @@ jobs:
           python scripts/run_ruff_format.py tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
           git diff -- tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
           git diff --exit-code -- tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
+      - name: Report pinned Ruff formatter fixed point for foreground test
+        run: |
+          python -m pip install 'ruff==0.6.9'
+          python scripts/run_ruff_format.py tests/studio/playwright_agent_history_foreground_burst.py
+          git --no-pager diff -- tests/studio/playwright_agent_history_foreground_burst.py
+          git diff --exit-code -- tests/studio/playwright_agent_history_foreground_burst.py
       - name: Report pinned formatting patch for synthetic stress fixtures
         run: |
           python -m pip install 'ruff==0.6.9'
