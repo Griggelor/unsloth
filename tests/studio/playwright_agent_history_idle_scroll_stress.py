@@ -89,7 +89,7 @@ def sample(page, count: int, label: str) -> dict:
     page.wait_for_function(
         """() => {
       const rows = [...document.querySelectorAll('[data-agent-history-row]')];
-      return rows.length > 0 && rows.every(r => r.querySelector('[data-agent-idle-fixture]'));
+      return rows.length === 5 && rows.every(r => r.querySelector('[data-agent-idle-fixture]'));
     }""",
         timeout = 30000,
     )
