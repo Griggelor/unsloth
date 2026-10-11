@@ -133,6 +133,38 @@ def deltas(before: dict, after: dict) -> dict:
     }
 
 
+def gc_retention_sample(cdp, page, messages: int, cap: int, label: str) -> dict:
+    """Only numeric telemetry: never save heap snapshots or private DOM content."""
+    before = metrics(cdp)
+    # HeapProfiler GC is test-only CDP instrumentation, not application behavior.
+    cdp.send("HeapProfiler.collectGarbage")
+    page.wait_for_timeout(100)
+    after = metrics(cdp)
+    counters = cdp.send("Memory.getDOMCounters")
+    current = state(page, messages, cap, label)
+    used = after.get("JSHeapUsedSize")
+    total = after.get("JSHeapTotalSize")
+    if used is None or not isinstance(counters.get("nodes"), int):
+        raise AssertionError("Required CDP heap/DOM counters unavailable")
+    return {
+        "checkpoint": label,
+        "visibleIndices": current["indices"],
+        "liveDocumentNodes": current["totalNodes"],
+        "chromiumDOMNodesAfterGC": counters["nodes"],
+        "chromiumDocumentsAfterGC": counters["documents"],
+        "chromiumListenersAfterGC": counters["jsEventListeners"],
+        "jsHeapUsedBytesAfterGC": int(used),
+        "jsHeapTotalBytesAfterGC": int(total) if total is not None else None,
+        "jsHeapUsedBeforeGC": int(before.get("JSHeapUsedSize", 0)),
+        "gcObservationMs": round(
+            1000 * (after.get("TaskDuration", 0) - before.get("TaskDuration", 0)),
+            2,
+        ),
+        "totalMounts": current["mounts"],
+        "cumulativeElementsCreated": current["createdElements"],
+    }
+
+
 def state(page, messages: int, limit: int, label: str) -> dict:
     page.wait_for_function(
         """() => {
@@ -181,6 +213,7 @@ def run(
     messages: int,
     elements: int,
     rounds: int,
+    retention_cycles: int,
 ) -> dict:
     from playwright.sync_api import sync_playwright
 
@@ -200,6 +233,9 @@ def run(
         "modelLoaded": False,
         "windowsUnlockTested": False,
         "measurements": [],
+        "retention": [],
+        "retentionCycles": retention_cycles,
+        "retentionCountersNote": "CDP process-wide DOM counters include objects beyond the live document; they are not an exact detached-node count.",
         "browserErrors": 0,
     }
     thread_id = None
@@ -306,6 +342,38 @@ def run(
                     value["indices"][-1] == messages - 1 for value in measurements
                 ):
                     raise AssertionError("End of transcript unreachable")
+                if retention_cycles:
+                    # Always compare the same mounted five-row tail after GC.
+                    # A changing viewport would conflate legit live DOM and leaks.
+                    baseline = gc_retention_sample(
+                        cdp, page, messages, cap, "baseline-tail"
+                    )
+                    result["retention"].append(baseline)
+                    checkpoints = {10, 20, retention_cycles}
+                    for iteration in range(1, retention_cycles + 1):
+                        scroll(page, 0.0)
+                        state(page, messages, cap, f"retention-top-{iteration}")
+                        scroll(page, 1.0)
+                        state(page, messages, cap, f"retention-tail-{iteration}")
+                        if iteration in checkpoints:
+                            observation = gc_retention_sample(
+                                cdp, page, messages, cap, f"after-{iteration}"
+                            )
+                            if observation["visibleIndices"] != baseline["visibleIndices"]:
+                                raise AssertionError(
+                                    "Retention snapshots must use identical mounted rows"
+                                )
+                            observation["heapDeltaFromBaselineBytes"] = (
+                                observation["jsHeapUsedBytesAfterGC"]
+                                - baseline["jsHeapUsedBytesAfterGC"]
+                            )
+                            observation["domCounterDeltaFromBaseline"] = (
+                                observation["chromiumDOMNodesAfterGC"]
+                                - baseline["chromiumDOMNodesAfterGC"]
+                            )
+                            result["retention"].append(observation)
+                        if errors:
+                            raise AssertionError("Browser error during GC retention cycles")
                 persisted = auth_request_json(
                     auth, f"{base}/api/chat/threads/{thread_id}/messages"
                 )
@@ -341,8 +409,11 @@ def main() -> None:
     parser.add_argument("--messages", type=int, default=1000)
     parser.add_argument("--elements", type=int, choices=(50000, 200000, 400000), default=200000)
     parser.add_argument("--rounds", type=int, default=1)
+    parser.add_argument("--retention-cycles", type=int, default=0)
     args = parser.parse_args()
-    if not (1000 <= args.messages <= 2000 and 1 <= args.rounds <= 2):
+    if not (1000 <= args.messages <= 2000 and 1 <= args.rounds <= 2
+            and 0 <= args.retention_cycles <= 40
+            and (args.retention_cycles == 0 or args.elements == 50000)):
         parser.error("Stress scenario outside bounded range")
     outcome = run(
         args.url,
@@ -352,6 +423,7 @@ def main() -> None:
         args.messages,
         args.elements,
         args.rounds,
+        args.retention_cycles,
     )
     samples = outcome["measurements"]
     print(
@@ -362,6 +434,7 @@ def main() -> None:
                 "maxLiveDOM": max((x["totalNodes"] for x in samples), default=0),
                 "maxListDOM": max((x["listNodes"] for x in samples), default=0),
                 "errors": outcome["browserErrors"],
+                "retentionSamples": len(outcome["retention"]),
             }
         ),
         flush=True,
