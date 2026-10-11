@@ -46,6 +46,9 @@ export const AgentHistoryScrollMessages: FC<{
   const anchor = useRef<{ index: number; top: number } | null>(null);
   const jump = useRef<"top" | "bottom" | null>(null);
   const staged = useRef<{ destination: AgentScrollWindow; target: number } | null>(null);
+  // A real scroll received during staging must be sampled after the last
+  // window commit, never allowed to abort staging with only one row mounted.
+  const deferredScroll = useRef(false);
   const [state, setState] = useState(() => ({
     key: resetKey, count, windowRows, range: latestAgentWindow(count, windowRows),
   }));
@@ -146,11 +149,25 @@ export const AgentHistoryScrollMessages: FC<{
     return () => cancelAnimationFrame(frame);
   }, [range.start, range.end, viewportRef]);
 
+  useLayoutEffect(() => {
+    if (staged.current !== null || !deferredScroll.current) return;
+    deferredScroll.current = false;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    // Read the final layout instead of using a stale coordinate from the
+    // temporarily one-row document. React has now committed the full window.
+    const frame = requestAnimationFrame(() => {
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [range.start, range.end, viewportRef]);
+
   const revealSearchRow = useCallback((index: number) => {
     const nextIntent = requestAgentHistoryReveal(navigation.current, index, countRef.current);
     if (nextIntent === navigation.current) return;
     navigation.current = nextIntent;
     staged.current = null;
+    deferredScroll.current = false;
     // A search command is reader navigation, never permission to continue
     // following a streaming tail. The viewport owner also detaches BEFORE
     // writing scrollTop once the destination row has mounted.
@@ -283,7 +300,11 @@ export const AgentHistoryScrollMessages: FC<{
       if (animation.current !== null) return;
       animation.current = requestAnimationFrame(() => {
         animation.current = null;
-        if (!allowsPassiveAgentScroll(navigation.current) || staged.current !== null) return;
+        if (!allowsPassiveAgentScroll(navigation.current)) return;
+        if (staged.current !== null) {
+          deferredScroll.current = true;
+          return;
+        }
         const total = countRef.current;
         if (!total) return;
         const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 24;
@@ -307,7 +328,8 @@ export const AgentHistoryScrollMessages: FC<{
     // Actual reader gestures supersede a pending search. Synthetic scroll
     // events from explicit navigation and from layout measurement do not.
     const interrupt = () => {
-      staged.current = null;
+      // Do not abort a partially rendered window on a second wheel/touch
+      // impulse; its completion is required for navigation correctness.
       navigation.current = interruptAgentHistoryReveal(navigation.current);
       if (revealFrame.current !== null) {
         cancelAnimationFrame(revealFrame.current);
@@ -371,6 +393,7 @@ export const AgentHistoryScrollMessages: FC<{
   const backToLatest = () => {
     navigation.current = interruptAgentHistoryReveal(navigation.current);
     staged.current = null;
+    deferredScroll.current = false;
     following.current = true;
     seek(countRef.current - 1, "bottom");
   };
