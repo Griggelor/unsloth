@@ -242,6 +242,7 @@ def check_chat_header_menu(page, messages: int) -> None:
         raise AssertionError("Per-chat Off override remained after selecting global inheritance")
     census(page, messages, "dom-mode-off-then-inherit")
 
+
 def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
     """Change row limits through the real menu, verify DOM and persisted per-chat scope."""
     trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
