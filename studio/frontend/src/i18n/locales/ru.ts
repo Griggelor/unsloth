@@ -2418,6 +2418,12 @@ export const ru = {
       },
     },
     chat: {
+      agentHistoryModeOff: "Выкл.",
+      agentHistoryModeLow: "Низкий",
+      agentHistoryModeHigh: "Высокий",
+      agentHistoryChatMode: "Оптимизация DOM",
+      agentHistoryInherit: "Использовать общие настройки",
+      agentHistoryLegacy: "Предыдущая настройка",
       agentHistoryGlobal: "Виртуализация истории чата",
       agentHistoryGlobalDescription: "Отображать лишь несколько сообщений одновременно во всех чатах. Вся история доступна; настройки отдельных чатов имеют приоритет.",
       agentHistoryRows: "Видимые сообщения в чате",
