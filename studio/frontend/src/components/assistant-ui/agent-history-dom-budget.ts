@@ -10,7 +10,8 @@ export const AGENT_DOM_MAX_ROWS = 32;
 
 export class AgentDomCostIndex {
   private costs = new Map<number, number>();
-  constructor(private size: number) {}
+  private size: number;
+  constructor(size: number) { this.size = size; }
   resize(size: number) {
     this.size = size;
     for (const key of this.costs.keys()) if (key >= size) this.costs.delete(key);
