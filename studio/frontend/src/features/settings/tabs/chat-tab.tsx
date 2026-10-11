@@ -2,6 +2,8 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 
 import { Button } from "@/components/ui/button";
+import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
+import { AGENT_WINDOW_SIZES, isAgentWindowSize } from "@/components/assistant-ui/agent-history-scroll-window";
 import {
   Select,
   SelectContent,
@@ -136,6 +138,10 @@ const PLUS_MENU_SETTINGS: {
 export function ChatTab() {
   const t = useT();
   const navigate = useNavigate();
+  const globalAgentEnabled = useAgentHistoryModeStore((state) => state.globalEnabled);
+  const globalAgentWindowRows = useAgentHistoryModeStore((state) => state.globalWindowRows);
+  const setGlobalAgentEnabled = useAgentHistoryModeStore((state) => state.setGlobalEnabled);
+  const setGlobalAgentWindowRows = useAgentHistoryModeStore((state) => state.setGlobalWindowRows);
   const plusPins = usePlusMenuPrefsStore((state) => state.pins);
   const togglePlusPin = usePlusMenuPrefsStore((state) => state.togglePin);
   const autoTitle = useChatRuntimeStore((state) => state.autoTitle);
@@ -475,6 +481,39 @@ export function ChatTab() {
       </SettingsSection>
 
       <SettingsSection title={t("settings.chat.groups.display.title")}>
+        <SettingsRow
+          label={t("settings.chat.agentHistoryGlobal")}
+          description={t("settings.chat.agentHistoryGlobalDescription")}
+        >
+          <Switch
+            aria-label={t("settings.chat.agentHistoryGlobal")}
+            checked={globalAgentEnabled}
+            onCheckedChange={setGlobalAgentEnabled}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t("settings.chat.agentHistoryRows")}
+          description={t("settings.chat.agentHistoryRowsDescription")}
+        >
+          <Select
+            value={String(globalAgentWindowRows)}
+            onValueChange={(value) => {
+              const rows = Number(value);
+              if (isAgentWindowSize(rows)) setGlobalAgentWindowRows(rows);
+            }}
+          >
+            <SelectTrigger className="w-36" aria-label={t("settings.chat.agentHistoryRows")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {AGENT_WINDOW_SIZES.map((rows) => (
+                <SelectItem key={rows} value={String(rows)}>
+                  {rows}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingsRow>
         <SettingsRow
           label={t("settings.chat.webSearch.images")}
           description={t("settings.chat.webSearch.imagesDescription")}

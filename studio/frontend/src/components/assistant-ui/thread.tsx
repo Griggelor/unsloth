@@ -35,8 +35,8 @@ import { PromptQueueList } from "@/components/assistant-ui/lazy-prompt-queue-lis
 import { QueueResumeIcon } from "@/components/assistant-ui/queue-resume-icon";
 import { ProgressiveMessages } from "@/components/assistant-ui/progressive-messages";
 import { AgentHistoryScrollMessages } from "@/components/assistant-ui/agent-history-scroll-messages";
-import { AGENT_DEFAULT_ROWS } from "@/components/assistant-ui/agent-history-scroll-window";
 import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
+import { agentHistoryEnabledFor, agentHistoryWindowFor } from "@/features/chat/stores/agent-history-preference-policy";
 import { MessageMenuTime } from "@/components/assistant-ui/message-menu-time";
 import { UserMessageActionBar, UserMessageFooter } from "@/components/assistant-ui/user-message-actions";
 import { useActionBarFocusReveal } from "@/components/assistant-ui/use-action-bar-focus-reveal";
@@ -1960,12 +1960,10 @@ export const Thread: FC<{
   const activeThreadId = useChatRuntimeStore((s) => s.activeThreadId);
   const threadId = targetThreadId ?? activeThreadId ?? null;
   const agentHistoryEnabled = useAgentHistoryModeStore((state) =>
-    threadId ? state.enabledThreads[threadId] === true : false,
+    agentHistoryEnabledFor(state, threadId),
   );
   const agentWindowRows = useAgentHistoryModeStore((state) =>
-    threadId
-      ? (state.windowRowsByThreadId[threadId] ?? AGENT_DEFAULT_ROWS)
-      : AGENT_DEFAULT_ROWS,
+    agentHistoryWindowFor(state, threadId),
   );
   const aui = useAui();
   useThreadForkCounts();

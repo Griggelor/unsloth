@@ -2369,6 +2369,10 @@ export const zhCN = {
       },
     },
     chat: {
+      agentHistoryGlobal: "虚拟化聊天记录",
+      agentHistoryGlobalDescription: "在每个聊天中仅渲染少量消息。完整历史仍可访问，单个聊天的设置优先。",
+      agentHistoryRows: "每个聊天显示的消息数",
+      agentHistoryRowsDescription: "虚拟窗口的默认大小（推荐 5 条）。单个聊天的设置优先。",
       groups: {
         conversations: { title: "对话" },
         files: { title: "文件与粘贴" },

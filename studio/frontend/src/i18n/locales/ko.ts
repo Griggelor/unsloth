@@ -2400,6 +2400,10 @@ export const ko = {
       },
     },
     chat: {
+      agentHistoryGlobal: "채팅 기록 가상화",
+      agentHistoryGlobalDescription: "모든 채팅에서 한 번에 일부 메시지만 렌더링합니다. 전체 기록은 유지되며 채팅별 설정이 우선합니다.",
+      agentHistoryRows: "채팅별 표시 메시지 수",
+      agentHistoryRowsDescription: "가상 창의 기본 크기(권장 5개)입니다. 채팅별 설정이 우선합니다.",
       groups: {
         conversations: { title: "대화" },
         files: { title: "파일 및 붙여넣기" },

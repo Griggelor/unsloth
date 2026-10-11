@@ -7,7 +7,11 @@ on:
     paths:
       - 'studio/frontend/src/components/assistant-ui/agent-history-*'
       - 'studio/frontend/src/components/assistant-ui/row-notification-gate.ts'
-      - 'studio/frontend/src/features/chat/stores/agent-history-mode-store.ts'
+      - 'studio/frontend/src/features/chat/stores/agent-history-*.ts'
+      - 'studio/frontend/src/features/settings/tabs/chat-tab.tsx'
+      - 'studio/frontend/src/features/settings/tabs/general-tab.tsx'
+      - 'studio/frontend/src/i18n/locales/**'
+      - 'studio/frontend/tests/agent-history-*.test.ts'
       - 'studio/frontend/src/features/chat/components/chat-header-menu.tsx'
       - 'tests/studio/playwright_agent_history_*.py'
       - '.github/workflows/agent-history-focused-qa.yml'
@@ -38,7 +42,8 @@ jobs:
           node --experimental-strip-types --test \
             tests/agent-history-navigation.test.ts \
             tests/agent-history-scroll-window.test.ts \
-            tests/agent-history-search.test.ts
+            tests/agent-history-search.test.ts \
+            tests/agent-history-preference-policy.test.ts
       - name: Ruff 0.6.9 custom fixed point
         run: |
           python -m pip install 'ruff==0.6.9'

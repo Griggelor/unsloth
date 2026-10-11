@@ -2422,6 +2422,10 @@ export const ptBR = {
       },
     },
     chat: {
+      agentHistoryGlobal: "Virtualizar o histórico de conversas",
+      agentHistoryGlobalDescription: "Renderizar apenas algumas mensagens de cada vez em todas as conversas. O histórico completo permanece acessível; as exceções por conversa têm prioridade.",
+      agentHistoryRows: "Mensagens visíveis por conversa",
+      agentHistoryRowsDescription: "Tamanho padrão da janela virtual (5 recomendado). Ajustes específicos da conversa têm prioridade.",
       groups: {
         conversations: { title: "Conversas" },
         files: { title: "Arquivos e colagem" },
