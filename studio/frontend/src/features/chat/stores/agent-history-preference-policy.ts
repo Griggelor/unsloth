@@ -7,7 +7,11 @@ import {
   type AgentWindowSize,
 } from "../../../components/assistant-ui/agent-history-scroll-window.ts";
 
+import type { AgentDomLevel } from "../../../components/assistant-ui/agent-history-dom-budget";
+
 export type AgentHistoryPreferenceSnapshot = {
+  globalDomLevel?: AgentDomLevel;
+  domLevelByThreadId?: Record<string, AgentDomLevel>;
   globalEnabled: boolean;
   globalWindowRows: AgentWindowSize;
   enabledThreads: Record<string, true>;
@@ -32,4 +36,16 @@ export function agentHistoryWindowFor(
   return isAgentWindowSize(state.globalWindowRows)
     ? state.globalWindowRows
     : AGENT_DEFAULT_ROWS;
+}
+
+/** Explicit per-chat settings win. Legacy v1 preferences remain readable. */
+export function agentHistoryLevelFor(
+  state: AgentHistoryPreferenceSnapshot,
+  threadId: string | null | undefined,
+): AgentDomLevel | "legacy" {
+  const specific = threadId ? state.domLevelByThreadId?.[threadId] : undefined;
+  if (specific === "off" || specific === "low" || specific === "high") return specific;
+  if (state.globalDomLevel === "off" || state.globalDomLevel === "low" ||
+      state.globalDomLevel === "high") return state.globalDomLevel;
+  return agentHistoryEnabledFor(state, threadId) ? "legacy" : "off";
 }
