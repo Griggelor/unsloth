@@ -499,9 +499,9 @@ export function ChatTab() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="off">Aus</SelectItem>
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="off">{t("settings.chat.agentHistoryModeOff")}</SelectItem>
+              <SelectItem value="low">{t("settings.chat.agentHistoryModeLow")}</SelectItem>
+              <SelectItem value="high">{t("settings.chat.agentHistoryModeHigh")}</SelectItem>
             </SelectContent>
           </Select>
         </SettingsRow>
