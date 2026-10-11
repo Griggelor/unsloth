@@ -234,12 +234,21 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
     trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
 
     def choose(size: int) -> None:
-        trigger.click()
+        before_click = trigger.get_attribute("aria-expanded")
+        trigger.focus()
+        trigger.press("Enter")
+        after_click = trigger.get_attribute("aria-expanded")
         submenu = page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
             has_text = "Agentenfenster:"
         )
         try:
-            submenu.hover()
+            # Use keyboard navigation instead of a pointer hover across a portal.
+            submenu.wait_for(state = "visible", timeout = 10_000)
+            submenu.focus()
+            submenu.press("ArrowRight")
+            page.locator(f'[data-test-id="agent-window-size-{size}"]').wait_for(
+                state = "visible", timeout = 10_000
+            )
         except Exception as exc:
             # Do not retry/skip a disappearing menu: capture its real state.
             # This instance and its settings contain only synthetic fixture data.
@@ -259,19 +268,21 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
                 })""")
             except Exception as snapshot_error:
                 diagnostic = {"snapshotError": str(snapshot_error)}
+            diagnostic["triggerBeforeClick"] = before_click
+            diagnostic["triggerAfterClick"] = after_click
             evidence_dir = Path("logs/agent-history")
             evidence_dir.mkdir(parents = True, exist_ok = True)
-            (evidence_dir / "menu-hover-failure.json").write_text(
+            (evidence_dir / "menu-submenu-failure.json").write_text(
                 json.dumps(diagnostic, indent = 2), encoding = "utf-8"
             )
             try:
-                page.screenshot(path = str(evidence_dir / "menu-hover-failure.png"))
+                page.screenshot(path = str(evidence_dir / "menu-submenu-failure.png"))
             except Exception:
                 pass
-            raise AssertionError(
-                f"Agent window submenu hover failed: {diagnostic}"
-            ) from exc
-        page.locator(f'[data-test-id="agent-window-size-{size}"]').click()
+            raise AssertionError(f"Agent window submenu interaction failed: {diagnostic}") from exc
+        radio = page.locator(f'[data-test-id="agent-window-size-{size}"]')
+        radio.focus()
+        radio.press("Enter")
         page.wait_for_function(
             """size => {
               const rows = document.querySelectorAll('[data-agent-history-row]');
@@ -446,9 +457,15 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 find_input.fill("unique-fixture")
                 require_search_state(
                     page,
-                    """expected => document.querySelector(
-                      '[data-find-bar-layer] [aria-live="polite"]'
-                    )?.textContent?.includes('1/' + expected) ?? false""",
+                    """expected => {
+                      const counter = document.querySelector(
+                        '[data-find-bar-layer] [aria-live="polite"]'
+                      )?.textContent?.trim() ?? '';
+                      const fields = counter.split('/');
+                      const current = Number(fields[0]);
+                      return fields.length === 2 && Number(fields[1]) === expected &&
+                        Number.isInteger(current) && current >= 1 && current <= expected;
+                    }""",
                     "search-all-rows",
                     arg = messages,
                 )

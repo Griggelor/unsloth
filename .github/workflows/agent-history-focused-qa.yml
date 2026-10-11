@@ -7,9 +7,15 @@ on:
     paths:
       - 'studio/frontend/src/components/assistant-ui/agent-history-*'
       - 'studio/frontend/src/components/assistant-ui/row-notification-gate.ts'
-      - 'studio/frontend/src/features/chat/stores/agent-history-mode-store.ts'
+      - 'studio/frontend/src/features/chat/stores/agent-history-*.ts'
+      - 'studio/frontend/src/features/settings/tabs/chat-tab.tsx'
+      - 'studio/frontend/src/features/settings/tabs/general-tab.tsx'
+      - 'studio/frontend/src/i18n/locales/**'
+      - 'studio/frontend/tests/agent-history-*.test.ts'
       - 'studio/frontend/src/features/chat/components/chat-header-menu.tsx'
       - 'tests/studio/playwright_agent_history_*.py'
+      - '.github/scripts/retry-with-apt-lock.sh'
+      - '.github/actions/install-unsloth-local/**'
       - '.github/workflows/agent-history-focused-qa.yml'
   workflow_dispatch:
 permissions:
@@ -38,16 +44,18 @@ jobs:
           node --experimental-strip-types --test \
             tests/agent-history-navigation.test.ts \
             tests/agent-history-scroll-window.test.ts \
-            tests/agent-history-search.test.ts
+            tests/agent-history-search.test.ts \
+            tests/agent-history-preference-policy.test.ts
       - name: Ruff 0.6.9 custom fixed point
         run: |
           python -m pip install 'ruff==0.6.9'
-          python scripts/run_ruff_format.py tests/studio/playwright_agent_history_dom_sweep.py
-          git diff --exit-code -- tests/studio/playwright_agent_history_dom_sweep.py
+          python scripts/run_ruff_format.py tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
+          git diff -- tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
+          git diff --exit-code -- tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
   browser:
     name: Focused browser (${{ matrix.suite }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -57,10 +65,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Linux prerequisites
-        timeout-minutes: 10
+        timeout-minutes: 7
         env:
           RETRY_ATTEMPTS: '2'
-          RETRY_ATTEMPT_TIMEOUT: '240'
+          RETRY_ATTEMPT_TIMEOUT: '120'
         run: |
           bash .github/scripts/retry-with-apt-lock.sh sudo sh -c \
             'apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev jq || { apt-get update && apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev jq; }'
@@ -75,10 +83,28 @@ jobs:
         with:
           gh-token: ${{ secrets.GITHUB_TOKEN }}
           hf-token: ''
-      - name: Install Chromium
+      - name: Download Chromium without implicit apt
+        timeout-minutes: 7
+        env:
+          RETRY_ATTEMPTS: '2'
+          RETRY_ATTEMPT_TIMEOUT: '120'
+          APT_ACQUIRE_RETRIES: '0'
         run: |
           python -m pip install 'playwright>=1.45,<2'
-          python -m playwright install --with-deps chromium
+          bash .github/scripts/retry-with-apt-lock.sh python -m playwright install chromium
+      - name: Probe browser and install missing system libraries only when necessary
+        timeout-minutes: 7
+        env:
+          RETRY_ATTEMPTS: '2'
+          RETRY_ATTEMPT_TIMEOUT: '120'
+          APT_ACQUIRE_RETRIES: '0'
+        run: |
+          if python -c 'from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()'; then
+            echo 'Chromium launches without additional system packages'
+          else
+            bash .github/scripts/retry-with-apt-lock.sh python -m playwright install-deps chromium
+            python -c 'from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()'
+          fi
       - name: Start disposable Studio and mask bootstrap password
         run: |
           bash .github/scripts/boot-studio-api-only.sh --port 18899 \

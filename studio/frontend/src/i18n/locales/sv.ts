@@ -2577,6 +2577,10 @@ export const sv = {
       },
     },
     chat: {
+      agentHistoryGlobal: "Virtualisera chatthistorik",
+      agentHistoryGlobalDescription: "Rendera bara några få meddelanden åt gången i alla chattar. Hela historiken finns kvar; undantag per chatt har företräde.",
+      agentHistoryRows: "Synliga meddelanden per chatt",
+      agentHistoryRowsDescription: "Standardstorlek för det virtuella fönstret (5 rekommenderas). Chattens egna inställningar har företräde.",
       groups: {
         conversations: {
           title: "Konversationer",

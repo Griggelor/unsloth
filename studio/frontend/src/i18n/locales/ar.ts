@@ -2405,6 +2405,10 @@ export const ar = {
       },
     },
     chat: {
+      agentHistoryGlobal: "عرض سجل الدردشة افتراضيًا",
+      agentHistoryGlobalDescription: "اعرض عددًا قليلاً فقط من الرسائل في كل دردشة. يظل السجل الكامل متاحًا، وتكون لاستثناءات الدردشة الأولوية.",
+      agentHistoryRows: "الرسائل الظاهرة لكل دردشة",
+      agentHistoryRowsDescription: "الحجم الافتراضي لنافذة الرسائل (يُنصح بـ 5). تتقدم إعدادات الدردشة الفردية.",
       groups: {
         conversations: { title: "المحادثات" },
         files: { title: "الملفات واللصق" },

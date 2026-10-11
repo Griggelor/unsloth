@@ -2443,6 +2443,10 @@ export const en = {
       },
     },
     chat: {
+      agentHistoryGlobal: "Virtualize chat history",
+      agentHistoryGlobalDescription: "Render only a small set of messages in every chat. Full history stays available; per-chat exceptions take precedence.",
+      agentHistoryRows: "Visible messages per chat",
+      agentHistoryRowsDescription: "Default number of mounted messages in virtualized chats (5 recommended). Per-chat overrides take precedence.",
       groups: {
         conversations: { title: "Conversations" },
         files: { title: "Files & pasting" },
