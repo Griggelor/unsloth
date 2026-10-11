@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [menu, dom, idle-scroll, dom-churn-50k, dom-churn-200k, dom-churn-400k]
+        suite: [menu, dom, idle-scroll, dom-churn-50k, dom-churn-200k, dom-churn-400k, gc-retention]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -155,6 +155,16 @@ jobs:
             --password "$AGENT_HISTORY_PW" --messages 1000 \
             --elements "$BUDGET" --rounds 1 \
             --output "logs/agent-history/dom-churn-${BUDGET}.json"
+      - name: Same-anchor forced-GC DOM retention sweep
+        if: matrix.suite == 'gc-retention'
+        timeout-minutes: 22
+        run: |
+          mkdir -p logs/agent-history
+          python tests/studio/playwright_agent_history_dom_churn_stress.py \
+            --url http://127.0.0.1:18899 --username unsloth \
+            --password "$AGENT_HISTORY_PW" --messages 1000 \
+            --elements 50000 --rounds 1 --retention-cycles 30 \
+            --output logs/agent-history/gc-retention-50k.json
       - name: Cleanup and diagnostics
         if: always()
         run: |
