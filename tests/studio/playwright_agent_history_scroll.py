@@ -235,7 +235,8 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
 
     def choose(size: int) -> None:
         before_click = trigger.get_attribute("aria-expanded")
-        trigger.click()
+        trigger.focus()
+        trigger.press("Enter")
         after_click = trigger.get_attribute("aria-expanded")
         submenu = page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
             has_text = "Agentenfenster:"
