@@ -239,7 +239,13 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
             has_text = "Agentenfenster:"
         )
         try:
-            submenu.hover()
+            # Use keyboard navigation instead of a pointer hover across a portal.
+            submenu.wait_for(state = "visible", timeout = 10_000)
+            submenu.focus()
+            submenu.press("ArrowRight")
+            page.locator(f'[data-test-id="agent-window-size-{size}"]').wait_for(
+                state = "visible", timeout = 10_000
+            )
         except Exception as exc:
             # Do not retry/skip a disappearing menu: capture its real state.
             # This instance and its settings contain only synthetic fixture data.
@@ -261,17 +267,19 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
                 diagnostic = {"snapshotError": str(snapshot_error)}
             evidence_dir = Path("logs/agent-history")
             evidence_dir.mkdir(parents = True, exist_ok = True)
-            (evidence_dir / "menu-hover-failure.json").write_text(
+            (evidence_dir / "menu-submenu-failure.json").write_text(
                 json.dumps(diagnostic, indent = 2), encoding = "utf-8"
             )
             try:
-                page.screenshot(path = str(evidence_dir / "menu-hover-failure.png"))
+                page.screenshot(path = str(evidence_dir / "menu-submenu-failure.png"))
             except Exception:
                 pass
             raise AssertionError(
-                f"Agent window submenu hover failed: {diagnostic}"
+                f"Agent window submenu interaction failed: {diagnostic}"
             ) from exc
-        page.locator(f'[data-test-id="agent-window-size-{size}"]').click()
+        radio = page.locator(f'[data-test-id="agent-window-size-{size}"]')
+        radio.focus()
+        radio.press("Enter")
         page.wait_for_function(
             """size => {
               const rows = document.querySelectorAll('[data-agent-history-row]');
