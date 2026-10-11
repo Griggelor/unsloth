@@ -55,7 +55,7 @@ public sealed class AgentUnlockNotifier : Form {
 $dir = Join-Path $env:LOCALAPPDATA 'UnslothQA'
 New-Item -ItemType Directory -Path $dir -Force | Out-Null
 $dest = Join-Path $dir ('unlock-numeric-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.csv')
-$writer = New-Object System.IO.StreamWriter($dest, $false, (New-Object System.Text.UTF8Encoding($false)))
+$writer = [System.IO.StreamWriter]::new($dest, $false, [System.Text.UTF8Encoding]::new($false))
 $writer.AutoFlush = $true
 $writer.WriteLine('Utc,Scenario,Event,SecondsAfterUnlock,TotalRAM_MB,FreeRAM_MB,CommitMB,CommitLimitMB,WebView2Count,WebView2PrivateMB,WebView2WorkingMB,WebView2Handles,StudioCount,StudioPrivateMB,LlamaCount,LlamaPrivateMB,DwmPrivateMB,DwmWorkingMB,ProcessCount,ProbeCostMs')
 
