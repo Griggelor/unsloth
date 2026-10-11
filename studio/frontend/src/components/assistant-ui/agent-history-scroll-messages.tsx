@@ -5,6 +5,7 @@ import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffec
 import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
+import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, type AgentDomLevel } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
@@ -27,14 +28,18 @@ export const AgentHistoryScrollMessages: FC<{
   resetKey: string | undefined;
   viewportRef: RefObject<HTMLElement | null>;
   windowRows?: number;
+  domLevel?: Exclude<AgentDomLevel, "off">;
 }> = memo(function AgentHistoryScrollMessages({
-  renderMessage, resetKey, viewportRef, windowRows = AGENT_DEFAULT_ROWS,
+  renderMessage, resetKey, viewportRef, windowRows = AGENT_DEFAULT_ROWS, domLevel,
 }) {
   const count = useAuiState(({ thread }) => thread.messages.length);
   const aui = useAui();
   const gate = useMemo(() => createRowNotificationGate(aui), [aui]);
   const heights = useMemo(() => new AgentHeightIndex(count), [resetKey]);
   heights.resize(count);
+  const costs = useMemo(() => new AgentDomCostIndex(count), [resetKey]);
+  costs.resize(count);
+  const budget = domLevel ? AGENT_DOM_TARGETS[domLevel] : null;
   const jumpBottom = useScrollThreadToBottom();
   const correctAnchor = useAdjustForContentInsertedAbove();
   const navigateViewport = useNavigateThreadViewport();
@@ -46,7 +51,9 @@ export const AgentHistoryScrollMessages: FC<{
   const anchor = useRef<{ index: number; top: number } | null>(null);
   const jump = useRef<"top" | "bottom" | null>(null);
   const [state, setState] = useState(() => ({
-    key: resetKey, count, windowRows, range: latestAgentWindow(count, windowRows),
+    key: resetKey, count, windowRows, domLevel,
+    range: budget ? agentBudgetWindow(count, count - 1, costs, budget)
+      : latestAgentWindow(count, windowRows),
   }));
   const visibleIndex = useRef(Math.max(0, count - 1));
   const lastWindowRows = useRef(windowRows);
@@ -72,25 +79,34 @@ export const AgentHistoryScrollMessages: FC<{
   }, []);
 
   // Async history arrival must not mount the entire conversation in one commit.
-  const range = state.key !== resetKey ? latestAgentWindow(count, windowRows)
+  const selectBudget = (index: number) =>
+    budget ? agentBudgetWindow(count, index, costs, budget) : null;
+  const range = state.key !== resetKey
+    ? selectBudget(count - 1) ?? latestAgentWindow(count, windowRows)
+    : state.domLevel !== domLevel
+      ? selectBudget(following.current ? count - 1 : visibleIndex.current) ??
+        latestAgentWindow(count, windowRows)
     : state.windowRows !== windowRows
       ? following.current
-        ? latestAgentWindow(count, windowRows)
-        : agentWindowAtIndex(
+        ? selectBudget(count - 1) ?? latestAgentWindow(count, windowRows)
+        : selectBudget(visibleIndex.current) ?? agentWindowAtIndex(
             count, Math.min(visibleIndex.current, Math.max(0, count - 1)), undefined, windowRows,
           )
       : state.count !== count
-        ? agentWindowOnAppend(state.range, state.count, count, following.current, windowRows)
+        ? budget
+          ? following.current ? selectBudget(count - 1)! : state.range
+          : agentWindowOnAppend(state.range, state.count, count, following.current, windowRows)
         : state.range;
-  if (state.key !== resetKey || state.count !== count || state.windowRows !== windowRows) {
-    setState({ key: resetKey, count, windowRows, range });
+  if (state.key !== resetKey || state.count !== count || state.windowRows !== windowRows || state.domLevel !== domLevel) {
+    setState({ key: resetKey, count, windowRows, domLevel, range });
   }
   const rangeRef = useRef<AgentScrollWindow>(range);
   rangeRef.current = range;
 
   const seek = useCallback((index: number, snap?: "top" | "bottom") => {
     const viewport = viewportRef.current;
-    const next = agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
+    const next = budget ? agentBudgetWindow(countRef.current, index, costs, budget)
+      : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
     if (next.start === rangeRef.current.start && next.end === rangeRef.current.end) {
       if (snap === "bottom") jumpBottom("auto");
       if (snap === "top" && viewport) navigateViewport(0);
@@ -110,7 +126,7 @@ export const AgentHistoryScrollMessages: FC<{
     jump.current = snap ?? null;
     rangeRef.current = next;
     setState(old => ({ ...old, range: next }));
-  }, [jumpBottom, navigateViewport, viewportRef, windowRows]);
+  }, [jumpBottom, navigateViewport, viewportRef, windowRows, budget, costs]);
 
   const revealSearchRow = useCallback((index: number) => {
     const nextIntent = requestAgentHistoryReveal(navigation.current, index, countRef.current);
@@ -127,21 +143,22 @@ export const AgentHistoryScrollMessages: FC<{
     // A repeated hit may already be mounted, and setSearchHit(sameIndex)
     // does not produce a render. Force a fresh layout navigation transaction.
     setRevealRevision(v => v + 1);
-    const next = agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
+    const next = budget ? agentBudgetWindow(countRef.current, index, costs, budget)
+      : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
     if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
       rangeRef.current = next;
       setState(old => ({ ...old, range: next }));
     }
-  }, [windowRows]);
+  }, [windowRows, budget, costs]);
 
   // Changing the preference should not strand the reader at a stale scroll offset.
   // Keep height measurements; only the mounted window changes.
   useLayoutEffect(() => {
-    if (lastWindowRows.current === windowRows) return;
+    if (lastWindowRows.current === windowRows && !domLevel) return;
     lastWindowRows.current = windowRows;
     if (following.current) jumpBottom("auto");
     else navigateViewport(heights.offset(visibleIndex.current));
-  }, [windowRows, range.start, range.end, heights, jumpBottom, navigateViewport]);
+  }, [windowRows, domLevel, range.start, range.end, heights, jumpBottom, navigateViewport]);
 
   // Register a search target only for the opt-in virtualized thread. The normal
   // find engine can keep its existing DOM semantics without mounting the history.
@@ -288,6 +305,36 @@ export const AgentHistoryScrollMessages: FC<{
       animation.current = null;
     };
   }, [viewportRef, heights, seek]);
+
+  const budgetFrame = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (budgetFrame.current !== null) cancelAnimationFrame(budgetFrame.current);
+  }, []);
+  useLayoutEffect(() => {
+    if (!budget) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    // Measure after a committed row window, not on each streaming token.
+    // Keep the reader's target mounted; never collapse a single oversized row.
+    let changed = false;
+    for (const el of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
+      const index = Number(el.dataset.agentHistoryRow);
+      if (Number.isSafeInteger(index)) {
+        changed = costs.measure(index, el.querySelectorAll("*").length + 1) || changed;
+      }
+    }
+    if (changed && budgetFrame.current === null) {
+      budgetFrame.current = requestAnimationFrame(() => {
+        budgetFrame.current = null;
+        const target = following.current ? countRef.current - 1 : visibleIndex.current;
+        const next = agentBudgetWindow(countRef.current, target, costs, budget);
+        if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
+          rangeRef.current = next;
+          setState(old => ({ ...old, range: next }));
+        }
+      });
+    }
+  }, [budget, costs, range.start, range.end, viewportRef]);
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
