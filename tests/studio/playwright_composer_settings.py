@@ -103,6 +103,9 @@ def check_settings(page):
     editor.press("End")
     editor.press("Enter")
     editor.press_sequentially("Second line", delay = 30)
+    # Closing the Radix send-shortcut select must never reclaim focus from
+    # the composer during later text entry (observed on macOS Edge/Chrome).
+    expect(editor).to_be_focused()
     try:
         expect(editor).to_have_value("First line\nSecond line")
     except AssertionError:
