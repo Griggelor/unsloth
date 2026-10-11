@@ -274,9 +274,7 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
                 page.screenshot(path = str(evidence_dir / "menu-submenu-failure.png"))
             except Exception:
                 pass
-            raise AssertionError(
-                f"Agent window submenu interaction failed: {diagnostic}"
-            ) from exc
+            raise AssertionError(f"Agent window submenu interaction failed: {diagnostic}") from exc
         radio = page.locator(f'[data-test-id="agent-window-size-{size}"]')
         radio.focus()
         radio.press("Enter")
