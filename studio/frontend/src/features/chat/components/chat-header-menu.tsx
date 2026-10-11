@@ -166,6 +166,7 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
       state.runningByThreadId[menu.item.id] === true ||
       state.runningByThreadId.__default === true,
   );
+  const globalDomLevel = useAgentHistoryModeStore(state => state.globalDomLevel);
   const agentHistoryLevel = useAgentHistoryModeStore(
     (state) => agentHistoryLevelFor(state, menu.item.id),
   );
@@ -273,7 +274,7 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
           </DropdownMenuRadioGroup>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
-      <Item
+      {globalDomLevel === undefined && <Item
         icon={agentHistoryEnabled ? ViewIcon : ViewOffSlashIcon}
         disabled={running}
         onSelect={() =>
@@ -283,8 +284,8 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
         {agentHistoryEnabled
           ? "Agenten-Chatverlauf deaktivieren"
           : "Agenten-Chatverlauf aktivieren"}
-      </Item>
-      {agentHistoryEnabled && (
+      </Item>}
+      {agentHistoryLevel === "legacy" && (
         <DropdownMenuSub>
           <DropdownMenuSubTrigger disabled={running} className="gap-2.5">
             <HugeiconsIcon icon={LayerIcon} strokeWidth={1.75} className={ICON} />
