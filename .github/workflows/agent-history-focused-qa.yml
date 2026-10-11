@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [menu, dom]
+        suite: [menu, dom, idle-scroll]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -129,6 +129,16 @@ jobs:
           python tests/studio/playwright_agent_history_dom_sweep.py \
             --url http://127.0.0.1:18899 --username unsloth \
             --password "$AGENT_HISTORY_PW" --output logs/agent-history/dom-sweep.json
+      - name: Synthetic completed-run idle/resume heavy DOM scroll
+        if: matrix.suite == 'idle-scroll'
+        timeout-minutes: 12
+        run: |
+          mkdir -p logs/agent-history
+          python tests/studio/playwright_agent_history_idle_scroll_stress.py \
+            --url http://127.0.0.1:18899 --username unsloth \
+            --password "$AGENT_HISTORY_PW" \
+            --messages 800 --cards 400 --rounds 3 \
+            --output logs/agent-history/idle-scroll-stress.json
       - name: Cleanup and diagnostics
         if: always()
         run: |
