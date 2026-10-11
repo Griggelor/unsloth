@@ -98,6 +98,13 @@ export const AgentHistoryScrollMessages: FC<{
       return;
     }
     anchor.current = null;
+    const disjoint = next.end <= rangeRef.current.start ||
+      next.start >= rangeRef.current.end;
+    const progressive = !snap && !following.current && disjoint &&
+      next.end - next.start > 1;
+    const target = Math.min(Math.max(index, next.start), next.end - 1);
+    const candidate = progressive ? { start: target, end: target + 1 } : next;
+    staged.current = progressive ? { destination: next, target } : null;
     if (viewport && !snap) {
       const fold = viewport.getBoundingClientRect().top;
       for (const el of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
@@ -109,8 +116,8 @@ export const AgentHistoryScrollMessages: FC<{
       }
     }
     jump.current = snap ?? null;
-    rangeRef.current = next;
-    setState(old => ({ ...old, range: next }));
+    rangeRef.current = candidate;
+    setState(old => ({ ...old, range: candidate }));
   }, [jumpBottom, navigateViewport, viewportRef, windowRows]);
 
   const revealSearchRow = useCallback((index: number) => {
