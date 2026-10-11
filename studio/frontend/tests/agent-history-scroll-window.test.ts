@@ -154,3 +154,17 @@ test("distant passive seeks admit at most two new rows per frame", () => {
   assert.deepEqual(nextProgressiveAgentWindow({ start: 250, end: 251 }, destination, 0),
     { start: 250, end: 251 });
 });
+
+test("an interrupted progressive window cannot be accepted as a finished K=5 window", () => {
+  const final = agentWindowAtIndex(1000, 250, undefined, 5);
+  for (const partial of [
+    { start: 250, end: 251 },
+    { start: 249, end: 252 },
+    { start: 248, end: 252 },
+  ]) {
+    const resumed = agentWindowAtIndex(1000, 250, partial, 5);
+    assert.deepEqual(resumed, final);
+    assert.equal(resumed.end - resumed.start, 5);
+  }
+  assert.deepEqual(agentWindowAtIndex(1000, 250, final, 5), final);
+});
