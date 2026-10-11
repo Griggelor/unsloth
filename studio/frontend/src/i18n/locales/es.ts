@@ -2434,6 +2434,12 @@ export const es = {
       },
     },
     chat: {
+      agentHistoryModeOff: "Desactivado",
+      agentHistoryModeLow: "Bajo",
+      agentHistoryModeHigh: "Alto",
+      agentHistoryChatMode: "Optimización del DOM",
+      agentHistoryInherit: "Usar ajuste global",
+      agentHistoryLegacy: "Ajuste anterior",
       agentHistoryGlobal: "Virtualizar el historial de chats",
       agentHistoryGlobalDescription: "Mostrar solo unos pocos mensajes a la vez en cada chat. Todo el historial sigue disponible; prevalecen las excepciones por chat.",
       agentHistoryRows: "Mensajes visibles por chat",
