@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useChatFavoritesStore } from "@/features/library/chats/favorites-store";
 import { useAgentHistoryModeStore } from "../stores/agent-history-mode-store";
-import { agentHistoryLevelFor, agentHistoryEnabledFor, agentHistoryWindowFor } from "../stores/agent-history-preference-policy";
+import { agentHistoryLevelFor, agentHistoryWindowFor } from "../stores/agent-history-preference-policy";
 import {
   AGENT_WINDOW_SIZES,
   isAgentWindowSize,
