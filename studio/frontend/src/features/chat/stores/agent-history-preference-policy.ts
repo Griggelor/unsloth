@@ -45,6 +45,13 @@ export function agentHistoryLevelFor(
 ): AgentDomLevel | "legacy" {
   const specific = threadId ? state.domLevelByThreadId?.[threadId] : undefined;
   if (specific === "off" || specific === "low" || specific === "high") return specific;
+  // A pre-existing explicit per-chat opt-out/in is a local exception too.
+  // Do not overwrite it when adopting the new global policy.
+  if (threadId && state.disabledThreads[threadId] === true) return "off";
+  if (threadId && state.enabledThreads[threadId] === true) {
+    return state.globalDomLevel === "low" || state.globalDomLevel === "high"
+      ? state.globalDomLevel : "legacy";
+  }
   if (state.globalDomLevel === "off" || state.globalDomLevel === "low" ||
       state.globalDomLevel === "high") return state.globalDomLevel;
   return agentHistoryEnabledFor(state, threadId) ? "legacy" : "off";
