@@ -7,27 +7,21 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'Windows-only test.' }
-Add-Type -ReferencedAssemblies @('System.Windows.Forms','System.Drawing') -TypeDefinition @'
+Add-Type -ReferencedAssemblies @('System.Windows.Forms','System.Drawing','System') -TypeDefinition @'
 using System;
 using System.Collections.Concurrent;
-using System.ComponentModel;
 using System.Drawing;
-using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using Microsoft.Win32;
 public sealed class AgentSessionEvent {
   public readonly string Kind;
   public readonly DateTime TimeUtc;
   public AgentSessionEvent(string kind) { Kind=kind; TimeUtc=DateTime.UtcNow; }
 }
 public sealed class AgentUnlockNotifier : Form {
-  private const int SESSION_MSG = 0x02B1;
   private bool registered;
   public readonly ConcurrentQueue<AgentSessionEvent> Events =
     new ConcurrentQueue<AgentSessionEvent>();
-  [DllImport("wtsapi32.dll", SetLastError=true)]
-  private static extern bool WTSRegisterSessionNotification(IntPtr hwnd, int flags);
-  [DllImport("wtsapi32.dll", SetLastError=true)]
-  private static extern bool WTSUnRegisterSessionNotification(IntPtr hwnd);
   public AgentUnlockNotifier() {
     ShowInTaskbar=false; FormBorderStyle=FormBorderStyle.FixedToolWindow;
     StartPosition=FormStartPosition.Manual; Location=new Point(-20000,-20000);
@@ -35,19 +29,17 @@ public sealed class AgentUnlockNotifier : Form {
   }
   protected override void OnHandleCreated(EventArgs e) {
     base.OnHandleCreated(e);
-    if(!WTSRegisterSessionNotification(Handle,0))
-      throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot register session notifications");
+    SystemEvents.SessionSwitch += OnSessionSwitch;
     registered=true;
   }
-  protected override void WndProc(ref Message m) {
-    if(m.Msg == SESSION_MSG) {
-      if(m.WParam.ToInt32() == 7) Events.Enqueue(new AgentSessionEvent("LOCK"));
-      if(m.WParam.ToInt32() == 8) Events.Enqueue(new AgentSessionEvent("UNLOCK"));
-    }
-    base.WndProc(ref m);
+  private void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
+    if(e.Reason == SessionSwitchReason.SessionLock)
+      Events.Enqueue(new AgentSessionEvent("LOCK"));
+    if(e.Reason == SessionSwitchReason.SessionUnlock)
+      Events.Enqueue(new AgentSessionEvent("UNLOCK"));
   }
   protected override void OnHandleDestroyed(EventArgs e) {
-    if(registered) { WTSUnRegisterSessionNotification(Handle); registered=false; }
+    if(registered) { SystemEvents.SessionSwitch -= OnSessionSwitch; registered=false; }
     base.OnHandleDestroyed(e);
   }
 }
