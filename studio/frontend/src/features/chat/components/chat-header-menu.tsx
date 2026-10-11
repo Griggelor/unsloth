@@ -243,7 +243,7 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
       </Item>
       <DropdownMenuSeparator className="mx-3" />
       <DropdownMenuSub>
-        <DropdownMenuSubTrigger disabled={running} className="gap-2.5">
+        <DropdownMenuSubTrigger data-test-id="agent-dom-level-trigger" disabled={running} className="gap-2.5">
           <HugeiconsIcon icon={LayerIcon} strokeWidth={1.75} className={ICON} />
           {t("settings.chat.agentHistoryChatMode")}: {agentHistoryLevel === "legacy" ? t("settings.chat.agentHistoryLegacy") : agentHistoryLevel === "off" ? t("settings.chat.agentHistoryModeOff") : agentHistoryLevel === "low" ? t("settings.chat.agentHistoryModeLow") : t("settings.chat.agentHistoryModeHigh")}
         </DropdownMenuSubTrigger>
