@@ -244,10 +244,10 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
       <DropdownMenuSub>
         <DropdownMenuSubTrigger disabled={running} className="gap-2.5">
           <HugeiconsIcon icon={LayerIcon} strokeWidth={1.75} className={ICON} />
-          DOM-Optimierung: {agentHistoryLevel === "legacy" ? "Bisherige Einstellung" : agentHistoryLevel === "off" ? "Aus" : agentHistoryLevel === "low" ? "Low" : "High"}
+          {t("settings.chat.agentHistoryChatMode")}: {agentHistoryLevel === "legacy" ? t("settings.chat.agentHistoryLegacy") : agentHistoryLevel === "off" ? t("settings.chat.agentHistoryModeOff") : agentHistoryLevel === "low" ? t("settings.chat.agentHistoryModeLow") : t("settings.chat.agentHistoryModeHigh")}
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className={cn(MENU, "w-60")}>
-          <DropdownMenuLabel className={LABEL}>DOM-Optimierung für diesen Chat</DropdownMenuLabel>
+          <DropdownMenuLabel className={LABEL}>{t("settings.chat.agentHistoryChatMode")}</DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={useAgentHistoryModeStore.getState().domLevelByThreadId?.[menu.item.id] ?? "inherit"}
             onValueChange={value => {
@@ -260,10 +260,10 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
             }}
           >
             {([
-              ["inherit", "Global übernehmen"],
-              ["off", "Aus"],
-              ["low", "Low"],
-              ["high", "High"],
+              ["inherit", t("settings.chat.agentHistoryInherit")],
+              ["off", t("settings.chat.agentHistoryModeOff")],
+              ["low", t("settings.chat.agentHistoryModeLow")],
+              ["high", t("settings.chat.agentHistoryModeHigh")],
             ] as const).map(([value, label]) => (
               <DropdownMenuRadioItem key={value} value={value}
                 data-test-id={`agent-dom-level-${value}`}>
