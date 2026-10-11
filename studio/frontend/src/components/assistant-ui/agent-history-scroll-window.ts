@@ -49,6 +49,24 @@ export function agentWindowAtIndex(
   return { start, end: start + windowRows };
 }
 
+/**
+ * Admit no more than one previously unmounted message per animation frame.
+ * Call only while staging a distant passive scroll seek; search and explicit
+ * end-of-thread navigation keep their existing immediate behavior.
+ */
+export function nextProgressiveAgentWindow(
+  current: AgentScrollWindow,
+  destination: AgentScrollWindow,
+): AgentScrollWindow {
+  if (current.end < destination.end) {
+    return { start: current.start, end: current.end + 1 };
+  }
+  if (current.start > destination.start) {
+    return { start: current.start - 1, end: current.end };
+  }
+  return current;
+}
+
 /** Appending at the tail never shifts the mounted rows on the first append. */
 export function agentWindowOnAppend(
   previous: AgentScrollWindow,
