@@ -22,3 +22,16 @@ test("explicit chat levels override global levels in both directions", () => {
   assert.equal(agentHistoryLevelFor(prefs, "new"), "low");
   assert.equal(agentHistoryLevelFor({ ...prefs, globalDomLevel: "off" }, "custom"), "high");
 });
+
+test("existing explicit v1 exceptions retain precedence when the global mode changes", () => {
+  const prefs = { ...legacy, globalDomLevel: "off" as const,
+    disabledThreads: { blocked: true as const } };
+  assert.equal(agentHistoryLevelFor(prefs, "olderChat"), "legacy");
+  assert.equal(agentHistoryLevelFor(prefs, "blocked"), "off");
+  assert.equal(agentHistoryLevelFor(prefs, "new"), "off");
+  const enabled = { ...prefs, globalDomLevel: "high" as const };
+  assert.equal(agentHistoryLevelFor(enabled, "olderChat"), "high");
+  assert.equal(agentHistoryLevelFor(enabled, "blocked"), "off");
+  assert.equal(agentHistoryLevelFor({ ...enabled,
+    domLevelByThreadId: { blocked: "low" as const } }, "blocked"), "low");
+});
