@@ -6,11 +6,17 @@ import { AgentDomCostIndex, agentBudgetWindow, AGENT_DOM_TARGETS } from "../src/
 
 test("low and high adapt to measured row complexity", () => {
   const costs = new AgentDomCostIndex(40);
-  assert.deepEqual(agentBudgetWindow(40, 39, costs, AGENT_DOM_TARGETS.low), { start: 35, end: 40 });
-  assert.deepEqual(agentBudgetWindow(40, 39, costs, AGENT_DOM_TARGETS.high), { start: 28, end: 40 });
+  // The first render must never mount multiple unmeasured, potentially
+  // huge tool results. Each later render may admit only one unknown neighbor.
+  assert.deepEqual(agentBudgetWindow(40, 39, costs, AGENT_DOM_TARGETS.low), { start: 39, end: 40 });
+  assert.deepEqual(agentBudgetWindow(40, 39, costs, AGENT_DOM_TARGETS.high), { start: 39, end: 40 });
   costs.measure(39, 4_800);
   assert.deepEqual(agentBudgetWindow(40, 39, costs, AGENT_DOM_TARGETS.low), { start: 39, end: 40 });
-  assert.deepEqual(agentBudgetWindow(40, 39, costs, AGENT_DOM_TARGETS.high), { start: 32, end: 40 });
+  assert.deepEqual(agentBudgetWindow(40, 39, costs, AGENT_DOM_TARGETS.high), { start: 38, end: 40 });
+  costs.measure(38, 100);
+  assert.deepEqual(agentBudgetWindow(40, 39, costs, AGENT_DOM_TARGETS.high), { start: 37, end: 40 });
+  costs.measure(39, 100);
+  assert.deepEqual(agentBudgetWindow(40, 39, costs, AGENT_DOM_TARGETS.low), { start: 37, end: 40 });
 });
 
 test("oversized target stays mounted and no window skips its target", () => {
@@ -34,4 +40,17 @@ test("invalid measurements cannot poison the budget policy", () => {
   assert.equal(costs.measure(0, 3_300), true);
   costs.resize(0);
   assert.equal(costs.cost(0), 1_000);
+});
+
+test("a five-row run of unknown giant outputs never mounts together", () => {
+  const costs = new AgentDomCostIndex(1000);
+  for (const level of Object.values(AGENT_DOM_TARGETS)) {
+    assert.deepEqual(agentBudgetWindow(1000, 999, costs, level),
+      { start: 999, end: 1000 });
+  }
+  costs.measure(999, 80_000);
+  for (const level of Object.values(AGENT_DOM_TARGETS)) {
+    assert.deepEqual(agentBudgetWindow(1000, 999, costs, level),
+      { start: 999, end: 1000 });
+  }
 });
