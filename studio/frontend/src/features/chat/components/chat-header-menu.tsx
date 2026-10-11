@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useChatFavoritesStore } from "@/features/library/chats/favorites-store";
 import { useAgentHistoryModeStore } from "../stores/agent-history-mode-store";
-import { agentHistoryEnabledFor, agentHistoryWindowFor } from "../stores/agent-history-preference-policy";
+import { agentHistoryLevelFor, agentHistoryEnabledFor, agentHistoryWindowFor } from "../stores/agent-history-preference-policy";
 import {
   AGENT_WINDOW_SIZES,
   isAgentWindowSize,
@@ -166,9 +166,10 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
       state.runningByThreadId[menu.item.id] === true ||
       state.runningByThreadId.__default === true,
   );
-  const agentHistoryEnabled = useAgentHistoryModeStore(
-    (state) => agentHistoryEnabledFor(state, menu.item.id),
+  const agentHistoryLevel = useAgentHistoryModeStore(
+    (state) => agentHistoryLevelFor(state, menu.item.id),
   );
+  const agentHistoryEnabled = agentHistoryLevel !== "off";
   const agentWindowRows = useAgentHistoryModeStore(
     (state) => agentHistoryWindowFor(state, menu.item.id),
   );
@@ -240,6 +241,38 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
         )}
       </Item>
       <DropdownMenuSeparator className="mx-3" />
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger disabled={running} className="gap-2.5">
+          <HugeiconsIcon icon={LayerIcon} strokeWidth={1.75} className={ICON} />
+          DOM-Optimierung: {agentHistoryLevel === "legacy" ? "Bisherige Einstellung" : agentHistoryLevel === "off" ? "Aus" : agentHistoryLevel === "low" ? "Low" : "High"}
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className={cn(MENU, "w-60")}>
+          <DropdownMenuLabel className={LABEL}>DOM-Optimierung für diesen Chat</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={useAgentHistoryModeStore.getState().domLevelByThreadId?.[menu.item.id] ?? "inherit"}
+            onValueChange={value => {
+              if (value === "inherit" || value === "off" ||
+                  value === "low" || value === "high") {
+                useAgentHistoryModeStore.getState().setThreadDomLevel(
+                  menu.item.id, value === "inherit" ? null : value,
+                );
+              }
+            }}
+          >
+            {([
+              ["inherit", "Global übernehmen"],
+              ["off", "Aus"],
+              ["low", "Low"],
+              ["high", "High"],
+            ] as const).map(([value, label]) => (
+              <DropdownMenuRadioItem key={value} value={value}
+                data-test-id={`agent-dom-level-${value}`}>
+                {label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
       <Item
         icon={agentHistoryEnabled ? ViewIcon : ViewOffSlashIcon}
         disabled={running}
