@@ -120,6 +120,32 @@ export const AgentHistoryScrollMessages: FC<{
     setState(old => ({ ...old, range: candidate }));
   }, [jumpBottom, navigateViewport, viewportRef, windowRows]);
 
+  useEffect(() => {
+    const task = staged.current;
+    if (!task) return;
+    const frame = requestAnimationFrame(() => {
+      if (staged.current !== task) return;
+      const current = rangeRef.current;
+      const next = nextProgressiveAgentWindow(current, task.destination);
+      if (next.start === current.start && next.end === current.end) {
+        staged.current = null;
+        return;
+      }
+      if (next.start < current.start) {
+        const row = viewportRef.current?.querySelector<HTMLElement>(
+          '[data-agent-history-row="' + task.target + '"]',
+        );
+        if (row) anchor.current = { index: task.target, top: row.getBoundingClientRect().top };
+      }
+      rangeRef.current = next;
+      setState(old => ({ ...old, range: next }));
+      if (next.start === task.destination.start && next.end === task.destination.end) {
+        staged.current = null;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [range.start, range.end, viewportRef]);
+
   const revealSearchRow = useCallback((index: number) => {
     const nextIntent = requestAgentHistoryReveal(navigation.current, index, countRef.current);
     if (nextIntent === navigation.current) return;
