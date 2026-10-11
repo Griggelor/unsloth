@@ -166,6 +166,8 @@ def gc_retention_sample(cdp, page, messages: int, cap: int, label: str) -> dict:
 
 
 def state(page, messages: int, limit: int, label: str) -> dict:
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
     try:
         page.wait_for_function(
             """() => {
@@ -175,7 +177,7 @@ def state(page, messages: int, limit: int, label: str) -> dict:
             }""",
             timeout = 90000,
         )
-    except Exception as exc:
+    except PlaywrightTimeoutError as exc:
         # Record numeric-only, synthetic-only state when the renderer stalls.
         # Never dump DOM HTML, transcript text, network payloads or screenshots.
         debug = page.evaluate("""() => {
