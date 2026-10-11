@@ -169,7 +169,7 @@ def state(page, messages: int, limit: int, label: str) -> dict:
     page.wait_for_function(
         """() => {
           const rows = [...document.querySelectorAll('[data-agent-history-row]')];
-          return rows.length > 0 && rows.every(row =>
+          return rows.length === 5 && rows.every(row =>
             row.querySelector('[data-qa-heavy-fixture]'));
         }""",
         timeout=90000,
