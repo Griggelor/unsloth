@@ -71,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [menu, dom, idle-scroll, dom-churn-50k, dom-churn-200k, dom-churn-400k, gc-retention]
+        suite: [menu, dom, idle-scroll, dom-churn-50k, dom-churn-200k, dom-churn-400k, gc-retention, foreground-10s]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -177,6 +177,14 @@ jobs:
             --password "$AGENT_HISTORY_PW" --messages 1000 \
             --elements 50000 --rounds 1 --retention-cycles 30 \
             --output logs/agent-history/gc-retention-50k.json
+      - name: Synthetic first-ten-second foreground/scroll comparison
+        if: matrix.suite == 'foreground-10s'
+        timeout-minutes: 10
+        run: |
+          mkdir -p logs/agent-history
+          python tests/studio/playwright_agent_history_foreground_burst.py \
+            --url http://127.0.0.1:18899 --password "$AGENT_HISTORY_PW" \
+            --output logs/agent-history/foreground-10s.json
       - name: Cleanup and diagnostics
         if: always()
         run: |
