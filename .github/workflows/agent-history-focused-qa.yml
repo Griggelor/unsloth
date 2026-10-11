@@ -52,6 +52,18 @@ jobs:
           python scripts/run_ruff_format.py tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
           git diff -- tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
           git diff --exit-code -- tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
+      - name: Report pinned formatting patch for synthetic stress fixtures
+        run: |
+          python -m pip install 'ruff==0.6.9'
+          python scripts/run_ruff_format.py \
+            tests/studio/playwright_agent_history_dom_churn_stress.py \
+            tests/studio/playwright_agent_history_idle_scroll_stress.py
+          git --no-pager diff -- \
+            tests/studio/playwright_agent_history_dom_churn_stress.py \
+            tests/studio/playwright_agent_history_idle_scroll_stress.py
+          git diff --exit-code -- \
+            tests/studio/playwright_agent_history_dom_churn_stress.py \
+            tests/studio/playwright_agent_history_idle_scroll_stress.py
   browser:
     name: Focused browser (${{ matrix.suite }})
     runs-on: ubuntu-latest
