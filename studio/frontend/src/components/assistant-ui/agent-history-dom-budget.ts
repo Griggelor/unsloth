@@ -24,6 +24,7 @@ export class AgentDomCostIndex {
     this.costs.set(row, cost);
     return true;
   }
+  measured(row: number): boolean { return this.costs.has(row); }
   cost(row: number): number { return this.costs.get(row) ?? AGENT_UNKNOWN_ROW_COST; }
 }
 
@@ -42,18 +43,27 @@ export function agentBudgetWindow(
   if (count <= 0) return { start: 0, end: 0 };
   const at = Math.max(0, Math.min(count - 1, Math.floor(target)));
   let start = at, end = at + 1, used = costs.cost(at);
+  // Unknown rows can contain arbitrarily large tool outputs. Admit only one
+  // unmeasured row at a time, then rebalance after measuring its real DOM cost.
+  let unknown = costs.measured(at) ? 0 : 1;
+  const eligible = (row: number, cost: number) =>
+    used + cost <= budget && (costs.measured(row) || unknown === 0);
+  const add = (row: number, cost: number) => {
+    used += cost;
+    if (!costs.measured(row)) unknown++;
+  };
   while (end - start < maxRows) {
     const previous = start > 0 ? costs.cost(start - 1) : Infinity;
     const next = end < count ? costs.cost(end) : Infinity;
     if (previous === Infinity && next === Infinity) break;
     // Favor earlier rows at the tail, forward progress elsewhere.
     const preferPrevious = end === count || (start > 0 && previous < next);
-    if (preferPrevious && used + previous <= budget) {
-      start--; used += previous;
-    } else if (used + next <= budget) {
-      end++; used += next;
-    } else if (used + previous <= budget) {
-      start--; used += previous;
+    if (preferPrevious && eligible(start - 1, previous)) {
+      add(start - 1, previous); start--;
+    } else if (eligible(end, next)) {
+      add(end, next); end++;
+    } else if (eligible(start - 1, previous)) {
+      add(start - 1, previous); start--;
     } else break;
   }
   return { start, end };
