@@ -172,7 +172,7 @@ def state(page, messages: int, limit: int, label: str) -> dict:
           return rows.length > 0 && rows.every(row =>
             row.querySelector('[data-qa-heavy-fixture]'));
         }""",
-        timeout=90000,
+        timeout = 90000,
     )
     value = page.evaluate("() => window.__qaDomChurn.read()")
     positions = value["indices"]
@@ -245,9 +245,9 @@ def run(
         thread_id = create_fixture(base, auth, messages)
         original = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
+            browser = pw.chromium.launch(headless = True)
             try:
-                context = browser.new_context(viewport={"width": 1440, "height": 960})
+                context = browser.new_context(viewport = {"width": 1440, "height": 960})
                 context.add_init_script(
                     seed_init_script(
                         auth,
@@ -267,15 +267,15 @@ def run(
                 cdp.send("Performance.enable")
                 page.goto(
                     f"{base}/chat?thread={thread_id}",
-                    wait_until="domcontentloaded",
-                    timeout=120000,
+                    wait_until = "domcontentloaded",
+                    timeout = 120000,
                 )
-                page.locator(LIST).wait_for(state="attached", timeout=60000)
+                page.locator(LIST).wait_for(state = "attached", timeout = 60000)
                 page.wait_for_function(
                     """count => document.querySelectorAll('[data-agent-history-row]').length === 5 &&
                       document.querySelector('[data-agent-history-row]')?.getAttribute('aria-setsize') === String(count)""",
-                    arg=messages,
-                    timeout=60000,
+                    arg = messages,
+                    timeout = 60000,
                 )
                 page.evaluate(
                     INJECT,
@@ -331,23 +331,17 @@ def run(
                 measurements = result["measurements"]
                 high = max(value["listNodes"] for value in measurements)
                 if high < elements * 0.8:
-                    raise AssertionError(
-                        f"Stress intensity insufficient: {high} < 0.8*{elements}"
-                    )
+                    raise AssertionError(f"Stress intensity insufficient: {high} < 0.8*{elements}")
                 if max(value["distinctRows"] for value in measurements) < 15:
                     raise AssertionError("Too few unmounted messages traversed")
                 if not any(value["indices"][0] == 0 for value in measurements):
                     raise AssertionError("Beginning of transcript unreachable")
-                if not any(
-                    value["indices"][-1] == messages - 1 for value in measurements
-                ):
+                if not any(value["indices"][-1] == messages - 1 for value in measurements):
                     raise AssertionError("End of transcript unreachable")
                 if retention_cycles:
                     # Always compare the same mounted five-row tail after GC.
                     # A changing viewport would conflate legit live DOM and leaks.
-                    baseline = gc_retention_sample(
-                        cdp, page, messages, cap, "baseline-tail"
-                    )
+                    baseline = gc_retention_sample(cdp, page, messages, cap, "baseline-tail")
                     result["retention"].append(baseline)
                     checkpoints = {10, 20, retention_cycles}
                     for iteration in range(1, retention_cycles + 1):
@@ -374,9 +368,7 @@ def run(
                             result["retention"].append(observation)
                         if errors:
                             raise AssertionError("Browser error during GC retention cycles")
-                persisted = auth_request_json(
-                    auth, f"{base}/api/chat/threads/{thread_id}/messages"
-                )
+                persisted = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
                 if persisted["messages"] != original["messages"]:
                     raise AssertionError("Synthetic transcript persistence changed")
                 if errors:
@@ -390,30 +382,31 @@ def run(
             auth_request_json(
                 auth,
                 f"{base}/api/chat/threads",
-                method="DELETE",
-                body={"ids": [thread_id]},
+                method = "DELETE",
+                body = {"ids": [thread_id]},
             )
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(
-            json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
+        output.parent.mkdir(parents = True, exist_ok = True)
+        output.write_text(json.dumps(result, indent = 2, sort_keys = True) + "\n", encoding = "utf-8")
     return result
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--url", required=True)
-    parser.add_argument("--username", default="unsloth")
-    parser.add_argument("--password", required=True)
-    parser.add_argument("--output", default="logs/agent-history/dom-churn.json")
-    parser.add_argument("--messages", type=int, default=1000)
-    parser.add_argument("--elements", type=int, choices=(50000, 200000, 400000), default=200000)
-    parser.add_argument("--rounds", type=int, default=1)
-    parser.add_argument("--retention-cycles", type=int, default=0)
+    parser = argparse.ArgumentParser(description = __doc__)
+    parser.add_argument("--url", required = True)
+    parser.add_argument("--username", default = "unsloth")
+    parser.add_argument("--password", required = True)
+    parser.add_argument("--output", default = "logs/agent-history/dom-churn.json")
+    parser.add_argument("--messages", type = int, default = 1000)
+    parser.add_argument("--elements", type = int, choices = (50000, 200000, 400000), default = 200000)
+    parser.add_argument("--rounds", type = int, default = 1)
+    parser.add_argument("--retention-cycles", type = int, default = 0)
     args = parser.parse_args()
-    if not (1000 <= args.messages <= 2000 and 1 <= args.rounds <= 2
-            and 0 <= args.retention_cycles <= 40
-            and (args.retention_cycles == 0 or args.elements == 50000)):
+    if not (
+        1000 <= args.messages <= 2000
+        and 1 <= args.rounds <= 2
+        and 0 <= args.retention_cycles <= 40
+        and (args.retention_cycles == 0 or args.elements == 50000)
+    ):
         parser.error("Stress scenario outside bounded range")
     outcome = run(
         args.url,
@@ -431,13 +424,13 @@ def main() -> None:
             {
                 "status": outcome["status"],
                 "samples": len(samples),
-                "maxLiveDOM": max((x["totalNodes"] for x in samples), default=0),
-                "maxListDOM": max((x["listNodes"] for x in samples), default=0),
+                "maxLiveDOM": max((x["totalNodes"] for x in samples), default = 0),
+                "maxListDOM": max((x["listNodes"] for x in samples), default = 0),
                 "errors": outcome["browserErrors"],
                 "retentionSamples": len(outcome["retention"]),
             }
         ),
-        flush=True,
+        flush = True,
     )
 
 
