@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [menu, dom, idle-scroll]
+        suite: [menu, dom, idle-scroll, dom-churn-50k, dom-churn-200k, dom-churn-400k]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -139,6 +139,22 @@ jobs:
             --password "$AGENT_HISTORY_PW" \
             --messages 800 --cards 400 --rounds 3 \
             --output logs/agent-history/idle-scroll-stress.json
+      - name: Large DOM churn 50k / 200k / 400k
+        if: startsWith(matrix.suite, 'dom-churn-')
+        timeout-minutes: 22
+        run: |
+          mkdir -p logs/agent-history
+          case "${{ matrix.suite }}" in
+            dom-churn-50k) BUDGET=50000 ;;
+            dom-churn-200k) BUDGET=200000 ;;
+            dom-churn-400k) BUDGET=400000 ;;
+            *) exit 1 ;;
+          esac
+          python tests/studio/playwright_agent_history_dom_churn_stress.py \
+            --url http://127.0.0.1:18899 --username unsloth \
+            --password "$AGENT_HISTORY_PW" --messages 1000 \
+            --elements "$BUDGET" --rounds 1 \
+            --output "logs/agent-history/dom-churn-${BUDGET}.json"
       - name: Cleanup and diagnostics
         if: always()
         run: |
