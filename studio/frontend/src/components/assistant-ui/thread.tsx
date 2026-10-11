@@ -36,7 +36,7 @@ import { QueueResumeIcon } from "@/components/assistant-ui/queue-resume-icon";
 import { ProgressiveMessages } from "@/components/assistant-ui/progressive-messages";
 import { AgentHistoryScrollMessages } from "@/components/assistant-ui/agent-history-scroll-messages";
 import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
-import { agentHistoryLevelFor, agentHistoryEnabledFor, agentHistoryWindowFor } from "@/features/chat/stores/agent-history-preference-policy";
+import { agentHistoryLevelFor, agentHistoryWindowFor } from "@/features/chat/stores/agent-history-preference-policy";
 import { MessageMenuTime } from "@/components/assistant-ui/message-menu-time";
 import { UserMessageActionBar, UserMessageFooter } from "@/components/assistant-ui/user-message-actions";
 import { useActionBarFocusReveal } from "@/components/assistant-ui/use-action-bar-focus-reveal";
