@@ -261,6 +261,7 @@ export function ChatTab() {
   const setGlobalDomLevel = useAgentHistoryModeStore((state) => state.setGlobalDomLevel);
   const setGlobalAgentEnabled = useAgentHistoryModeStore((state) => state.setGlobalEnabled);
   const globalAgentEnabled = useAgentHistoryModeStore((state) => state.globalEnabled);
+  const globalAgentWindowRows = useAgentHistoryModeStore((state) => state.globalWindowRows);
   const plusPins = usePlusMenuPrefsStore((state) => state.pins);
   const togglePlusPin = usePlusMenuPrefsStore((state) => state.togglePin);
   const autoTitle = useChatRuntimeStore((state) => state.autoTitle);
@@ -608,13 +609,17 @@ export function ChatTab() {
           <div className="flex items-center gap-3">
             <Switch
               checked={globalAgentEnabled}
-              onCheckedChange={setGlobalAgentEnabled}
+              onCheckedChange={(enabled) => {
+                if (!enabled) setGlobalAgentEnabled(false);
+                else setGlobalDomLevel(isAgentBufferMode(globalDomLevel) ? globalDomLevel :
+                  globalAgentWindowRows === 32 ? "fixed-high" : "fixed-low");
+              }}
               aria-label={t("settings.chat.agentHistoryGlobal")}
             />
             <Select
               value={isAgentBufferMode(globalDomLevel) ? globalDomLevel :
                 globalDomLevel === "high" ||
-                (globalDomLevel === undefined && useAgentHistoryModeStore.getState().globalWindowRows === 32)
+                (globalDomLevel === undefined && globalAgentWindowRows === 32)
                   ? "fixed-high" : "fixed-low"}
               onValueChange={(value) => {
                 if (isAgentBufferMode(value)) setGlobalDomLevel(value);
