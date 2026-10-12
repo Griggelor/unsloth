@@ -207,6 +207,10 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
         ".aui-thread-viewport::-webkit-scrollbar{width:16px}"
         ".aui-thread-viewport::-webkit-scrollbar-thumb{background:#888}"
     ))
+    # Set up the scrollbar thumb at the bottom before the real pointer drag.
+    # No synthetic scroll or wheel is used AFTER the drag to repair the view.
+    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
+    page.wait_for_timeout(100)
     box = page.locator(VIEWPORT).bounding_box()
     if box is None:
         raise AssertionError("Agent viewport missing")
