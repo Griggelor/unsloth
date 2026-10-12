@@ -83,7 +83,7 @@ test("repeated adversarial measurement updates never expand beyond measured budg
       assert.ok(used <= budget || window.end - window.start === 1,
         `phase ${phase}: ${used} nodes across ${window.end - window.start} rows`);
       const unknown = Array.from({ length: window.end - window.start }, (_, i) =>
-        costs.measured(window.start + i) ? 0 : 1).reduce((a, b) => a + b, 0);
+        costs.measured(window.start + i) ? 0 : 1).reduce<number>((a, b) => a + b, 0);
       assert.ok(unknown <= 1, "never mount a batch of unknown huge tool rows");
     }
   }
