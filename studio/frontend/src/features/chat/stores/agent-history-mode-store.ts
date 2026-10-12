@@ -12,7 +12,7 @@ import { type AgentDomLevel } from "../../../components/assistant-ui/agent-histo
 import { type AgentHistoryPreferenceSnapshot } from "./agent-history-preference-policy";
 
 export type AgentHistoryModeState = AgentHistoryPreferenceSnapshot & {
-  setGlobalDomLevel: (level: AgentDomLevel) => void;
+  setGlobalDomLevel: (level: AgentDomLevel | null) => void;
   setThreadDomLevel: (threadId: string, level: AgentDomLevel | null) => void;
   setGlobalEnabled: (enabled: boolean) => void;
   setGlobalWindowRows: (rows: AgentWindowSize) => void;
@@ -32,8 +32,8 @@ export const useAgentHistoryModeStore = create<AgentHistoryModeState>()(
       disabledThreads: {},
       windowRowsByThreadId: {},
       setGlobalDomLevel: (level) => {
-        if (level !== "off" && level !== "low" && level !== "high") return;
-        set({ globalDomLevel: level });
+        if (level !== null && level !== "off" && level !== "low" && level !== "high") return;
+        set({ globalDomLevel: level ?? undefined });
       },
       setThreadDomLevel: (threadId, level) => {
         if (!threadId || (level !== null && level !== "off" &&
