@@ -200,6 +200,60 @@ def require_visible_search_row(page, row_index: int, label: str) -> None:
     )
 
 
+def capture_adaptive_paint_trace(page, start: bool) -> dict | None:
+    """Numeric-only frame trace. Never record synthetic message contents/HTML."""
+    if start:
+        page.evaluate("""() => {
+          window.__qaAdaptivePaint?.stop?.();
+          const viewport = document.querySelector('.aui-thread-viewport');
+          if (!viewport) throw Error('Missing viewport for adaptive paint trace');
+          const trace = { frames: 0, windowChanges: 0, maxStationaryShiftPx: 0,
+            maxScrollDeltaPx: 0, animatedFrames: 0, initialRows: 0, finalRows: 0,
+            maxRows: 0, durationMs: 0 };
+          let signature = '', lastTop = null, lastScroll = null, lastIndex = -1;
+          let stopped = false, raf = 0;
+          const startTime = performance.now();
+          function sample() {
+            if (stopped) return;
+            const list = viewport.querySelector('[data-agent-history-scroll-list]');
+            const rows = list ? [...list.querySelectorAll('[data-agent-history-row]')] : [];
+            const next = rows.map(r => r.dataset.agentHistoryRow).join(',');
+            if (next !== signature) { trace.windowChanges++; signature = next; }
+            if (!trace.frames) trace.initialRows = rows.length;
+            trace.frames++;
+            trace.finalRows = rows.length;
+            trace.maxRows = Math.max(trace.maxRows, rows.length);
+            const last = rows.at(-1);
+            const index = last ? Number(last.dataset.agentHistoryRow) : -1;
+            const top = last?.getBoundingClientRect().top ?? null;
+            const scroll = viewport.scrollTop;
+            if (lastTop !== null && lastIndex === index && top !== null) {
+              // Subtract user-owned scroll movement: residual is row/layout
+              // displacement despite a stationary reader viewport.
+              trace.maxStationaryShiftPx = Math.max(trace.maxStationaryShiftPx,
+                Math.abs((top - lastTop) + (scroll - lastScroll)));
+            }
+            if (lastScroll !== null) trace.maxScrollDeltaPx = Math.max(
+              trace.maxScrollDeltaPx, Math.abs(scroll - lastScroll));
+            const animated = [...(last?.querySelectorAll(
+              '.aui-user-message-root, [data-sd-animate]') || [])].some(node => {
+                const s = getComputedStyle(node);
+                return s.animationName !== 'none' && s.animationDuration !== '0s';
+              });
+            if (animated) trace.animatedFrames++;
+            lastTop = top; lastScroll = scroll; lastIndex = index;
+            trace.durationMs = Math.round(performance.now() - startTime);
+            raf = requestAnimationFrame(sample);
+          }
+          raf = requestAnimationFrame(sample);
+          window.__qaAdaptivePaint = {
+            stop: () => { stopped = true; cancelAnimationFrame(raf); return trace; }
+          };
+        }""")
+        return None
+    return page.evaluate("() => window.__qaAdaptivePaint?.stop?.() || null")
+
+
 def check_chat_header_menu(page, messages: int) -> None:
     """Verify real per-chat Low/High/Off/Inherited settings, then restore v1."""
     trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
@@ -236,6 +290,7 @@ def check_chat_header_menu(page, messages: int) -> None:
         option.press("Enter")
 
     for level in ("high", "low"):
+        capture_adaptive_paint_trace(page, True)
         choose(level)
         page.wait_for_function(
             """([expected, level]) => {
@@ -249,6 +304,9 @@ def check_chat_header_menu(page, messages: int) -> None:
             timeout = 60_000,
         )
         census(page, messages, f"dom-budget-{level}")
+        page.wait_for_timeout(650)
+        trace = capture_adaptive_paint_trace(page, False)
+        print(json.dumps({"qa": "adaptive-paint", "mode": level, "trace": trace}))
 
         # Two closely spaced synthetic tool-output resizes exercise the
         # trailing one-second recount; neither resize may lose the target.
@@ -292,6 +350,7 @@ def check_chat_header_menu(page, messages: int) -> None:
         """() => document.querySelector('[data-agent-history-scroll-list="true"]') === null""",
         timeout = 30_000,
     )
+    capture_adaptive_paint_trace(page, True)
     choose("inherit")
     page.wait_for_function(
         """expected => {
@@ -303,6 +362,9 @@ def check_chat_header_menu(page, messages: int) -> None:
         timeout = 60_000,
     )
     census(page, messages, "dom-budget-inherit-legacy")
+    page.wait_for_timeout(650)
+    print(json.dumps({"qa": "adaptive-paint", "mode": "legacy",
+                      "trace": capture_adaptive_paint_trace(page, False)}))
     overrides = page.evaluate(
         """() => JSON.parse(localStorage.getItem(
           'unsloth_agent_chat_history_v1') || '{}').state?.domLevelByThreadId || {}"""
