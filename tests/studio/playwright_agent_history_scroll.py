@@ -266,19 +266,54 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
             f"{before} -> {after}; scrollbar: {metrics}; hit: {hit}; at ({x}, {bottom})"
         )
         raise AssertionError(detail)
-    page.wait_for_function(
-        """() => {
-          const viewport = document.querySelector('.aui-thread-viewport');
-          if (!viewport) return false;
-          const view = viewport.getBoundingClientRect();
-          return [...viewport.querySelectorAll('[data-agent-history-row]')]
-            .some(row => {
-              const r = row.getBoundingClientRect();
-              return r.bottom > view.top + 8 && r.top < view.bottom - 8;
-            });
-        }""",
-        timeout = 3_000,
-    )
+    try:
+        page.wait_for_function(
+            """() => {
+              const viewport = document.querySelector('.aui-thread-viewport');
+              if (!viewport) return false;
+              const view = viewport.getBoundingClientRect();
+              return [...viewport.querySelectorAll('[data-agent-history-row]')]
+                .some(row => {
+                  const r = row.getBoundingClientRect();
+                  return r.bottom > view.top + 8 && r.top < view.bottom - 8;
+                });
+            }""",
+            timeout = 3_000,
+        )
+    except Exception as exc:
+        geometry = page.evaluate(
+            """() => {
+              const viewport = document.querySelector('.aui-thread-viewport');
+              const list = viewport?.querySelector('[data-agent-history-scroll-list]');
+              const top = list?.querySelector('[data-agent-history-spacer="top"]');
+              const bottom = list?.querySelector('[data-agent-history-spacer="bottom"]');
+              const rows = [...(list?.querySelectorAll('[data-agent-history-row]') ?? [])];
+              const rect = el => {
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { top: r.top, bottom: r.bottom, height: r.height };
+              };
+              return {
+                scrollTop: viewport?.scrollTop ?? null,
+                scrollHeight: viewport?.scrollHeight ?? null,
+                clientHeight: viewport?.clientHeight ?? null,
+                viewport: rect(viewport),
+                list: rect(list),
+                topSpacer: rect(top),
+                bottomSpacer: rect(bottom),
+                rows: rows.map(row => ({
+                  index: Number(row.dataset.agentHistoryRow),
+                  rect: rect(row)
+                }))
+              };
+            }"""
+        )
+        raise AssertionError(
+            f"{level}: physical drag moved {before} -> {after}, but no row "
+            f"intersects the viewport after 3000ms: "
+            f"{json.dumps(geometry, sort_keys = True)}"
+        ) from exc
+
     first = page.evaluate(
         """() => {
           const viewport = document.querySelector('.aui-thread-viewport');
