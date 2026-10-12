@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/qa-pr31-bundle-experiments.yml'
       - 'scripts/qa-pr31-bundle-experiments.py'
+      - 'scripts/qa-pr31-rag-split.py'
 permissions:
   contents: read
   pull-requests: read
@@ -85,6 +86,19 @@ jobs:
           echo '### Experimental Web Search-only split' >> "$GITHUB_STEP_SUMMARY"
           grep -E 'eager startup JS|over the startup budget|within budget' ../../../reports/candidate-budget.log >> "$GITHUB_STEP_SUMMARY" || true
           echo "**Do not count as a production pass: only the shipping PR30 HEAD can satisfy that gate.**" >> "$GITHUB_STEP_SUMMARY"
+      - name: Measure extracted citation badge plus deferred KB tool (scratch only)
+        working-directory: app/studio/frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ../../../qa-harness/scripts/qa-pr31-rag-split.py --frontend-root .
+          npm run typecheck > ../../../reports/rag-typecheck.log 2>&1 || { tail -n 120 ../../../reports/rag-typecheck.log; exit 1; }
+          npm run build > ../../../reports/rag-build.log 2>&1 || { tail -n 120 ../../../reports/rag-build.log; exit 1; }
+          if npm run bundle:check > ../../../reports/rag-budget.log 2>&1; then echo "RAG split candidate within budget"; else echo "RAG split candidate still over budget"; fi
+          cat ../../../reports/rag-budget.log
+          echo '### Web Search + isolated RAG tool UI' >> "$GITHUB_STEP_SUMMARY"
+          grep -E 'eager startup JS|over the startup budget|within budget' ../../../reports/rag-budget.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo '**No shipping code changed: full product CI is still needed before claiming a pass.**' >> "$GITHUB_STEP_SUMMARY"
       - name: Upload controlled comparison evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
