@@ -6,7 +6,7 @@ import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffec
 import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
-import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, type AgentDomLevel } from "./agent-history-dom-budget";
+import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, type AgentDomLevel, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
@@ -56,6 +56,7 @@ export const AgentHistoryScrollMessages: FC<{
   const anchor = useRef<{ index: number; top: number } | null>(null);
   const jump = useRef<"top" | "bottom" | null>(null);
   const staged = useRef<{ destination: AgentScrollWindow; target: number } | null>(null);
+  const pendingPassiveReveal = useRef<number | null>(null);
   // A real scroll received during staging must be sampled after the last
   // window commit, never allowed to abort staging with only one row mounted.
   const deferredScroll = useRef(false);
@@ -80,6 +81,7 @@ export const AgentHistoryScrollMessages: FC<{
     pendingScrollEpoch.current = null;
     navigation.current = initialAgentHistoryNavigation();
     staged.current = null;
+    pendingPassiveReveal.current = null;
     deferredScroll.current = false;
   }, [resetKey]);
   const revealFrame = useRef<number | null>(null);
@@ -139,6 +141,7 @@ export const AgentHistoryScrollMessages: FC<{
     const target = Math.min(Math.max(index, next.start), next.end - 1);
     const candidate = progressive ? { start: target, end: target + 1 } : next;
     staged.current = progressive ? { destination: next, target } : null;
+    pendingPassiveReveal.current = disjoint && !snap ? target : null;
     if (viewport && !snap) {
       const fold = viewport.getBoundingClientRect().top;
       for (const el of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
