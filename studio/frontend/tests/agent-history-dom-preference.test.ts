@@ -80,8 +80,8 @@ test("old numeric per-chat preferences remain readable until explicitly changed"
 
 test("settings dropdown exposes exactly the four named modes, with Off as a switch", () => {
   const source = readSrc("features/settings/tabs/chat-tab.tsx");
-  const section = source.split('label={t("settings.chat.agentHistoryGlobal")}')[1]
-    ?.split('label={t("settings.chat.webSearch.images")}')[0] ?? "";
+  const section = source.split('\n          label={t("settings.chat.agentHistoryGlobal")}')[1]
+    ?.split('\n          label={t("settings.chat.webSearch.images")}')[0] ?? "";
   const options = [...section.matchAll(/<SelectItem value="([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(options, ["dynamic-low", "dynamic-high", "fixed-low", "fixed-high"]);
   assert.match(section, /<Switch/);
