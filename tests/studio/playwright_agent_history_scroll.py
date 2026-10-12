@@ -204,7 +204,9 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
     """Actual pointer drag; no wheel or programmatic scroll recovery allowed."""
     page.add_style_tag(
         content = (
+            ".aui-thread-viewport{overflow-y:scroll!important;scrollbar-gutter:stable!important}"
             ".aui-thread-viewport::-webkit-scrollbar{width:16px}"
+            ".aui-thread-viewport::-webkit-scrollbar-track{background:#ddd}"
             ".aui-thread-viewport::-webkit-scrollbar-thumb{background:#888}"
         )
     )
@@ -215,17 +217,32 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
     box = page.locator(VIEWPORT).bounding_box()
     if box is None:
         raise AssertionError("Agent viewport missing")
-    x = box["x"] + box["width"] - 7
-    bottom = box["y"] + box["height"] - 12
+    metrics = page.locator(VIEWPORT).evaluate(
+        """el => ({
+          scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
+          clientHeight: el.clientHeight, clientWidth: el.clientWidth,
+          offsetWidth: el.offsetWidth, scrollbarGutter: getComputedStyle(el).scrollbarGutter
+        })"""
+    )
+    track_width = metrics["offsetWidth"] - metrics["clientWidth"]
+    if track_width < 8 or metrics["scrollHeight"] <= metrics["clientHeight"]:
+        raise AssertionError(f"{level}: native scrollbar not testable: {metrics}")
+    # At scroll bottom the native thumb ends at the viewport's lower edge.
+    # Use the middle of its bottom 16px instead of clicking the track.
+    x = box["x"] + box["width"] - track_width / 2
+    bottom = box["y"] + box["height"] - 8
     destination = box["y"] + box["height"] * 0.35
-    before = page.evaluate("() => document.querySelector('.aui-thread-viewport').scrollTop")
+    before = metrics["scrollTop"]
     page.mouse.move(x, bottom)
     page.mouse.down()
     page.mouse.move(x, destination, steps = 10)
     page.mouse.up()
-    after = page.evaluate("() => document.querySelector('.aui-thread-viewport').scrollTop")
+    after = page.locator(VIEWPORT).evaluate("el => el.scrollTop")
     if abs(after - before) < box["height"]:
-        raise AssertionError(f"{level}: thumb drag did not move viewport: {before} -> {after}")
+        raise AssertionError(
+            f"{level}: physical scrollbar drag did not move the viewport: "
+            f"{before} -> {after}; scrollbar: {metrics}; at ({x}, {bottom})"
+        )
     page.wait_for_function(
         """() => {
           const viewport = document.querySelector('.aui-thread-viewport');
@@ -510,7 +527,9 @@ def run(url: str, username: str, password: str, messages: int) -> None:
         baseline = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
         baseline_messages = baseline["messages"]
         with sync_playwright() as driver:
-            browser = driver.chromium.launch(headless = True)
+            browser = driver.chromium.launch(
+                headless = True, args = ["--disable-features=OverlayScrollbar,OverlayScrollbars"]
+            )
             try:
                 context = browser.new_context(viewport = {"width": 1440, "height": 960})
                 # The auth bootstrap is rerun on each navigation. Preferences must
