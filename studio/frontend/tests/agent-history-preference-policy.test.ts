@@ -18,6 +18,15 @@ test("legacy per-chat opt-in is preserved when the global switch is off", () => 
   assert.equal(agentHistoryEnabledFor(initial, "optedIn"), true);
   assert.equal(agentHistoryEnabledFor(initial, "newChat"), false);
   assert.equal(agentHistoryEnabledFor(initial, null), false);
+  assert.equal(
+    agentHistoryEnabledFor({ ...initial, globalEnabled: true, globalDomLevel: "dynamic-high" }, null),
+    false,
+    "a missing thread identity must not activate the virtualizer",
+  );
+  assert.equal(
+    agentHistoryLevelFor({ ...initial, globalEnabled: true, globalDomLevel: "dynamic-high" }, null),
+    "off",
+  );
 });
 
 test("global switch covers all chats and permits a per-chat exception", () => {

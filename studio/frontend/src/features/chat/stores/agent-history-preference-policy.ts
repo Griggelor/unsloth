@@ -47,7 +47,9 @@ export function agentHistoryLevelFor(
   state: AgentHistoryPreferenceSnapshot,
   threadId: string | null | undefined,
 ): AgentDomLevel | "legacy" {
-  const specific = threadId ? state.domLevelByThreadId?.[threadId] : undefined;
+  // There is no chat to virtualize before a thread ID is assigned.
+  if (!threadId) return "off";
+  const specific = state.domLevelByThreadId?.[threadId];
   if (specific === "off" || specific === "low" || specific === "high" ||
       isAgentBufferMode(specific)) return specific;
   // A pre-existing explicit per-chat opt-out/in is a local exception too.
