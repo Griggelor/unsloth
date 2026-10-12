@@ -52,6 +52,12 @@ jobs:
           python scripts/run_ruff_format.py tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
           git diff -- tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
           git diff --exit-code -- tests/studio/playwright_agent_history_dom_sweep.py tests/studio/playwright_agent_history_scroll.py
+      - name: Report pinned Ruff formatter fixed point for foreground test
+        run: |
+          python -m pip install 'ruff==0.6.9'
+          python scripts/run_ruff_format.py tests/studio/playwright_agent_history_foreground_burst.py
+          git --no-pager diff -- tests/studio/playwright_agent_history_foreground_burst.py
+          git diff --exit-code -- tests/studio/playwright_agent_history_foreground_burst.py
       - name: Report pinned formatting patch for synthetic stress fixtures
         run: |
           python -m pip install 'ruff==0.6.9'
@@ -71,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [menu, dom, idle-scroll, dom-churn-50k, dom-churn-200k, dom-churn-400k, gc-retention]
+        suite: [menu, dom, idle-scroll, dom-churn-50k, dom-churn-200k, dom-churn-400k, gc-retention, foreground-10s]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -177,6 +183,30 @@ jobs:
             --password "$AGENT_HISTORY_PW" --messages 1000 \
             --elements 50000 --rounds 1 --retention-cycles 30 \
             --output logs/agent-history/gc-retention-50k.json
+      - name: Install virtual display for real tab foreground changes
+        if: matrix.suite == 'foreground-10s'
+        timeout-minutes: 5
+        env:
+          RETRY_ATTEMPTS: '2'
+          RETRY_ATTEMPT_TIMEOUT: '120'
+        run: |
+          bash .github/scripts/retry-with-apt-lock.sh sudo apt-get install -y --no-install-recommends xvfb xauth
+      - name: Synthetic first-ten-second foreground/scroll comparison
+        if: matrix.suite == 'foreground-10s'
+        timeout-minutes: 10
+        run: |
+          mkdir -p logs/agent-history
+          xvfb-run -a -s '-screen 0 1600x1000x24' \
+            python tests/studio/playwright_agent_history_foreground_burst.py \
+            --url http://127.0.0.1:18899 --password "$AGENT_HISTORY_PW" \
+            --output logs/agent-history/foreground-10s.json
+      - name: Print exact pinned Ruff formatting patch for foreground scenario
+        if: matrix.suite == 'foreground-10s'
+        run: |
+          python -m pip install 'ruff==0.6.9'
+          python scripts/run_ruff_format.py tests/studio/playwright_agent_history_foreground_burst.py
+          git --no-pager diff -- tests/studio/playwright_agent_history_foreground_burst.py
+          git diff --exit-code -- tests/studio/playwright_agent_history_foreground_burst.py
       - name: Cleanup and diagnostics
         if: always()
         run: |
