@@ -206,6 +206,12 @@ def test_unset_fields_take_the_generation_config_defaults_and_set_fields_win(ser
     assert seen["logprobs"] == 0 and seen["n"] == 1 and seen["max_tokens"] == 8
 
 
+def test_loopback_http_accept_queue_exceeds_concurrent_rollout_burst():
+    # Python 3.12 ThreadingHTTPServer inherits a listen backlog of only five.
+    # The fake engine allows 64 concurrent sequences; leave accept headroom.
+    assert server_module._RolloutHTTPServer.request_queue_size >= 2 * 64
+
+
 def test_concurrent_requests_all_complete(served):
     server, _ = served
     results = [None] * 32
