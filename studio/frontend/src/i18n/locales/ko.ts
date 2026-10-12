@@ -2401,6 +2401,12 @@ export const ko = {
       },
     },
     chat: {
+      agentHistoryModeOff: "끔",
+      agentHistoryModeLow: "낮음",
+      agentHistoryModeHigh: "높음",
+      agentHistoryChatMode: "DOM 최적화",
+      agentHistoryInherit: "전역 설정 사용",
+      agentHistoryLegacy: "이전 설정",
       agentHistoryGlobal: "채팅 기록 가상화",
       agentHistoryGlobalDescription: "모든 채팅에서 한 번에 일부 메시지만 렌더링합니다. 전체 기록은 유지되며 채팅별 설정이 우선합니다.",
       agentHistoryRows: "채팅별 표시 메시지 수",

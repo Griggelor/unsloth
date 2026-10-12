@@ -2412,6 +2412,12 @@ export const hi = {
       },
     },
     chat: {
+      agentHistoryModeOff: "बंद",
+      agentHistoryModeLow: "कम",
+      agentHistoryModeHigh: "अधिक",
+      agentHistoryChatMode: "DOM अनुकूलन",
+      agentHistoryInherit: "वैश्विक सेटिंग का उपयोग करें",
+      agentHistoryLegacy: "पिछली सेटिंग",
       agentHistoryGlobal: "चैट इतिहास वर्चुअलाइज़ करें",
       agentHistoryGlobalDescription: "हर चैट में एक बार में केवल कुछ संदेश रेंडर करें। पूरा इतिहास उपलब्ध रहता है; अलग-अलग चैट की सेटिंग को प्राथमिकता मिलती है।",
       agentHistoryRows: "प्रति चैट दिखाई देने वाले संदेश",
