@@ -53,30 +53,43 @@ def run(url: str, password: str, output: Path) -> list[dict]:
             try:
                 for mode in ("no_scroll", "immediate_scroll"):
                     context = browser.new_context(viewport = {"width": 1440, "height": 960})
-                    context.add_init_script(seed_init_script(auth, [], {
-                        "unsloth_agent_chat_history_v1": {
-                            "state": {"globalEnabled": True, "globalWindowRows": 5},
-                            "version": 0,
-                        }
-                    }))
+                    context.add_init_script(
+                        seed_init_script(
+                            auth,
+                            [],
+                            {
+                                "unsloth_agent_chat_history_v1": {
+                                    "state": {"globalEnabled": True, "globalWindowRows": 5},
+                                    "version": 0,
+                                }
+                            },
+                        )
+                    )
                     errors: list[str] = []
                     try:
                         page = context.new_page()
                         page.on("pageerror", lambda _: errors.append("pageerror"))
                         page.on("crash", lambda: errors.append("crash"))
-                        page.goto(f"{base}/chat?thread={thread}",
-                                  wait_until = "domcontentloaded", timeout = 120000)
+                        page.goto(
+                            f"{base}/chat?thread={thread}",
+                            wait_until = "domcontentloaded",
+                            timeout = 120000,
+                        )
                         page.locator('[data-agent-history-scroll-list="true"]').wait_for(
-                            state = "attached", timeout = 60000)
+                            state = "attached", timeout = 60000
+                        )
                         page.wait_for_function(
                             "n => document.querySelectorAll('[data-agent-history-row]').length === 5 && document.querySelector('[data-agent-history-row]')?.getAttribute('aria-setsize') === String(n)",
-                            arg = 1000, timeout = 60000)
-                        page.evaluate(INJECT, {
-                            "regularCards": 1600, "heavyCards": 1600, "total": 1000
-                        })
+                            arg = 1000,
+                            timeout = 60000,
+                        )
+                        page.evaluate(
+                            INJECT, {"regularCards": 1600, "heavyCards": 1600, "total": 1000}
+                        )
                         page.wait_for_function(
                             "() => document.querySelectorAll('[data-qa-heavy-fixture]').length === 5",
-                            timeout = 90000)
+                            timeout = 90000,
+                        )
                         page.evaluate(METRIC_SCRIPT)
                         cdp = context.new_cdp_session(page)
                         cdp.send("Performance.enable")
@@ -84,14 +97,14 @@ def run(url: str, password: str, output: Path) -> list[dict]:
                         background.goto("about:blank")
                         background.bring_to_front()
                         page.wait_for_function(
-                            "() => document.visibilityState === 'hidden'",
+                            "() => document.visibilityState === 'hidden',
                             timeout = 10000,
                         )
                         page.wait_for_timeout(3000)
                         before = metrics(cdp)
                         page.bring_to_front()
                         page.wait_for_function(
-                            "() => document.visibilityState === 'visible'",
+                            "() => document.visibilityState === 'visible',
                             timeout = 10000,
                         )
                         if mode == "immediate_scroll":
@@ -107,18 +120,33 @@ def run(url: str, password: str, output: Path) -> list[dict]:
                             raise AssertionError(f"{mode}: broken window or browser errors")
                         if "visible" not in observed["transitions"]:
                             raise AssertionError(f"{mode}: no return to foreground detected")
-                        readings.append({
-                            "mode": mode, "secondsObserved": 10,
-                            "mountedRows": observed["mounted"],
-                            "messageDOMElements": observed["dom"],
-                            "longTasks": observed["longTasks"],
-                            "maxLongTaskMs": round(observed["maxLongTaskMs"], 2),
-                            "taskMs": round(1000 * (after["TaskDuration"] - before["TaskDuration"]), 2),
-                            "layoutMs": round(1000 * (after["LayoutDuration"] - before["LayoutDuration"]), 2),
-                            "scriptMs": round(1000 * (after["ScriptDuration"] - before["ScriptDuration"]), 2),
-                            "styleMs": round(1000 * (after["RecalcStyleDuration"] - before["RecalcStyleDuration"]), 2),
-                            "browserErrors": len(errors),
-                        })
+                        readings.append(
+                            {
+                                "mode": mode,
+                                "secondsObserved": 10,
+                                "mountedRows": observed["mounted"],
+                                "messageDOMElements": observed["dom"],
+                                "longTasks": observed["longTasks"],
+                                "maxLongTaskMs": round(observed["maxLongTaskMs"], 2),
+                                "taskMs": round(
+                                    1000 * (after["TaskDuration"] - before["TaskDuration"]), 2
+                                ),
+                                "layoutMs": round(
+                                    1000 * (after["LayoutDuration"] - before["LayoutDuration"]), 2
+                                ),
+                                "scriptMs": round(
+                                    1000 * (after["ScriptDuration"] - before["ScriptDuration"]), 2
+                                ),
+                                "styleMs": round(
+                                    1000
+                                    * (
+                                        after["RecalcStyleDuration"] - before["RecalcStyleDuration"]
+                                    ),
+                                    2,
+                                ),
+                                "browserErrors": len(errors),
+                            }
+                        )
                     finally:
                         context.close()
             finally:
@@ -129,14 +157,21 @@ def run(url: str, password: str, output: Path) -> list[dict]:
     finally:
         auth_request_json(auth, f"{base}/api/chat/threads", method = "DELETE", body = {"ids": [thread]})
         output.parent.mkdir(parents = True, exist_ok = True)
-        output.write_text(json.dumps({
-            "status": "PASS" if len(readings) == 2 else "INCOMPLETE",
-            "browser": "headed-chromium-xvfb",
-            "notWindowsLockUnlock": True,
-            "modelLoaded": False,
-            "messages": 1000,
-            "readings": readings,
-        }, indent = 2) + "\n", encoding = "utf-8")
+        output.write_text(
+            json.dumps(
+                {
+                    "status": "PASS" if len(readings) == 2 else "INCOMPLETE",
+                    "browser": "headed-chromium-xvfb",
+                    "notWindowsLockUnlock": True,
+                    "modelLoaded": False,
+                    "messages": 1000,
+                    "readings": readings,
+                },
+                indent = 2,
+            )
+            + "\n",
+            encoding = "utf-8",
+        )
     return readings
 
 
