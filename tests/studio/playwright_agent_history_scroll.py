@@ -319,43 +319,43 @@ def check_chat_header_menu(page, messages: int) -> None:
         )
         census(page, messages, f"dom-budget-{level}")
 
-        # Two closely spaced synthetic tool-output resizes exercise the
-        # trailing one-second recount; neither resize may lose the target.
-        target = page.evaluate(
-            """() => {
-              const row = [...document.querySelectorAll('[data-agent-history-row]')].at(-1);
-              const owner = row?.querySelector('[data-role]');
-              if (!row || !owner) throw Error('Adaptive target missing');
-              const heavy = document.createElement('div');
-              heavy.dataset.qaAdaptiveHeavy = 'true';
-              heavy.style.cssText = 'height:100px;overflow:hidden;contain:layout';
-              heavy.innerHTML = '<span>qa</span>'.repeat(200);
-              owner.appendChild(heavy);
-              return Number(row.dataset.agentHistoryRow);
-            }"""
-        )
-        page.wait_for_timeout(100)
-        page.evaluate(
-            """() => {
-              const heavy = document.querySelector('[data-qa-adaptive-heavy]');
-              if (!heavy) throw Error('Synthetic row disappeared before expansion');
-              heavy.style.height = '1600px';
-              heavy.innerHTML = '<span>qa</span>'.repeat(15000);
-            }"""
-        )
-        page.wait_for_function(
-            """target => {
-              const rows = [...document.querySelectorAll('[data-agent-history-row]')];
-              return rows.length === 1 &&
-                Number(rows[0].dataset.agentHistoryRow) === target &&
-                rows[0].querySelector('[data-qa-adaptive-heavy]') !== null &&
-                rows[0].querySelectorAll('*').length > 15000;
-            }""",
-            arg = target,
-            timeout = 15_000,
-        )
-        page.evaluate("() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()")
         if level.startswith("dynamic-"):
+            # Two closely spaced synthetic tool-output resizes exercise the
+            # trailing one-second recount; neither resize may lose the target.
+            target = page.evaluate(
+                """() => {
+                  const row = [...document.querySelectorAll('[data-agent-history-row]')].at(-1);
+                  const owner = row?.querySelector('[data-role]');
+                  if (!row || !owner) throw Error('Adaptive target missing');
+                  const heavy = document.createElement('div');
+                  heavy.dataset.qaAdaptiveHeavy = 'true';
+                  heavy.style.cssText = 'height:100px;overflow:hidden;contain:layout';
+                  heavy.innerHTML = '<span>qa</span>'.repeat(200);
+                  owner.appendChild(heavy);
+                  return Number(row.dataset.agentHistoryRow);
+                }"""
+            )
+            page.wait_for_timeout(100)
+            page.evaluate(
+                """() => {
+                  const heavy = document.querySelector('[data-qa-adaptive-heavy]');
+                  if (!heavy) throw Error('Synthetic row disappeared before expansion');
+                  heavy.style.height = '1600px';
+                  heavy.innerHTML = '<span>qa</span>'.repeat(15000);
+                }"""
+            )
+            page.wait_for_function(
+                """target => {
+                  const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+                  return rows.length === 1 &&
+                    Number(rows[0].dataset.agentHistoryRow) === target &&
+                    rows[0].querySelector('[data-qa-adaptive-heavy]') !== null &&
+                    rows[0].querySelectorAll('*').length > 15000;
+                }""",
+                arg = target,
+                timeout = 15_000,
+            )
+            page.evaluate("() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()")
             check_adaptive_thumb_drag(page, level)
 
     choose("off")
@@ -378,7 +378,8 @@ def check_chat_header_menu(page, messages: int) -> None:
         """() => JSON.parse(localStorage.getItem(
           'unsloth_agent_chat_history_v1') || '{}').state?.domLevelByThreadId || {}"""
     )
-    if any(value in ("off", "low", "high") for value in overrides.values()):
+    if any(value in ("off", "low", "high", "fixed-low", "fixed-high",
+                     "dynamic-low", "dynamic-high") for value in overrides.values()):
         raise AssertionError("Per-chat DOM mode override remained after inheritance")
 
 
