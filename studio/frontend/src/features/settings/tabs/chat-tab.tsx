@@ -261,7 +261,6 @@ export function ChatTab() {
   const setGlobalDomLevel = useAgentHistoryModeStore((state) => state.setGlobalDomLevel);
   const globalAgentEnabled = useAgentHistoryModeStore((state) => state.globalEnabled);
   const globalAgentWindowRows = useAgentHistoryModeStore((state) => state.globalWindowRows);
-  const setGlobalAgentEnabled = useAgentHistoryModeStore((state) => state.setGlobalEnabled);
   const setGlobalAgentWindowRows = useAgentHistoryModeStore((state) => state.setGlobalWindowRows);
   const plusPins = usePlusMenuPrefsStore((state) => state.pins);
   const togglePlusPin = usePlusMenuPrefsStore((state) => state.togglePin);
@@ -613,8 +612,9 @@ export function ChatTab() {
               if (value === "off" || value === "low" || value === "high") {
                 setGlobalDomLevel(value);
               } else if (value === "legacy") {
+                // Restore the persisted v1 preference; never silently enable
+                // virtualization for a profile that previously opted out.
                 setGlobalDomLevel(null);
-                setGlobalAgentEnabled(true);
               }
             }}
           >
