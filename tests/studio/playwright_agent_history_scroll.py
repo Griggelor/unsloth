@@ -203,10 +203,12 @@ def require_visible_search_row(page, row_index: int, label: str) -> None:
 
 def check_adaptive_thumb_drag(page, level: str) -> None:
     """Actual pointer drag; no wheel or programmatic scroll recovery allowed."""
-    page.add_style_tag(content = (
-        ".aui-thread-viewport::-webkit-scrollbar{width:16px}"
-        ".aui-thread-viewport::-webkit-scrollbar-thumb{background:#888}"
-    ))
+    page.add_style_tag(
+        content = (
+            ".aui-thread-viewport::-webkit-scrollbar{width:16px}"
+            ".aui-thread-viewport::-webkit-scrollbar-thumb{background:#888}"
+        )
+    )
     # Set up the scrollbar thumb at the bottom before the real pointer drag.
     # No synthetic scroll or wheel is used AFTER the drag to repair the view.
     page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
@@ -217,16 +219,12 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
     x = box["x"] + box["width"] - 7
     bottom = box["y"] + box["height"] - 12
     destination = box["y"] + box["height"] * 0.35
-    before = page.evaluate(
-        "() => document.querySelector('.aui-thread-viewport').scrollTop"
-    )
+    before = page.evaluate("() => document.querySelector('.aui-thread-viewport').scrollTop")
     page.mouse.move(x, bottom)
     page.mouse.down()
     page.mouse.move(x, destination, steps = 10)
     page.mouse.up()
-    after = page.evaluate(
-        "() => document.querySelector('.aui-thread-viewport').scrollTop"
-    )
+    after = page.evaluate("() => document.querySelector('.aui-thread-viewport').scrollTop")
     if abs(after - before) < box["height"]:
         raise AssertionError(f"{level}: thumb drag did not move viewport: {before} -> {after}")
     page.wait_for_function(
@@ -382,8 +380,10 @@ def check_chat_header_menu(page, messages: int) -> None:
         """() => JSON.parse(localStorage.getItem(
           'unsloth_agent_chat_history_v1') || '{}').state?.domLevelByThreadId || {}"""
     )
-    if any(value in ("off", "low", "high", "fixed-low", "fixed-high",
-                     "dynamic-low", "dynamic-high") for value in overrides.values()):
+    if any(
+        value in ("off", "low", "high", "fixed-low", "fixed-high", "dynamic-low", "dynamic-high")
+        for value in overrides.values()
+    ):
         raise AssertionError("Per-chat DOM mode override remained after inheritance")
 
 
