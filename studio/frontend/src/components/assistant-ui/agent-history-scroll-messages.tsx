@@ -523,6 +523,23 @@ export const AgentHistoryScrollMessages: FC<{
     budgetFrame.current = null;
     budgetProbeTimer.current = null;
   }, [resetKey, budget]);
+  // Content changes do not necessarily resize a row: clipped tool output can
+  // add thousands of descendants without changing the observed box. Counting
+  // only in ResizeObserver would leave the DOM budget stale indefinitely.
+  // Observe mounted message content, not the entire page, and use the existing
+  // trailing throttled probe rather than counting on each mutation.
+  useEffect(() => {
+    if (budget === null || typeof MutationObserver === "undefined") return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const observer = new MutationObserver(() => scheduleBudgetProbe());
+    for (const wrapper of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
+      const content = wrapper.querySelector<HTMLElement>("[data-role]");
+      if (content) observer.observe(content, { childList: true, subtree: true });
+    }
+    return () => observer.disconnect();
+  }, [budget, range.start, range.end, viewportRef, scheduleBudgetProbe]);
+
   useLayoutEffect(() => {
     if (budget === null || staged.current !== null) return;
     const viewport = viewportRef.current;
