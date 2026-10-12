@@ -201,32 +201,114 @@ def require_visible_search_row(page, row_index: int, label: str) -> None:
 
 
 def check_chat_header_menu(page, messages: int) -> None:
-    """Exercise the real header menu, which lives outside AssistantRuntimeProvider."""
+    """Verify real per-chat Low/High/Off/Inherited settings, then restore v1."""
     trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
     trigger.wait_for(state = "visible", timeout = 30_000)
-    trigger.click()
-    disable = page.get_by_role("menuitem", name = "Agenten-Chatverlauf deaktivieren")
-    disable.wait_for(state = "visible", timeout = 30_000)
     if messages != 400:
+        trigger.click()
         page.keyboard.press("Escape")
         return
 
-    # On 400 rows also verify the complete user-facing opt-in/off path.
-    disable.click()
+    def choose(level: str) -> None:
+        # Radix may keep the parent menu open after choosing a nested radio
+        # item. Clicking its trigger unconditionally would CLOSE that menu.
+        if trigger.get_attribute("aria-expanded") != "true":
+            trigger.click()
+        submenu = page.locator('[data-test-id="agent-dom-level-trigger"]')
+        try:
+            submenu.wait_for(state = "visible", timeout = 30_000)
+        except Exception:
+            diagnostic = page.evaluate("""() => ({
+              expanded: document.querySelector('[data-test-id="chat-header-more-menu-trigger"]')
+                ?.getAttribute('aria-expanded') ?? null,
+              menus: [...document.querySelectorAll('[role="menu"]')]
+                .map(x => (x.textContent || '').slice(0, 350)),
+              rows: document.querySelectorAll('[data-agent-history-row]').length,
+              activeDomLevel: document.querySelector('[data-agent-history-scroll-list]')
+                ?.getAttribute('data-agent-history-dom-level') ?? null
+            })""")
+            raise AssertionError(f"DOM mode submenu missing for {level}: {diagnostic}")
+        submenu.focus()
+        submenu.press("ArrowRight")
+        option = page.locator(f'[data-test-id="agent-dom-level-{level}"]')
+        option.wait_for(state = "visible", timeout = 30_000)
+        option.focus()
+        option.press("Enter")
+
+    for level in ("high", "low"):
+        choose(level)
+        page.wait_for_function(
+            """([expected, level]) => {
+              const list = document.querySelector('[data-agent-history-scroll-list="true"]');
+              const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+              return list?.getAttribute('data-agent-history-dom-level') === level &&
+                rows.length >= 1 && rows.length <= 32 &&
+                rows.every(row => row.getAttribute('aria-setsize') === String(expected));
+            }""",
+            arg = [messages, level],
+            timeout = 60_000,
+        )
+        census(page, messages, f"dom-budget-{level}")
+
+        # Two closely spaced synthetic tool-output resizes exercise the
+        # trailing one-second recount; neither resize may lose the target.
+        target = page.evaluate(
+            """() => {
+              const row = [...document.querySelectorAll('[data-agent-history-row]')].at(-1);
+              const owner = row?.querySelector('[data-role]');
+              if (!row || !owner) throw Error('Adaptive target missing');
+              const heavy = document.createElement('div');
+              heavy.dataset.qaAdaptiveHeavy = 'true';
+              heavy.style.cssText = 'height:100px;overflow:hidden;contain:layout';
+              heavy.innerHTML = '<span>qa</span>'.repeat(200);
+              owner.appendChild(heavy);
+              return Number(row.dataset.agentHistoryRow);
+            }"""
+        )
+        page.wait_for_timeout(100)
+        page.evaluate(
+            """() => {
+              const heavy = document.querySelector('[data-qa-adaptive-heavy]');
+              if (!heavy) throw Error('Synthetic row disappeared before expansion');
+              heavy.style.height = '1600px';
+              heavy.innerHTML = '<span>qa</span>'.repeat(15000);
+            }"""
+        )
+        page.wait_for_function(
+            """target => {
+              const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+              return rows.length === 1 &&
+                Number(rows[0].dataset.agentHistoryRow) === target &&
+                rows[0].querySelector('[data-qa-adaptive-heavy]') !== null &&
+                rows[0].querySelectorAll('*').length > 15000;
+            }""",
+            arg = target,
+            timeout = 15_000,
+        )
+        page.evaluate("() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()")
+
+    choose("off")
     page.wait_for_function(
         """() => document.querySelector('[data-agent-history-scroll-list="true"]') === null""",
         timeout = 30_000,
     )
-    trigger.click()
-    page.get_by_role("menuitem", name = "Agenten-Chatverlauf aktivieren").click()
+    choose("inherit")
     page.wait_for_function(
-        """expected => !!document.querySelector(
-          '[data-agent-history-row][aria-setsize="' + expected + '"]'
-        )""",
+        """expected => {
+          const list = document.querySelector('[data-agent-history-scroll-list="true"]');
+          return list?.getAttribute('data-agent-history-dom-level') === 'legacy' &&
+            !!list.querySelector('[data-agent-history-row][aria-setsize="' + expected + '"]');
+        }""",
         arg = messages,
-        timeout = 30_000,
+        timeout = 60_000,
     )
-    census(page, messages, "menu-toggled-on")
+    census(page, messages, "dom-budget-inherit-legacy")
+    overrides = page.evaluate(
+        """() => JSON.parse(localStorage.getItem(
+          'unsloth_agent_chat_history_v1') || '{}').state?.domLevelByThreadId || {}"""
+    )
+    if any(value in ("off", "low", "high") for value in overrides.values()):
+        raise AssertionError("Per-chat DOM mode override remained after inheritance")
 
 
 def check_runtime_window_size(page, thread_id: str, messages: int) -> None:

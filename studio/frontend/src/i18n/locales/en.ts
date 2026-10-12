@@ -2444,6 +2444,12 @@ export const en = {
       },
     },
     chat: {
+      agentHistoryModeOff: "Off",
+      agentHistoryModeLow: "Low",
+      agentHistoryModeHigh: "High",
+      agentHistoryChatMode: "DOM optimization",
+      agentHistoryInherit: "Use global setting",
+      agentHistoryLegacy: "Previous setting",
       agentHistoryGlobal: "Virtualize chat history",
       agentHistoryGlobalDescription: "Render only a small set of messages in every chat. Full history stays available; per-chat exceptions take precedence.",
       agentHistoryRows: "Visible messages per chat",

@@ -2444,6 +2444,12 @@ export const de = {
       },
     },
     chat: {
+      agentHistoryModeOff: "Aus",
+      agentHistoryModeLow: "Low",
+      agentHistoryModeHigh: "High",
+      agentHistoryChatMode: "DOM-Optimierung",
+      agentHistoryInherit: "Global übernehmen",
+      agentHistoryLegacy: "Bisherige Einstellung",
       agentHistoryGlobal: "Chatverlauf virtualisieren",
       agentHistoryGlobalDescription: "In allen Chats nur wenige Nachrichten gleichzeitig rendern. Die gesamte Historie bleibt erreichbar; Ausnahmen pro Chat haben Vorrang.",
       agentHistoryRows: "Sichtbare Nachrichten pro Chat",

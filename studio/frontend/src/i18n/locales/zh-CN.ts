@@ -2370,6 +2370,12 @@ export const zhCN = {
       },
     },
     chat: {
+      agentHistoryModeOff: "关闭",
+      agentHistoryModeLow: "低",
+      agentHistoryModeHigh: "高",
+      agentHistoryChatMode: "DOM 优化",
+      agentHistoryInherit: "使用全局设置",
+      agentHistoryLegacy: "之前的设置",
       agentHistoryGlobal: "虚拟化聊天记录",
       agentHistoryGlobalDescription: "在每个聊天中仅渲染少量消息。完整历史仍可访问，单个聊天的设置优先。",
       agentHistoryRows: "每个聊天显示的消息数",

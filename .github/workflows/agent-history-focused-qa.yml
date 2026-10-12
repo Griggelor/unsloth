@@ -44,6 +44,8 @@ jobs:
           node --experimental-strip-types --test \
             tests/agent-history-navigation.test.ts \
             tests/agent-history-scroll-intent-gate.test.ts \
+            tests/agent-history-dom-budget.test.ts \
+            tests/agent-history-dom-preference.test.ts \
             tests/agent-history-scroll-window.test.ts \
             tests/agent-history-search.test.ts \
             tests/agent-history-preference-policy.test.ts

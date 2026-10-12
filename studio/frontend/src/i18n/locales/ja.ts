@@ -2392,6 +2392,12 @@ export const ja = {
       },
     },
     chat: {
+      agentHistoryModeOff: "オフ",
+      agentHistoryModeLow: "低",
+      agentHistoryModeHigh: "高",
+      agentHistoryChatMode: "DOM 最適化",
+      agentHistoryInherit: "全体設定を使用",
+      agentHistoryLegacy: "以前の設定",
       agentHistoryGlobal: "チャット履歴を仮想化",
       agentHistoryGlobalDescription: "各チャットで一度に表示するメッセージを少数に限定します。履歴全体は保持され、チャット個別の設定が優先されます。",
       agentHistoryRows: "チャットごとの表示メッセージ数",

@@ -8,9 +8,12 @@ import {
   isAgentWindowSize,
   type AgentWindowSize,
 } from "../../../components/assistant-ui/agent-history-scroll-window";
+import { type AgentDomLevel } from "../../../components/assistant-ui/agent-history-dom-budget";
 import { type AgentHistoryPreferenceSnapshot } from "./agent-history-preference-policy";
 
 export type AgentHistoryModeState = AgentHistoryPreferenceSnapshot & {
+  setGlobalDomLevel: (level: AgentDomLevel | null) => void;
+  setThreadDomLevel: (threadId: string, level: AgentDomLevel | null) => void;
   setGlobalEnabled: (enabled: boolean) => void;
   setGlobalWindowRows: (rows: AgentWindowSize) => void;
   setEnabled: (threadId: string, enabled: boolean) => void;
@@ -21,11 +24,27 @@ export type AgentHistoryModeState = AgentHistoryPreferenceSnapshot & {
 export const useAgentHistoryModeStore = create<AgentHistoryModeState>()(
   persist(
     (set) => ({
+      globalDomLevel: undefined,
+      domLevelByThreadId: {},
       globalEnabled: false,
       globalWindowRows: AGENT_DEFAULT_ROWS,
       enabledThreads: {},
       disabledThreads: {},
       windowRowsByThreadId: {},
+      setGlobalDomLevel: (level) => {
+        if (level !== null && level !== "off" && level !== "low" && level !== "high") return;
+        set({ globalDomLevel: level ?? undefined });
+      },
+      setThreadDomLevel: (threadId, level) => {
+        if (!threadId || (level !== null && level !== "off" &&
+          level !== "low" && level !== "high")) return;
+        set(state => {
+          const domLevelByThreadId = { ...state.domLevelByThreadId };
+          if (level === null) delete domLevelByThreadId[threadId];
+          else domLevelByThreadId[threadId] = level;
+          return { domLevelByThreadId };
+        });
+      },
       setGlobalEnabled: (enabled) => set({ globalEnabled: enabled }),
       setGlobalWindowRows: (rows) => {
         if (!isAgentWindowSize(rows)) return;
@@ -60,6 +79,8 @@ export const useAgentHistoryModeStore = create<AgentHistoryModeState>()(
     {
       name: "unsloth_agent_chat_history_v1",
       partialize: (state) => ({
+        globalDomLevel: state.globalDomLevel,
+        domLevelByThreadId: state.domLevelByThreadId,
         globalEnabled: state.globalEnabled,
         globalWindowRows: state.globalWindowRows,
         enabledThreads: state.enabledThreads,
@@ -85,6 +106,16 @@ export const useAgentHistoryModeStore = create<AgentHistoryModeState>()(
           : [];
         return {
           ...current,
+          globalDomLevel: saved.globalDomLevel === "off" ||
+            saved.globalDomLevel === "low" || saved.globalDomLevel === "high"
+            ? saved.globalDomLevel : undefined,
+          domLevelByThreadId: Object.fromEntries(
+            saved.domLevelByThreadId && typeof saved.domLevelByThreadId === "object" &&
+            !Array.isArray(saved.domLevelByThreadId)
+              ? Object.entries(saved.domLevelByThreadId).filter(([id, level]) =>
+                  id.length > 0 && (level === "off" || level === "low" || level === "high"))
+              : [],
+          ) as Record<string, AgentDomLevel>,
           globalEnabled: saved.globalEnabled === true,
           globalWindowRows,
           enabledThreads: trueMap(saved.enabledThreads),

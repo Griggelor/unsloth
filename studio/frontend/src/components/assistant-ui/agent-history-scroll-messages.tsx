@@ -6,6 +6,7 @@ import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffec
 import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
+import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, type AgentDomLevel } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
@@ -32,14 +33,18 @@ export const AgentHistoryScrollMessages: FC<{
   resetKey: string | undefined;
   viewportRef: RefObject<HTMLElement | null>;
   windowRows?: number;
+  domLevel?: Exclude<AgentDomLevel, "off">;
 }> = memo(function AgentHistoryScrollMessages({
-  renderMessage, resetKey, viewportRef, windowRows = AGENT_DEFAULT_ROWS,
+  renderMessage, resetKey, viewportRef, windowRows = AGENT_DEFAULT_ROWS, domLevel,
 }) {
   const count = useAuiState(({ thread }) => thread.messages.length);
   const aui = useAui();
   const gate = useMemo(() => createRowNotificationGate(aui), [aui]);
   const heights = useMemo(() => new AgentHeightIndex(count), [resetKey]);
   heights.resize(count);
+  const costs = useMemo(() => new AgentDomCostIndex(count), [resetKey]);
+  costs.resize(count);
+  const budget = domLevel ? AGENT_DOM_TARGETS[domLevel] : null;
   const jumpBottom = useScrollThreadToBottom();
   const correctAnchor = useAdjustForContentInsertedAbove();
   const navigateViewport = useNavigateThreadViewport();
@@ -55,10 +60,13 @@ export const AgentHistoryScrollMessages: FC<{
   // window commit, never allowed to abort staging with only one row mounted.
   const deferredScroll = useRef(false);
   const [state, setState] = useState(() => ({
-    key: resetKey, count, windowRows, range: latestAgentWindow(count, windowRows),
+    key: resetKey, count, windowRows, domLevel,
+    range: budget ? agentBudgetWindow(count, count - 1, costs, budget)
+      : latestAgentWindow(count, windowRows),
   }));
   const visibleIndex = useRef(Math.max(0, count - 1));
   const lastWindowRows = useRef(windowRows);
+  const lastDomLevel = useRef(domLevel);
   const [heightRevision, setHeightRevision] = useState(0);
   const [searchHit, setSearchHit] = useState(-1);
   const [revealRevision, setRevealRevision] = useState(0);
@@ -90,26 +98,34 @@ export const AgentHistoryScrollMessages: FC<{
     if (heightFrame.current !== null) cancelAnimationFrame(heightFrame.current);
   }, []);
 
-  // Async history arrival must not mount the entire conversation in one commit.
-  const range = state.key !== resetKey ? latestAgentWindow(count, windowRows)
-    : state.windowRows !== windowRows
-      ? following.current
-        ? latestAgentWindow(count, windowRows)
-        : agentWindowAtIndex(
-            count, Math.min(visibleIndex.current, Math.max(0, count - 1)), undefined, windowRows,
-          )
+  // Preserve progressive staging and reader-intent ownership; only the
+  // selected window policy changes under an explicit Low/High preference.
+  const budgetWindow = (index: number) =>
+    budget === null ? null : agentBudgetWindow(count, index, costs, budget);
+  const latestWindow = () => budgetWindow(count - 1) ?? latestAgentWindow(count, windowRows);
+  const visibleWindow = () => budgetWindow(visibleIndex.current) ?? agentWindowAtIndex(
+    count, Math.min(visibleIndex.current, Math.max(0, count - 1)), undefined, windowRows,
+  );
+  const range = state.key !== resetKey ? latestWindow()
+    : state.domLevel !== domLevel || state.windowRows !== windowRows
+      ? following.current ? latestWindow() : visibleWindow()
       : state.count !== count
-        ? agentWindowOnAppend(state.range, state.count, count, following.current, windowRows)
+        ? budget !== null
+          ? following.current ? latestWindow() : state.range
+          : agentWindowOnAppend(state.range, state.count, count, following.current, windowRows)
         : state.range;
-  if (state.key !== resetKey || state.count !== count || state.windowRows !== windowRows) {
-    setState({ key: resetKey, count, windowRows, range });
+  if (state.key !== resetKey || state.count !== count ||
+      state.windowRows !== windowRows || state.domLevel !== domLevel) {
+    setState({ key: resetKey, count, windowRows, domLevel, range });
   }
   const rangeRef = useRef<AgentScrollWindow>(range);
   rangeRef.current = range;
 
   const seek = useCallback((index: number, snap?: "top" | "bottom") => {
     const viewport = viewportRef.current;
-    const next = agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
+    const next = budget !== null
+      ? agentBudgetWindow(countRef.current, index, costs, budget)
+      : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
     if (next.start === rangeRef.current.start && next.end === rangeRef.current.end) {
       if (snap === "bottom") jumpBottom("auto");
       if (snap === "top" && viewport) navigateViewport(0);
@@ -137,7 +153,7 @@ export const AgentHistoryScrollMessages: FC<{
     rangeRef.current = candidate;
     setState(old => ({ ...old, range: candidate }));
     return true;
-  }, [jumpBottom, navigateViewport, viewportRef, windowRows]);
+  }, [jumpBottom, navigateViewport, viewportRef, windowRows, costs, budget]);
 
   useEffect(() => {
     const task = staged.current;
@@ -190,6 +206,7 @@ export const AgentHistoryScrollMessages: FC<{
     // following a streaming tail. The viewport owner also detaches BEFORE
     // writing scrollTop once the destination row has mounted.
     following.current = false;
+    visibleIndex.current = index;
     anchor.current = null;
     jump.current = null;
     searchHitRef.current = index;
@@ -197,21 +214,32 @@ export const AgentHistoryScrollMessages: FC<{
     // A repeated hit may already be mounted, and setSearchHit(sameIndex)
     // does not produce a render. Force a fresh layout navigation transaction.
     setRevealRevision(v => v + 1);
-    const next = agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
+    const next = budget !== null
+      ? agentBudgetWindow(countRef.current, index, costs, budget)
+      : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
     if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
       rangeRef.current = next;
       setState(old => ({ ...old, range: next }));
     }
-  }, [windowRows]);
+  }, [windowRows, costs, budget]);
 
   // Changing the preference should not strand the reader at a stale scroll offset.
   // Keep height measurements; only the mounted window changes.
   useLayoutEffect(() => {
-    if (lastWindowRows.current === windowRows) return;
+    if (lastWindowRows.current === windowRows && lastDomLevel.current === domLevel) return;
     lastWindowRows.current = windowRows;
+    lastDomLevel.current = domLevel;
+    // A pending progressive destination belongs to the PREVIOUS mode. Do
+    // not let its next frame reintroduce rows outside the new DOM budget.
+    staged.current = null;
+    deferredScroll.current = false;
+    readerIntent.current = consumeAgentReaderScrollIntent(readerIntent.current, readerIntent.current.epoch);
+    pendingScrollEpoch.current = null;
+    if (animation.current !== null) cancelAnimationFrame(animation.current);
+    animation.current = null;
     if (following.current) jumpBottom("auto");
     else navigateViewport(heights.offset(visibleIndex.current));
-  }, [windowRows, range.start, range.end, heights, jumpBottom, navigateViewport]);
+  }, [windowRows, domLevel, range.start, range.end, heights, jumpBottom, navigateViewport]);
 
   // Register a search target only for the opt-in virtualized thread. The normal
   // find engine can keep its existing DOM semantics without mounting the history.
@@ -403,6 +431,76 @@ export const AgentHistoryScrollMessages: FC<{
       pendingScrollEpoch.current = null;
     };
   }, [viewportRef, heights, seek]);
+  // Measure the committed window and settle towards the known DOM budget.
+  // Never supersede an in-progress staged seek or an active search epoch.
+  const budgetFrame = useRef<number | null>(null);
+  const lastBudgetProbe = useRef(0);
+  const budgetProbeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleBudgetRebalance = useCallback(() => {
+    if (budget === null || budgetFrame.current !== null) return;
+    budgetFrame.current = requestAnimationFrame(() => {
+      budgetFrame.current = null;
+      if (staged.current !== null) return;
+      const intent = navigation.current;
+      const target = intent.kind === "search" ? intent.row
+        : following.current ? countRef.current - 1 : visibleIndex.current;
+      const next = agentBudgetWindow(countRef.current, target, costs, budget);
+      if (next.start === rangeRef.current.start && next.end === rangeRef.current.end) return;
+      const viewport = viewportRef.current;
+      const row = viewport?.querySelector<HTMLElement>(
+        '[data-agent-history-row="' + target + '"]',
+      );
+      anchor.current = row ? { index: target, top: row.getBoundingClientRect().top } : null;
+      if (following.current) jump.current = "bottom";
+      rangeRef.current = next;
+      setState(old => ({ ...old, range: next }));
+    });
+  }, [budget, costs, viewportRef]);
+  // Throttle costly descendant counting but ALWAYS keep one trailing probe:
+  // a final resize during the throttle window must not leave an oversized
+  // streaming tool result at its old, underestimated cost indefinitely.
+  const scheduleBudgetProbe = useCallback(() => {
+    if (budget === null || budgetProbeTimer.current !== null) return;
+    const delay = Math.max(0, 1_000 - (performance.now() - lastBudgetProbe.current));
+    budgetProbeTimer.current = setTimeout(() => {
+      budgetProbeTimer.current = null;
+      lastBudgetProbe.current = performance.now();
+      if (staged.current !== null) return;
+      const viewport = viewportRef.current;
+      if (!viewport) return;
+      let changed = false;
+      for (const wrapper of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
+        const index = Number(wrapper.dataset.agentHistoryRow);
+        if (Number.isSafeInteger(index)) {
+          changed = costs.measure(index, wrapper.querySelectorAll("*").length + 1) || changed;
+        }
+      }
+      if (changed) scheduleBudgetRebalance();
+    }, delay);
+  }, [budget, costs, viewportRef, scheduleBudgetRebalance]);
+  useEffect(() => () => {
+    if (budgetFrame.current !== null) cancelAnimationFrame(budgetFrame.current);
+    if (budgetProbeTimer.current !== null) clearTimeout(budgetProbeTimer.current);
+    budgetFrame.current = null;
+    budgetProbeTimer.current = null;
+  }, [resetKey, budget]);
+  useLayoutEffect(() => {
+    if (budget === null || staged.current !== null) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    let changed = false;
+    for (const el of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
+      const index = Number(el.dataset.agentHistoryRow);
+      if (Number.isSafeInteger(index)) {
+        changed = costs.measure(index, el.querySelectorAll("*").length + 1) || changed;
+      }
+    }
+    if (changed) {
+      lastBudgetProbe.current = performance.now();
+      scheduleBudgetRebalance();
+    }
+  }, [budget, costs, range.start, range.end, viewportRef, scheduleBudgetRebalance]);
+
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport || typeof ResizeObserver === "undefined") return;
@@ -413,7 +511,10 @@ export const AgentHistoryScrollMessages: FC<{
         const raw = row.closest<HTMLElement>("[data-agent-history-row]")?.dataset.agentHistoryRow;
         if (raw === undefined) continue;
         const index = Number(raw);
-        if (Number.isSafeInteger(index)) changed = heights.measure(index, row.getBoundingClientRect().height) || changed;
+        if (Number.isSafeInteger(index)) {
+          changed = heights.measure(index, row.getBoundingClientRect().height) || changed;
+          if (budget !== null) scheduleBudgetProbe();
+        }
       }
       if (changed) requestHeightRevision();
     });
@@ -427,7 +528,7 @@ export const AgentHistoryScrollMessages: FC<{
       observer.observe(row);
     }
     return () => observer.disconnect();
-  }, [range.start, range.end, count, viewportRef, heights, requestHeightRevision]);
+  }, [range.start, range.end, count, viewportRef, heights, requestHeightRevision, budget, scheduleBudgetProbe]);
 
   // A ResizeObserver measurement must update both spacers, not merely the ledger.
   void heightRevision;
@@ -453,7 +554,7 @@ export const AgentHistoryScrollMessages: FC<{
     following.current = true;
     seek(countRef.current - 1, "bottom");
   };
-  return <div data-agent-history-scroll-list="true" role="list" className="flex min-w-0 flex-col">
+  return <div data-agent-history-scroll-list="true" data-agent-history-dom-level={domLevel ?? "legacy"} role="list" className="flex min-w-0 flex-col">
     {range.end < count && <button type="button" className="sticky top-2 z-20 mx-auto rounded-full border bg-background px-3 py-1 text-xs shadow" onClick={backToLatest}>Zur neuesten Ausgabe</button>}
     <div ref={topSpacer} data-agent-history-spacer="top" aria-hidden="true" style={{ height: heights.offset(range.start), flexShrink: 0 }} />
     {rows}
