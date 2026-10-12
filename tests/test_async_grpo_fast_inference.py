@@ -209,7 +209,8 @@ def test_unset_fields_take_the_generation_config_defaults_and_set_fields_win(ser
 def test_loopback_http_accept_queue_exceeds_concurrent_rollout_burst():
     # Python 3.12 ThreadingHTTPServer inherits a listen backlog of only five.
     # The fake engine allows 64 concurrent sequences; leave accept headroom.
-    assert server_module._RolloutHTTPServer.request_queue_size >= 2 * 64
+    configured_capacity = _FakeLLM().llm_engine.vllm_config.scheduler_config.max_num_seqs
+    assert server_module._RolloutHTTPServer.request_queue_size >= 2 * configured_capacity
 
 
 def test_concurrent_requests_all_complete(served):
