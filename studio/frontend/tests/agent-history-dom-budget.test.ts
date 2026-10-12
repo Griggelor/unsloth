@@ -88,3 +88,15 @@ test("repeated adversarial measurement updates never expand beyond measured budg
     }
   }
 });
+
+test("Low and High stop adding extra messages after the viewport is filled", () => {
+  const single = { start: 99, end: 100 };
+  const expanded = { start: 98, end: 100 };
+  assert.equal(needsAgentBudgetRebalance(single, expanded, 99, 500, 900), true);
+  assert.equal(needsAgentBudgetRebalance(single, expanded, 99, 920, 900), false);
+  assert.equal(needsAgentBudgetRebalance(single, expanded, 99, 890, 900), false);
+  assert.equal(needsAgentBudgetRebalance({ start: 96, end: 100 },
+    single, 99, 2200, 900), true);
+  assert.equal(needsAgentBudgetRebalance(single, expanded, 50, 920, 900), true);
+  assert.equal(needsAgentBudgetRebalance(single, single, 99, 500, 900), false);
+});
