@@ -2406,6 +2406,10 @@ export const ar = {
       },
     },
     chat: {
+      agentHistoryBufferDynamicLow: "مخزن ديناميكي منخفض (حتى 5 رسائل)",
+      agentHistoryBufferDynamicHigh: "مخزن ديناميكي مرتفع (حتى 32 رسالة)",
+      agentHistoryBufferFixedLow: "مخزن ثابت منخفض (5 رسائل)",
+      agentHistoryBufferFixedHigh: "مخزن ثابت مرتفع (32 رسالة)",
       agentHistoryModeOff: "إيقاف",
       agentHistoryModeLow: "منخفض",
       agentHistoryModeHigh: "مرتفع",
