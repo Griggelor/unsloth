@@ -9,12 +9,16 @@ import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
+  allowsAgentReaderScrollIntent,
   allowsPassiveAgentScroll,
   completeAgentHistoryReveal,
+  consumeAgentReaderScrollIntent,
   initialAgentHistoryNavigation,
+  initialAgentReaderScrollIntent,
   interruptAgentHistoryReveal,
   markAgentHistoryRevealPositioned,
   requestAgentHistoryReveal,
+  requestAgentReaderScrollIntent,
 } from "./agent-history-navigation";
 import type { AgentHistoryNavigation } from "./agent-history-navigation";
 
@@ -60,6 +64,16 @@ export const AgentHistoryScrollMessages: FC<{
   const [revealRevision, setRevealRevision] = useState(0);
   const searchHitRef = useRef(-1);
   const navigation = useRef<AgentHistoryNavigation>(initialAgentHistoryNavigation());
+  const readerIntent = useRef(initialAgentReaderScrollIntent());
+  const pendingScrollEpoch = useRef<number | null>(null);
+  // Old reader gestures must not carry over when the user changes threads.
+  useLayoutEffect(() => {
+    readerIntent.current = initialAgentReaderScrollIntent();
+    pendingScrollEpoch.current = null;
+    navigation.current = initialAgentHistoryNavigation();
+    staged.current = null;
+    deferredScroll.current = false;
+  }, [resetKey]);
   const revealFrame = useRef<number | null>(null);
   useEffect(() => () => {
     if (revealFrame.current !== null) cancelAnimationFrame(revealFrame.current);
@@ -99,7 +113,7 @@ export const AgentHistoryScrollMessages: FC<{
     if (next.start === rangeRef.current.start && next.end === rangeRef.current.end) {
       if (snap === "bottom") jumpBottom("auto");
       if (snap === "top" && viewport) navigateViewport(0);
-      return;
+      return false;
     }
     anchor.current = null;
     const disjoint = next.end <= rangeRef.current.start ||
@@ -122,6 +136,7 @@ export const AgentHistoryScrollMessages: FC<{
     jump.current = snap ?? null;
     rangeRef.current = candidate;
     setState(old => ({ ...old, range: candidate }));
+    return true;
   }, [jumpBottom, navigateViewport, viewportRef, windowRows]);
 
   useEffect(() => {
@@ -167,6 +182,8 @@ export const AgentHistoryScrollMessages: FC<{
     const nextIntent = requestAgentHistoryReveal(navigation.current, index, countRef.current);
     if (nextIntent === navigation.current) return;
     navigation.current = nextIntent;
+    readerIntent.current = consumeAgentReaderScrollIntent(readerIntent.current, readerIntent.current.epoch);
+    pendingScrollEpoch.current = null;
     staged.current = null;
     deferredScroll.current = false;
     // A search command is reader navigation, never permission to continue
@@ -293,16 +310,27 @@ export const AgentHistoryScrollMessages: FC<{
     }
   }, [range.start, range.end, searchHit, revealRevision, viewportRef, jumpBottom, correctAnchor, navigateViewport]);
 
-  // Passive, one sample per frame. No React work per pixel or token.
+  // A scroll event is not itself evidence of user navigation. Internal
+  // anchor corrections, CSS/native scroll anchoring and remeasuring huge tool
+  // rows all emit scroll events. Authorize ONE window change per fresh reader
+  // gesture epoch, then ignore geometry-driven echoes until the next gesture.
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     const onScroll = () => {
+      const epoch = readerIntent.current.epoch;
+      if (!allowsAgentReaderScrollIntent(readerIntent.current, epoch)) return;
+      pendingScrollEpoch.current = epoch;
       if (animation.current !== null) return;
       animation.current = requestAnimationFrame(() => {
         animation.current = null;
-        if (!allowsPassiveAgentScroll(navigation.current)) return;
+        const pendingEpoch = pendingScrollEpoch.current;
+        pendingScrollEpoch.current = null;
+        if (pendingEpoch === null ||
+            !allowsAgentReaderScrollIntent(readerIntent.current, pendingEpoch) ||
+            !allowsPassiveAgentScroll(navigation.current)) return;
         if (staged.current !== null) {
+          // A gesture during staging is replayed only after the final commit.
           deferredScroll.current = true;
           return;
         }
@@ -310,44 +338,71 @@ export const AgentHistoryScrollMessages: FC<{
         if (!total) return;
         const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 24;
         following.current = atBottom;
-        if (atBottom) { seek(total - 1); return; }
-        if (viewport.scrollTop < 1) { seek(0, "top"); return; }
-        const spacer = topSpacer.current;
-        if (!spacer) return;
-        const index = agentIndexAtScrollPosition(
-          heights,
-          spacer.getBoundingClientRect().top,
-          viewport.getBoundingClientRect().top,
-          viewport.scrollTop,
-          viewport.clientHeight,
-        );
-        visibleIndex.current = index;
-        seek(index);
+        let changed = false;
+        if (atBottom) changed = seek(total - 1);
+        else if (viewport.scrollTop < 1) changed = seek(0, "top");
+        else {
+          const spacer = topSpacer.current;
+          if (!spacer) return;
+          const index = agentIndexAtScrollPosition(
+            heights,
+            spacer.getBoundingClientRect().top,
+            viewport.getBoundingClientRect().top,
+            viewport.scrollTop,
+            viewport.clientHeight,
+          );
+          visibleIndex.current = index;
+          changed = seek(index);
+        }
+        if (changed) {
+          // Consume BEFORE React commits rows and correction writes scrollTop.
+          // Those native scroll events cannot reverse this chosen window.
+          readerIntent.current = consumeAgentReaderScrollIntent(readerIntent.current, pendingEpoch);
+        }
       });
     };
     viewport.addEventListener("scroll", onScroll, { passive: true });
-    // Actual reader gestures supersede a pending search. Synthetic scroll
-    // events from explicit navigation and from layout measurement do not.
+    // Each physical gesture supersedes a pending search and authorizes a fresh
+    // reader transaction. A pointer drag needs repeated epochs because scroll
+    // bars can move continuously while the button remains depressed.
     const interrupt = () => {
-      // Do not abort a partially rendered window on a second wheel/touch
-      // impulse; its completion is required for navigation correctness.
+      readerIntent.current = requestAgentReaderScrollIntent(readerIntent.current);
       navigation.current = interruptAgentHistoryReveal(navigation.current);
       if (revealFrame.current !== null) {
         cancelAnimationFrame(revealFrame.current);
         revealFrame.current = null;
       }
     };
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.buttons !== 0) interrupt();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.metaKey) return;
+      if (!["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        if (target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return;
+        if (!viewport.contains(target) && target !== document.body && target !== document.documentElement) return;
+      }
+      interrupt();
+    };
     viewport.addEventListener("wheel", interrupt, { passive: true });
     viewport.addEventListener("touchmove", interrupt, { passive: true });
+    viewport.addEventListener("pointerdown", interrupt, { passive: true });
+    viewport.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("keydown", onKeyDown);
     return () => {
       viewport.removeEventListener("scroll", onScroll);
       viewport.removeEventListener("wheel", interrupt);
       viewport.removeEventListener("touchmove", interrupt);
+      viewport.removeEventListener("pointerdown", interrupt);
+      viewport.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("keydown", onKeyDown);
       if (animation.current !== null) cancelAnimationFrame(animation.current);
       animation.current = null;
+      pendingScrollEpoch.current = null;
     };
   }, [viewportRef, heights, seek]);
-
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport || typeof ResizeObserver === "undefined") return;

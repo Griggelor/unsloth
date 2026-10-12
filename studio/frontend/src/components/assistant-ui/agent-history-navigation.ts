@@ -45,3 +45,42 @@ export function interruptAgentHistoryReveal(current: AgentHistoryNavigation): Ag
 export function allowsPassiveAgentScroll(current: AgentHistoryNavigation): boolean {
   return current.kind === "reader";
 }
+
+/**
+ * Only a fresh reader gesture may authorize a new passive window transition.
+ * Browser scroll events alone are not proof of reader intent: height measurements,
+ * native scroll anchoring and our own viewport correction all produce them.
+ *
+ * The gesture is consumed when a window transition is accepted, not for every
+ * scroll event. This lets one drag traverse a stable window while ensuring that
+ * later anchor/layout echoes cannot immediately reverse its chosen destination.
+ */
+export type AgentReaderScrollIntent = Readonly<{
+  epoch: number;
+  sampledEpoch: number;
+}>;
+
+export function initialAgentReaderScrollIntent(): AgentReaderScrollIntent {
+  return { epoch: 0, sampledEpoch: 0 };
+}
+
+export function requestAgentReaderScrollIntent(
+  current: AgentReaderScrollIntent,
+): AgentReaderScrollIntent {
+  return { ...current, epoch: current.epoch + 1 };
+}
+
+export function allowsAgentReaderScrollIntent(
+  current: AgentReaderScrollIntent,
+  epoch: number,
+): boolean {
+  return epoch === current.epoch && epoch > current.sampledEpoch;
+}
+
+export function consumeAgentReaderScrollIntent(
+  current: AgentReaderScrollIntent,
+  epoch: number,
+): AgentReaderScrollIntent {
+  return allowsAgentReaderScrollIntent(current, epoch)
+    ? { ...current, sampledEpoch: epoch } : current;
+}
