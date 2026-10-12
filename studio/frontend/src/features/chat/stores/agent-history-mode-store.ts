@@ -116,9 +116,14 @@ export const useAgentHistoryModeStore = create<AgentHistoryModeState>()(
           domLevelByThreadId: Object.fromEntries(
             saved.domLevelByThreadId && typeof saved.domLevelByThreadId === "object" &&
             !Array.isArray(saved.domLevelByThreadId)
-              ? Object.entries(saved.domLevelByThreadId).filter(([id, level]) =>
-                  id.length > 0 && (level === "off" || level === "low" ||
-                    level === "high" || isAgentBufferMode(level)))
+              ? Object.entries(saved.domLevelByThreadId)
+                  .filter(([id, level]) => id.length > 0 &&
+                    (level === "off" || level === "low" ||
+                      level === "high" || isAgentBufferMode(level)))
+                  .map(([id, level]) => [
+                    id, level === "low" ? "dynamic-low" :
+                      level === "high" ? "dynamic-high" : level,
+                  ])
               : [],
           ) as Record<string, AgentDomLevel>,
           // Previously persisted dynamic low/high implicitly enabled the
