@@ -207,17 +207,22 @@ def check_stuck_composition_recovers(page, base):
     print("PASS: a stuck composition recovers on timeout and on blur", flush = True)
 
 
-# Reads the glyph's painted box back into viewBox units, so the check does not
-# depend on the rendered icon size.
+# Compare the actual SVG path geometry in viewBox coordinates, not fractional
+# device-pixel rectangles. WebKit quantizes getBoundingClientRect() differently
+# for path versus svg at 14px; a 0.05/24-unit tolerance is subpixel there.
+# getBBox() plus the path's SVG transform is the same invariant on all engines.
 GLYPH_GEOMETRY = """() => {
     const item = [...document.querySelectorAll('[role="menuitem"]')]
         .find((element) => element.textContent.trim() === 'Resume queue');
     const svg = item.querySelector('svg'), path = svg.querySelector('path');
-    const box = svg.getBoundingClientRect(), glyph = path.getBoundingClientRect();
-    const units = 24 / box.width;
+    const box = path.getBBox(), view = svg.viewBox.baseVal;
+    const matrix = path.transform.baseVal.consolidate()?.matrix;
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    const x = matrix ? matrix.a * cx + matrix.c * cy + matrix.e : cx;
+    const y = matrix ? matrix.b * cx + matrix.d * cy + matrix.f : cy;
     return {
-        dx: ((glyph.x + glyph.width / 2) - (box.x + box.width / 2)) * units,
-        dy: ((glyph.y + glyph.height / 2) - (box.y + box.height / 2)) * units,
+        dx: x - (view.x + view.width / 2),
+        dy: y - (view.y + view.height / 2),
     };
 }"""
 

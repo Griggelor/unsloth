@@ -6,6 +6,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuSub,
@@ -19,6 +21,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useChatFavoritesStore } from "@/features/library/chats/favorites-store";
+import { useAgentHistoryModeStore } from "../stores/agent-history-mode-store";
+import { agentHistoryEnabledFor, agentHistoryWindowFor } from "../stores/agent-history-preference-policy";
+import {
+  AGENT_WINDOW_SIZES,
+  isAgentWindowSize,
+} from "@/components/assistant-ui/agent-history-scroll-window";
+import { useChatRuntimeStore } from "../stores/chat-runtime-store";
 import { useShortcutLabel } from "@/features/settings";
 import type { ShortcutId } from "@/features/settings";
 import { useT } from "@/i18n";
@@ -150,6 +159,19 @@ function TemporaryChatButton({
 
 function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
   const t = useT();
+  // The header is outside ChatRuntimeProvider: read the canonical run registry,
+  // not assistant-ui context. "__default" covers a run still acquiring its thread ID.
+  const running = useChatRuntimeStore(
+    (state) =>
+      state.runningByThreadId[menu.item.id] === true ||
+      state.runningByThreadId.__default === true,
+  );
+  const agentHistoryEnabled = useAgentHistoryModeStore(
+    (state) => agentHistoryEnabledFor(state, menu.item.id),
+  );
+  const agentWindowRows = useAgentHistoryModeStore(
+    (state) => agentHistoryWindowFor(state, menu.item.id),
+  );
   const favorite = useChatFavoritesStore((state) =>
     state.chatIds.includes(menu.item.id),
   );
@@ -218,6 +240,49 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
         )}
       </Item>
       <DropdownMenuSeparator className="mx-3" />
+      <Item
+        icon={agentHistoryEnabled ? ViewIcon : ViewOffSlashIcon}
+        disabled={running}
+        onSelect={() =>
+          useAgentHistoryModeStore.getState().setEnabled(menu.item.id, !agentHistoryEnabled)
+        }
+      >
+        {agentHistoryEnabled
+          ? "Agenten-Chatverlauf deaktivieren"
+          : "Agenten-Chatverlauf aktivieren"}
+      </Item>
+      {agentHistoryEnabled && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger disabled={running} className="gap-2.5">
+            <HugeiconsIcon icon={LayerIcon} strokeWidth={1.75} className={ICON} />
+            Agentenfenster: {agentWindowRows} Nachrichten
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className={cn(MENU, "w-56")}>
+            <DropdownMenuLabel className={LABEL}>
+              Sichtbare Nachrichten (pro Chat)
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={String(agentWindowRows)}
+              onValueChange={(value) => {
+                const rows = Number(value);
+                if (isAgentWindowSize(rows)) {
+                  useAgentHistoryModeStore.getState().setWindowRows(menu.item.id, rows);
+                }
+              }}
+            >
+              {AGENT_WINDOW_SIZES.map((rows) => (
+                <DropdownMenuRadioItem
+                  key={rows}
+                  value={String(rows)}
+                  data-test-id={`agent-window-size-${rows}`}
+                >
+                  {rows} Nachrichten{rows === 2 ? " (experimentell)" : ""}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
       <Item
         glyph={<HugeiconsIcon icon={ForkIcon} strokeWidth={1.75} className={ICON} />}
         onSelect={menu.fork}
@@ -370,6 +435,7 @@ export function ChatHeaderMenu({
             <button
               type="button"
               aria-label={label}
+              data-test-id="chat-header-more-menu-trigger"
               className={CHAT_MENU_TRIGGER}
             >
               <HugeiconsIcon
