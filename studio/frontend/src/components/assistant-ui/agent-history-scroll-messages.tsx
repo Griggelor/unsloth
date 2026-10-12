@@ -427,6 +427,7 @@ export const AgentHistoryScrollMessages: FC<{
   // Never supersede an in-progress staged seek or an active search epoch.
   const budgetFrame = useRef<number | null>(null);
   const lastBudgetProbe = useRef(0);
+  const budgetProbeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleBudgetRebalance = useCallback(() => {
     if (budget === null || budgetFrame.current !== null) return;
     budgetFrame.current = requestAnimationFrame(() => {
@@ -447,9 +448,34 @@ export const AgentHistoryScrollMessages: FC<{
       setState(old => ({ ...old, range: next }));
     });
   }, [budget, costs, viewportRef]);
+  // Throttle costly descendant counting but ALWAYS keep one trailing probe:
+  // a final resize during the throttle window must not leave an oversized
+  // streaming tool result at its old, underestimated cost indefinitely.
+  const scheduleBudgetProbe = useCallback(() => {
+    if (budget === null || budgetProbeTimer.current !== null) return;
+    const delay = Math.max(0, 1_000 - (performance.now() - lastBudgetProbe.current));
+    budgetProbeTimer.current = setTimeout(() => {
+      budgetProbeTimer.current = null;
+      lastBudgetProbe.current = performance.now();
+      if (staged.current !== null) return;
+      const viewport = viewportRef.current;
+      if (!viewport) return;
+      let changed = false;
+      for (const wrapper of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
+        const index = Number(wrapper.dataset.agentHistoryRow);
+        if (Number.isSafeInteger(index)) {
+          changed = costs.measure(index, wrapper.querySelectorAll("*").length + 1) || changed;
+        }
+      }
+      if (changed) scheduleBudgetRebalance();
+    }, delay);
+  }, [budget, costs, viewportRef, scheduleBudgetRebalance]);
   useEffect(() => () => {
     if (budgetFrame.current !== null) cancelAnimationFrame(budgetFrame.current);
-  }, []);
+    if (budgetProbeTimer.current !== null) clearTimeout(budgetProbeTimer.current);
+    budgetFrame.current = null;
+    budgetProbeTimer.current = null;
+  }, [resetKey, budget]);
   useLayoutEffect(() => {
     if (budget === null || staged.current !== null) return;
     const viewport = viewportRef.current;
@@ -461,7 +487,10 @@ export const AgentHistoryScrollMessages: FC<{
         changed = costs.measure(index, el.querySelectorAll("*").length + 1) || changed;
       }
     }
-    if (changed) scheduleBudgetRebalance();
+    if (changed) {
+      lastBudgetProbe.current = performance.now();
+      scheduleBudgetRebalance();
+    }
   }, [budget, costs, range.start, range.end, viewportRef, scheduleBudgetRebalance]);
 
   useLayoutEffect(() => {
@@ -476,13 +505,7 @@ export const AgentHistoryScrollMessages: FC<{
         const index = Number(raw);
         if (Number.isSafeInteger(index)) {
           changed = heights.measure(index, row.getBoundingClientRect().height) || changed;
-          if (budget !== null && performance.now() - lastBudgetProbe.current >= 1_000) {
-            lastBudgetProbe.current = performance.now();
-            const wrapper = row.closest<HTMLElement>("[data-agent-history-row]");
-            if (wrapper && costs.measure(index, wrapper.querySelectorAll("*").length + 1)) {
-              scheduleBudgetRebalance();
-            }
-          }
+          if (budget !== null) scheduleBudgetProbe();
         }
       }
       if (changed) requestHeightRevision();
@@ -497,7 +520,7 @@ export const AgentHistoryScrollMessages: FC<{
       observer.observe(row);
     }
     return () => observer.disconnect();
-  }, [range.start, range.end, count, viewportRef, heights, requestHeightRevision, budget, costs, scheduleBudgetRebalance]);
+  }, [range.start, range.end, count, viewportRef, heights, requestHeightRevision, budget, scheduleBudgetProbe]);
 
   // A ResizeObserver measurement must update both spacers, not merely the ledger.
   void heightRevision;
