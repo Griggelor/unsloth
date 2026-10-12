@@ -19,12 +19,12 @@ export type AgentHistoryPreferenceSnapshot = {
   windowRowsByThreadId: Record<string, AgentWindowSize>;
 };
 
+/** One canonical effective-mode decision, shared by renderer and UI helpers. */
 export function agentHistoryEnabledFor(
   state: AgentHistoryPreferenceSnapshot,
   threadId: string | null | undefined,
 ): boolean {
-  if (!threadId || state.disabledThreads[threadId] === true) return false;
-  return state.globalEnabled || state.enabledThreads[threadId] === true;
+  return agentHistoryLevelFor(state, threadId) !== "off";
 }
 
 export function agentHistoryWindowFor(
@@ -65,5 +65,10 @@ export function agentHistoryLevelFor(
   if (isAgentBufferMode(state.globalDomLevel)) {
     return state.globalEnabled ? state.globalDomLevel : "off";
   }
-  return agentHistoryEnabledFor(state, threadId) ? "legacy" : "off";
+  // The legacy enabled/disabled maps are consulted only after explicit
+  // per-thread and global modes have been resolved. Do not call the public
+  // enabled selector here: it delegates to this canonical mode decision.
+  return threadId && state.disabledThreads[threadId] !== true &&
+    (state.globalEnabled || state.enabledThreads[threadId] === true)
+    ? "legacy" : "off";
 }

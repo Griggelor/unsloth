@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { agentHistoryEnabledFor, agentHistoryWindowFor } from "../src/features/chat/stores/agent-history-preference-policy.ts";
+import { agentHistoryEnabledFor, agentHistoryLevelFor, agentHistoryWindowFor } from "../src/features/chat/stores/agent-history-preference-policy.ts";
 import type { AgentHistoryPreferenceSnapshot } from "../src/features/chat/stores/agent-history-preference-policy.ts";
 
 const initial: AgentHistoryPreferenceSnapshot = {
@@ -34,4 +34,38 @@ test("a per-chat size overrides the global default without changing any messages
   const global = { ...initial, globalWindowRows: 8 as const };
   assert.equal(agentHistoryWindowFor(global, "newChat"), 8);
   assert.equal(agentHistoryWindowFor({ ...global, windowRowsByThreadId: { optedIn: 32 } }, "optedIn"), 32);
+});
+
+test("effective enabled decision always equals the canonical resolved mode", () => {
+  const cases: AgentHistoryPreferenceSnapshot[] = [
+    initial,
+    { ...initial, globalEnabled: true },
+    { ...initial, globalDomLevel: "low" },
+    { ...initial, globalEnabled: false, globalDomLevel: "dynamic-high" },
+    { ...initial, globalEnabled: true, globalDomLevel: "fixed-low" },
+    { ...initial, globalEnabled: true, domLevelByThreadId: { optedIn: "off" } },
+    { ...initial, domLevelByThreadId: { newChat: "dynamic-high" } },
+    { ...initial, domLevelByThreadId: { newChat: "fixed-high" } },
+    {
+      ...initial,
+      globalEnabled: true,
+      disabledThreads: { optedIn: true },
+      domLevelByThreadId: { optedIn: "dynamic-low" },
+    },
+  ];
+  for (const state of cases) {
+    for (const threadId of ["optedIn", "newChat", null]) {
+      assert.equal(
+        agentHistoryEnabledFor(state, threadId),
+        agentHistoryLevelFor(state, threadId) !== "off",
+      );
+    }
+  }
+  assert.equal(
+    agentHistoryEnabledFor({
+      ...initial, domLevelByThreadId: { newChat: "dynamic-high" },
+    }, "newChat"),
+    true,
+    "an explicit per-chat mode must activate even if global enable is false",
+  );
 });
