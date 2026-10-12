@@ -293,6 +293,16 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(*owner.post(path, body))
 
 
+class _RolloutHTTPServer(ThreadingHTTPServer):
+    """Loopback HTTP server sized for concurrent trainer rollout requests."""
+
+    # TCPServer's default listen backlog is only five on supported Python 3.12.
+    # TRL sends dozens of simultaneous requests; queued connection attempts can
+    # be rejected before a worker thread gets to handle them. This only changes
+    # the OS accept queue, not the engine's max in-flight sequence budget.
+    request_queue_size = 128
+
+
 class UnslothAsyncVLLMServer:
     """Serves `model.vllm_engine` to TRL's AsyncGRPOTrainer on 127.0.0.1."""
 
@@ -320,7 +330,7 @@ class UnslothAsyncVLLMServer:
         self.url = f"http://127.0.0.1:{self._serve()}"
 
     def _serve(self):
-        httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        httpd = _RolloutHTTPServer(("127.0.0.1", 0), _Handler)
         httpd.daemon_threads = True
         httpd.owner = self
         self._thread = threading.Thread(
