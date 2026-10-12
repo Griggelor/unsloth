@@ -350,6 +350,7 @@ def check_chat_header_menu(page, messages: int) -> None:
         """() => document.querySelector('[data-agent-history-scroll-list="true"]') === null""",
         timeout = 30_000,
     )
+    capture_adaptive_paint_trace(page, True)
     choose("inherit")
     page.wait_for_function(
         """expected => {
@@ -361,7 +362,6 @@ def check_chat_header_menu(page, messages: int) -> None:
         timeout = 60_000,
     )
     census(page, messages, "dom-budget-inherit-legacy")
-    capture_adaptive_paint_trace(page, True)
     page.wait_for_timeout(650)
     print(json.dumps({"qa": "adaptive-paint", "mode": "legacy",
                       "trace": capture_adaptive_paint_trace(page, False)}))
