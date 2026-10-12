@@ -1,0 +1,221 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# QA-only fast regression loop for PR #30; not an alternative release gate.
+name: QA Agent History Blocker Loop
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - '.github/workflows/qa-agent-history-blocker-loop.yml'
+      - 'studio/frontend/src/components/assistant-ui/agent-history-*'
+      - 'studio/frontend/src/components/assistant-ui/thread.tsx'
+      - 'studio/frontend/src/components/assistant-ui/use-intent-aware-autoscroll.tsx'
+      - 'studio/frontend/src/features/chat/stores/agent-history-*'
+      - 'studio/frontend/scripts/check-bundle-budget.ts'
+      - 'studio/frontend/package-lock.json'
+      - 'tests/studio/playwright_agent_history_scroll.py'
+      - 'tests/studio/playwright_chat_ui.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-agent-history-blocker-loop-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  native-scrollbar:
+    name: Linux Chromium real-thumb + dynamic buffer modes
+    if: github.event.pull_request.number == 30 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'qa/agent-history-main-sync-20261012'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '${{ github.event.pull_request.head.sha }}'
+          persist-credentials: false
+      - name: Assert exact PR HEAD
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Minimal Linux dependencies
+        timeout-minutes: 7
+        env:
+          RETRY_ATTEMPTS: '2'
+          RETRY_ATTEMPT_TIMEOUT: '120'
+        run: |
+          bash .github/scripts/retry-with-apt-lock.sh sudo sh -c \
+            'apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev jq || { apt-get update && apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev jq; }'
+      - name: Install local Studio without model
+        uses: ./.github/actions/install-unsloth-local
+        with:
+          gh-token: '${{ secrets.GITHUB_TOKEN }}'
+          hf-token: ''
+      - name: Chromium + Playwright
+        timeout-minutes: 7
+        env:
+          RETRY_ATTEMPTS: '2'
+          RETRY_ATTEMPT_TIMEOUT: '120'
+        run: |
+          python -m pip install 'playwright>=1.45,<2'
+          bash .github/scripts/retry-with-apt-lock.sh python -m playwright install chromium
+          if ! python -c 'from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()'; then
+            bash .github/scripts/retry-with-apt-lock.sh python -m playwright install-deps chromium
+            python -c 'from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()'
+          fi
+      - name: Boot disposable Studio and mask password
+        run: |
+          bash .github/scripts/boot-studio-api-only.sh --port 18899 \
+            --log logs/qa-critical-scrollbar-server.log --pid-var QA_SCROLL_PID
+          bash .github/scripts/wait-for-health.sh --port 18899 \
+            --log logs/qa-critical-scrollbar-server.log --tmp /tmp/qa-scroll-health.json
+          PW="$(cat ~/.unsloth/studio/auth/.bootstrap_password)"
+          echo "::add-mask::$PW"
+          echo "QA_SCROLL_PW=$PW" >> "$GITHUB_ENV"
+      - name: Real scrollbar drag + post-drag anchor stability (high and low)
+        timeout-minutes: 9
+        run: |
+          python tests/studio/playwright_agent_history_scroll.py \
+            --url http://127.0.0.1:18899 --username unsloth \
+            --password "$QA_SCROLL_PW" --messages 400 --critical-scrollbar-only
+      - name: Retain failure evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qa-critical-native-scrollbar
+          path: |
+            logs/qa-critical-scrollbar-server.log
+            logs/agent-history/
+          if-no-files-found: warn
+          retention-days: 7
+
+  startup-bundle:
+    name: Frontend build + unchanged startup budget
+    if: github.event.pull_request.number == 30 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'qa/agent-history-main-sync-20261012'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '${{ github.event.pull_request.head.sha }}'
+          persist-credentials: false
+      - name: Assert exact PR HEAD
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Use npm 11, matching Frontend CI
+        run: npm install -g npm@^11 --no-fund --no-audit
+      - name: Lockfile supply chain check before dependencies
+        run: python3 scripts/lockfile_supply_chain_audit.py
+      - name: Install exactly locked frontend dependencies
+        working-directory: studio/frontend
+        run: npm ci --strict-allow-scripts --no-fund --no-audit
+      - name: Typecheck, build and enforce original budget
+        working-directory: studio/frontend
+        run: |
+          npm run typecheck
+          npm run build
+          npm run bundle:check
+
+  windows-chat-auth:
+    name: Windows real chat auth/session teardown (no other UI suites)
+    if: github.event.pull_request.number == 30 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'qa/agent-history-main-sync-20261012'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      GGUF_REPO: unsloth/gemma-3-270m-it-GGUF
+      GGUF_VARIANT: UD-Q4_K_XL
+      GGUF_FILE: gemma-3-270m-it-UD-Q4_K_XL.gguf
+      HF_HOME: '${{ github.workspace }}/hf-cache'
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '${{ github.event.pull_request.head.sha }}'
+          persist-credentials: false
+      - name: Assert exact PR HEAD
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: npm 11 required by Windows installer
+        run: npm install -g npm@^11 --no-fund --no-audit
+      - name: Restore public GGUF cache
+        id: hf-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        continue-on-error: true
+        with:
+          path: hf-cache
+          key: hf-${{ env.GGUF_REPO }}-${{ env.GGUF_VARIANT }}-v3
+          enableCrossOsArchive: true
+      - name: Download public GGUF if cache missing
+        if: steps.hf-cache.outputs.cache-hit != 'true' || steps.hf-cache.outcome != 'success'
+        run: |
+          python -m pip install --upgrade huggingface_hub
+          mkdir -p hf-cache
+          bash .github/scripts/hf-download-with-retry.sh "$GGUF_REPO" "$GGUF_FILE"
+          bash .github/scripts/hf-download-with-retry.sh ggml-org/models tinyllamas/stories260K.gguf
+      - uses: ./.github/actions/uv-cache-restore
+      - uses: ./.github/actions/frontend-dist-restore
+      - name: Install disposable Windows Studio with supported installer
+        shell: pwsh
+        env:
+          GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          HF_TOKEN: ''
+        run: |
+          New-Item -ItemType Directory -Force -Path logs | Out-Null
+          $child = '$ErrorActionPreference = ''Stop''; $ProgressPreference = ''SilentlyContinue''; & ./install.ps1 --local --no-torch; exit $LASTEXITCODE'
+          pwsh -NoProfile -ExecutionPolicy Bypass -Command $child 2>&1 | Tee-Object -FilePath logs/qa-windows-install.log
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer exited with $LASTEXITCODE" }
+      - name: Use installed shim and Playwright
+        run: |
+          SHIM_DIR=~/.unsloth/studio/bin
+          test -f "$SHIM_DIR/unsloth.exe" || exit 1
+          cygpath -w "$SHIM_DIR" >> "$GITHUB_PATH"
+          python -m pip install 'playwright>=1.45,<2'
+          python -m playwright install chromium
+      - name: Real chat / session rotation / stale-page teardown
+        timeout-minutes: 22
+        env:
+          PYTHONUNBUFFERED: '1'
+          STUDIO_UI_STRICT: '1'
+          STUDIO_UI_TURN_TIMEOUT_MS: '540000'
+        run: |
+          set -euo pipefail
+          mkdir -p logs/playwright-critical-windows
+          bash .github/scripts/boot-studio-api-only.sh --port 18896 \
+            --log logs/qa-windows-chat-server.log --pid-var QA_CHAT_PID
+          bash .github/scripts/wait-for-health.sh --port 18896 \
+            --log logs/qa-windows-chat-server.log --tmp logs/qa-chat-health.json
+          export STUDIO_OLD_PW="$(cat ~/.unsloth/studio/auth/.bootstrap_password)"
+          export STUDIO_NEW_PW="CIUi-$(python -c 'import secrets; print(secrets.token_urlsafe(16))')"
+          export STUDIO_NEW2_PW="CIUi-$(python -c 'import secrets; print(secrets.token_urlsafe(16))')"
+          echo "::add-mask::$STUDIO_OLD_PW"
+          echo "::add-mask::$STUDIO_NEW_PW"
+          echo "::add-mask::$STUDIO_NEW2_PW"
+          BASE_URL=http://127.0.0.1:18896 PW_ART_DIR=logs/playwright-critical-windows \
+            python tests/studio/playwright_chat_ui.py 2>&1 | tee logs/qa-windows-chat-auth.log
+      - name: Retain Windows failure traces
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qa-critical-windows-chat-auth
+          path: |
+            logs/qa-windows-install.log
+            logs/qa-windows-chat-server.log
+            logs/qa-windows-chat-auth.log
+            logs/playwright-critical-windows/
+          if-no-files-found: warn
+          retention-days: 7

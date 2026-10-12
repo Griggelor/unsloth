@@ -572,7 +572,9 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
     census(page, messages, "window-default-restored")
 
 
-def run(url: str, username: str, password: str, messages: int) -> None:
+def run(
+    url: str, username: str, password: str, messages: int, critical_scrollbar_only: bool = False
+) -> None:
     from playwright.sync_api import sync_playwright
 
     base = url.rstrip("/")
@@ -624,6 +626,17 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 if tail["mounted"] != 5:
                     raise AssertionError(f"New agent-history default must mount five rows: {tail}")
                 check_chat_header_menu(page, messages)
+                if critical_scrollbar_only:
+                    # The real native-thumb mouse drag ran in BOTH dynamic
+                    # modes after the 15k-descendant tool-output mutation.
+                    # Preserve the full E2E path when the switch is absent.
+                    print(json.dumps({
+                        "gate": "native-scrollbar",
+                        "messages": messages,
+                        "modes": ["dynamic-high", "dynamic-low"],
+                        "result": "passed",
+                    }, sort_keys = True))
+                    return
                 if messages == 400:
                     check_runtime_window_size(page, thread_id, messages)
                 if tail["ordinal"][-1] != messages:
@@ -771,10 +784,19 @@ def main() -> None:
     parser.add_argument("--username", default = "unsloth")
     parser.add_argument("--password", required = True)
     parser.add_argument("--messages", type = int, default = 400)
+    parser.add_argument(
+        "--critical-scrollbar-only", action = "store_true",
+        help = "Run the real native-thumb drag for both dynamic buffer modes only",
+    )
     args = parser.parse_args()
     if args.messages < 128 or args.messages % 2:
         parser.error("--messages must be even and at least 128")
-    run(args.url, args.username, args.password, args.messages)
+    if args.critical_scrollbar_only and args.messages != 400:
+        parser.error("--critical-scrollbar-only requires --messages 400")
+    run(
+        args.url, args.username, args.password, args.messages,
+        critical_scrollbar_only = args.critical_scrollbar_only,
+    )
 
 
 if __name__ == "__main__":
