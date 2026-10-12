@@ -86,14 +86,30 @@ INJECT = """({cards,large}) => {
 
 
 def sample(page, count: int, label: str) -> dict:
-    page.wait_for_function(
+    # An independent evaluate after wait_for_function can observe a *different*
+    # staged window. Return the validated numeric snapshot atomically and require
+    # the same completely filled rows over three animation frames.
+    handle = page.wait_for_function(
         """() => {
-      const rows = [...document.querySelectorAll('[data-agent-history-row]')];
-      return rows.length === 5 && rows.every(r => r.querySelector('[data-agent-idle-fixture]'));
+      const x = window.__agentIdleQA?.();
+      if (!x || x.rows !== 5 || x.injected !== 5 ||
+          x.indices.length !== 5 || x.limit) {
+        window.__agentIdleStable = null;
+        return false;
+      }
+      const signature = x.indices.join(',') + ':' + x.mountedTimes;
+      const last = window.__agentIdleStable;
+      if (!last || last.signature !== signature) {
+        window.__agentIdleStable = {signature, frames: 1};
+        return false;
+      }
+      last.frames += 1;
+      return last.frames >= 3 ? x : false;
     }""",
+        polling = "raf",
         timeout = 30000,
     )
-    x = page.evaluate("() => window.__agentIdleQA()")
+    x = handle.json_value()
     indices = x["indices"]
     if (
         not 1 <= x["rows"] <= 5

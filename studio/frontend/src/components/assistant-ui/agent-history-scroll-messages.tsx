@@ -5,7 +5,7 @@ import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffec
 import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
-import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
+import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
   allowsPassiveAgentScroll,
@@ -45,6 +45,10 @@ export const AgentHistoryScrollMessages: FC<{
   const topSpacer = useRef<HTMLDivElement>(null);
   const anchor = useRef<{ index: number; top: number } | null>(null);
   const jump = useRef<"top" | "bottom" | null>(null);
+  const staged = useRef<{ destination: AgentScrollWindow; target: number } | null>(null);
+  // A real scroll received during staging must be sampled after the last
+  // window commit, never allowed to abort staging with only one row mounted.
+  const deferredScroll = useRef(false);
   const [state, setState] = useState(() => ({
     key: resetKey, count, windowRows, range: latestAgentWindow(count, windowRows),
   }));
@@ -97,6 +101,13 @@ export const AgentHistoryScrollMessages: FC<{
       return;
     }
     anchor.current = null;
+    const disjoint = next.end <= rangeRef.current.start ||
+      next.start >= rangeRef.current.end;
+    const progressive = !snap && !following.current && disjoint &&
+      next.end - next.start > 1;
+    const target = Math.min(Math.max(index, next.start), next.end - 1);
+    const candidate = progressive ? { start: target, end: target + 1 } : next;
+    staged.current = progressive ? { destination: next, target } : null;
     if (viewport && !snap) {
       const fold = viewport.getBoundingClientRect().top;
       for (const el of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
@@ -108,14 +119,55 @@ export const AgentHistoryScrollMessages: FC<{
       }
     }
     jump.current = snap ?? null;
-    rangeRef.current = next;
-    setState(old => ({ ...old, range: next }));
+    rangeRef.current = candidate;
+    setState(old => ({ ...old, range: candidate }));
   }, [jumpBottom, navigateViewport, viewportRef, windowRows]);
+
+  useEffect(() => {
+    const task = staged.current;
+    if (!task) return;
+    const frame = requestAnimationFrame(() => {
+      if (staged.current !== task) return;
+      const current = rangeRef.current;
+      const next = nextProgressiveAgentWindow(current, task.destination);
+      if (next.start === current.start && next.end === current.end) {
+        staged.current = null;
+        return;
+      }
+      if (next.start < current.start) {
+        const row = viewportRef.current?.querySelector<HTMLElement>(
+          '[data-agent-history-row="' + task.target + '"]',
+        );
+        if (row) anchor.current = { index: task.target, top: row.getBoundingClientRect().top };
+      }
+      rangeRef.current = next;
+      setState(old => ({ ...old, range: next }));
+      if (next.start === task.destination.start && next.end === task.destination.end) {
+        staged.current = null;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [range.start, range.end, viewportRef]);
+
+  useLayoutEffect(() => {
+    if (staged.current !== null || !deferredScroll.current) return;
+    deferredScroll.current = false;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    // Read the final layout instead of using a stale coordinate from the
+    // temporarily one-row document. React has now committed the full window.
+    const frame = requestAnimationFrame(() => {
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [range.start, range.end, viewportRef]);
 
   const revealSearchRow = useCallback((index: number) => {
     const nextIntent = requestAgentHistoryReveal(navigation.current, index, countRef.current);
     if (nextIntent === navigation.current) return;
     navigation.current = nextIntent;
+    staged.current = null;
+    deferredScroll.current = false;
     // A search command is reader navigation, never permission to continue
     // following a streaming tail. The viewport owner also detaches BEFORE
     // writing scrollTop once the destination row has mounted.
@@ -249,6 +301,10 @@ export const AgentHistoryScrollMessages: FC<{
       animation.current = requestAnimationFrame(() => {
         animation.current = null;
         if (!allowsPassiveAgentScroll(navigation.current)) return;
+        if (staged.current !== null) {
+          deferredScroll.current = true;
+          return;
+        }
         const total = countRef.current;
         if (!total) return;
         const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 24;
@@ -272,6 +328,8 @@ export const AgentHistoryScrollMessages: FC<{
     // Actual reader gestures supersede a pending search. Synthetic scroll
     // events from explicit navigation and from layout measurement do not.
     const interrupt = () => {
+      // Do not abort a partially rendered window on a second wheel/touch
+      // impulse; its completion is required for navigation correctness.
       navigation.current = interruptAgentHistoryReveal(navigation.current);
       if (revealFrame.current !== null) {
         cancelAnimationFrame(revealFrame.current);
@@ -334,6 +392,8 @@ export const AgentHistoryScrollMessages: FC<{
   }, [gate, range.start, range.end]);
   const backToLatest = () => {
     navigation.current = interruptAgentHistoryReveal(navigation.current);
+    staged.current = null;
+    deferredScroll.current = false;
     following.current = true;
     seek(countRef.current - 1, "bottom");
   };

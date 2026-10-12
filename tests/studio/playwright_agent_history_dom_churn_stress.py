@@ -46,6 +46,13 @@ INJECT = """({regularCards, heavyCards, total}) => {
     mutationCalls: 0, longTasks: 0, maxLongTaskMs: 0, frameLagMs: 0,
     violation: false };
   let scheduled = false, previousFrame = 0;
+  // Synthetic-only numerical trace: detect repeated oscillation between
+  // logical row windows without ever recording message or tool content.
+  const recentWindows = [];
+  const observedWindows = new Set();
+  let previousWindow = null;
+  let windowTransitions = 0, windowRevisits = 0;
+  const viewport = document.querySelector('.aui-thread-viewport');
   function frame(t) {
     if (previousFrame) stats.frameLagMs = Math.max(stats.frameLagMs, t - previousFrame);
     previousFrame = t;
@@ -86,7 +93,23 @@ INJECT = """({regularCards, heavyCards, total}) => {
   if (!root) throw Error('Virtualized list missing');
   const observer = new MutationObserver(() => {
     stats.mutationCalls++;
-    for (const row of root.querySelectorAll('[data-agent-history-row]')) {
+    const rows = [...root.querySelectorAll('[data-agent-history-row]')];
+    const signature = rows.map(row => row.dataset.agentHistoryRow).join(',');
+    if (signature !== previousWindow) {
+      windowTransitions++;
+      if (observedWindows.has(signature)) windowRevisits++;
+      observedWindows.add(signature);
+      previousWindow = signature;
+      recentWindows.push({
+        from: Number(rows[0]?.dataset.agentHistoryRow ?? -1),
+        to: Number(rows[rows.length - 1]?.dataset.agentHistoryRow ?? -1),
+        count: rows.length,
+        filled: rows.filter(row => row.querySelector('[data-qa-heavy-fixture]')).length,
+        scrollTop: Math.round(viewport?.scrollTop ?? -1),
+      });
+      if (recentWindows.length > 20) recentWindows.shift();
+    }
+    for (const row of rows) {
       if (!row.querySelector('[data-qa-heavy-fixture]')) { schedule(); break; }
     }
   });
@@ -111,6 +134,8 @@ INJECT = """({regularCards, heavyCards, total}) => {
         listNodes: root.querySelectorAll('*').length,
         totalNodes: document.querySelectorAll('*').length,
         distinctRows: seen.size,
+        windowTransitions, windowRevisits, distinctWindows: observedWindows.size,
+        recentWindows,
         heapBytes: performance.memory?.usedJSHeapSize ?? null,
         ...stats,
       };
@@ -166,14 +191,38 @@ def gc_retention_sample(cdp, page, messages: int, cap: int, label: str) -> dict:
 
 
 def state(page, messages: int, limit: int, label: str) -> dict:
-    page.wait_for_function(
-        """() => {
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+    try:
+        page.wait_for_function(
+            """() => {
+              const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+              return rows.length === 5 && rows.every(row =>
+                row.querySelector('[data-qa-heavy-fixture]'));
+            }""",
+            timeout = 90000,
+        )
+    except PlaywrightTimeoutError as exc:
+        # Record numeric-only, synthetic-only state when the renderer stalls.
+        # Never dump DOM HTML, transcript text, network payloads or screenshots.
+        debug = page.evaluate("""() => {
           const rows = [...document.querySelectorAll('[data-agent-history-row]')];
-          return rows.length > 0 && rows.every(row =>
-            row.querySelector('[data-qa-heavy-fixture]'));
-        }""",
-        timeout = 90000,
-    )
+          const viewport = document.querySelector('.aui-thread-viewport');
+          return {
+            mounted: rows.length,
+            indices: rows.map(r => Number(r.dataset.agentHistoryRow)),
+            filled: rows.filter(r => r.querySelector('[data-qa-heavy-fixture]')).length,
+            liveNodes: document.querySelectorAll('*').length,
+            scrollTop: Math.round(viewport?.scrollTop ?? -1),
+            scrollHeight: Math.round(viewport?.scrollHeight ?? -1),
+            viewportHeight: Math.round(viewport?.clientHeight ?? -1),
+            createdElements: window.__qaDomChurn?.read()?.createdElements ?? null,
+            windowTransitions: window.__qaDomChurn?.read()?.windowTransitions ?? null,
+            windowRevisits: window.__qaDomChurn?.read()?.windowRevisits ?? null,
+            recentWindows: window.__qaDomChurn?.read()?.recentWindows ?? [],
+          };
+        }""")
+        raise AssertionError(f"{label}: destination window failed to settle: {debug}") from exc
     value = page.evaluate("() => window.__qaDomChurn.read()")
     positions = value["indices"]
     if (

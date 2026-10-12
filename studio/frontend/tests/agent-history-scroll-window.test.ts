@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AgentHeightIndex, agentIndexAtScrollPosition, latestAgentWindow, agentWindowAtIndex, agentWindowOnAppend, AGENT_DEFAULT_ROWS, AGENT_INITIAL_ROWS, AGENT_MAX_ROWS, AGENT_WINDOW_SIZES } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
+import { AgentHeightIndex, agentIndexAtScrollPosition, latestAgentWindow, agentWindowAtIndex, agentWindowOnAppend, nextProgressiveAgentWindow, AGENT_DEFAULT_ROWS, AGENT_INITIAL_ROWS, AGENT_MAX_ROWS, AGENT_WINDOW_SIZES } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
 
 test("new agent mode defaults to five while explicit 32 preserves legacy 96-row append headroom", () => {
   assert.equal(AGENT_DEFAULT_ROWS, 5);
@@ -132,4 +132,39 @@ test("small windows do not expand during append, legacy 32 may expand to 96", ()
     }
     assert.deepEqual(agentWindowOnAppend(window, count, count + 1, false, size), window);
   }
+});
+
+test("distant passive seeks admit at most two new rows per frame", () => {
+  const destination = agentWindowAtIndex(1000, 250, undefined, 5);
+  let current = { start: 250, end: 251 };
+  assert.ok(destination.start <= 250 && destination.end > 250);
+  let steps = 0;
+  while (current.start !== destination.start || current.end !== destination.end) {
+    const next = nextProgressiveAgentWindow(current, destination);
+    const admitted = (next.end - next.start) - (current.end - current.start);
+    assert.ok(admitted >= 1 && admitted <= 2);
+    assert.ok(next.start <= 250 && next.end > 250);
+    current = next;
+    steps++;
+    assert.ok(steps <= 2);
+  }
+  assert.deepEqual(current, destination);
+  assert.equal(steps, 2);
+  assert.deepEqual(nextProgressiveAgentWindow(current, destination), destination);
+  assert.deepEqual(nextProgressiveAgentWindow({ start: 250, end: 251 }, destination, 0),
+    { start: 250, end: 251 });
+});
+
+test("an interrupted progressive window cannot be accepted as a finished K=5 window", () => {
+  const final = agentWindowAtIndex(1000, 250, undefined, 5);
+  for (const partial of [
+    { start: 250, end: 251 },
+    { start: 249, end: 252 },
+    { start: 248, end: 252 },
+  ]) {
+    const resumed = agentWindowAtIndex(1000, 250, partial, 5);
+    assert.deepEqual(resumed, final);
+    assert.equal(resumed.end - resumed.start, 5);
+  }
+  assert.deepEqual(agentWindowAtIndex(1000, 250, final, 5), final);
 });

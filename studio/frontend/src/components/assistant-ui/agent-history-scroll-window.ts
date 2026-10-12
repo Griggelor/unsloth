@@ -36,8 +36,11 @@ export function agentWindowAtIndex(
   if (count <= windowRows) return { start: 0, end: count };
   const target = clamp(Math.floor(index), 0, count - 1);
   const maxRows = windowRows === AGENT_INITIAL_ROWS ? AGENT_MAX_ROWS : windowRows;
+  // A partially staged window is not a stable reader window. If staging was
+  // interrupted, recalculate a full window rather than retaining a lone row.
   if (current && current.start >= 0 && current.end <= count &&
-      current.end > current.start && current.end - current.start <= maxRows &&
+      current.end > current.start && current.end - current.start >= windowRows &&
+      current.end - current.start <= maxRows &&
       target >= current.start + Math.min(8, Math.floor((current.end-current.start)/4)) &&
       target < current.end - Math.min(8, Math.floor((current.end-current.start)/4))) {
     return current;
@@ -47,6 +50,27 @@ export function agentWindowAtIndex(
   const lead = windowRows === AGENT_INITIAL_ROWS ? 12 : Math.floor((windowRows - 1) / 2);
   const start = clamp(target - lead, 0, count - windowRows);
   return { start, end: start + windowRows };
+}
+
+/**
+ * Admit at most two previously unmounted messages per animation frame.
+ * One extra DOM/style/layout pass per row raised total work during 200k/400k
+ * stress runs; admitting a small batch balances latency against long tasks.
+ * Only use for a distant passive scroll seek.
+ */
+export function nextProgressiveAgentWindow(
+  current: AgentScrollWindow,
+  destination: AgentScrollWindow,
+  maxAddedRows = 2,
+): AgentScrollWindow {
+  if (!Number.isSafeInteger(maxAddedRows) || maxAddedRows < 1) return current;
+  let { start, end } = current;
+  for (let added = 0; added < maxAddedRows; added++) {
+    if (start > destination.start) start--;
+    else if (end < destination.end) end++;
+    else break;
+  }
+  return { start, end };
 }
 
 /** Appending at the tail never shifts the mounted rows on the first append. */
