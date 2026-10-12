@@ -227,11 +227,27 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
     track_width = metrics["offsetWidth"] - metrics["clientWidth"]
     if track_width < 8 or metrics["scrollHeight"] <= metrics["clientHeight"]:
         raise AssertionError(f"{level}: native scrollbar not testable: {metrics}")
-    # At scroll bottom the native thumb ends at the viewport's lower edge.
-    # Use the middle of its bottom 16px instead of clicking the track.
+    # Reserve room for a native scrollbar end-button. On long histories the
+    # thumb can be tiny and clicking eight pixels from the bottom hits the
+    # track instead of the thumb.
     x = box["x"] + box["width"] - track_width / 2
-    bottom = box["y"] + box["height"] - 8
+    bottom = box["y"] + box["height"] - 24
     destination = box["y"] + box["height"] * 0.35
+    hit = page.evaluate(
+        """([x, y]) => {
+          const el = document.elementFromPoint(x, y);
+          const view = document.querySelector('.aui-thread-viewport');
+          return {
+            hitTag: el?.tagName, hitClass: String(el?.className ?? ''),
+            viewportHit: el === view || !!(view && el && view.contains(el)),
+            nativeScrollbarWidth: view ? getComputedStyle(view, '::-webkit-scrollbar').width : null,
+            devicePixelRatio: devicePixelRatio
+          };
+        }""",
+        [x, bottom],
+    )
+    if not hit["viewportHit"]:
+        raise AssertionError(f"{level}: scrollbar pointer occluded: {hit}; at ({x}, {bottom})")
     before = metrics["scrollTop"]
     page.mouse.move(x, bottom)
     page.mouse.down()
@@ -241,7 +257,7 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
     if abs(after - before) < box["height"]:
         detail = (
             f"{level}: physical scrollbar drag did not move the viewport: "
-            f"{before} -> {after}; scrollbar: {metrics}; at ({x}, {bottom})"
+            f"{before} -> {after}; scrollbar: {metrics}; hit: {hit}; at ({x}, {bottom})"
         )
         raise AssertionError(detail)
     page.wait_for_function(
