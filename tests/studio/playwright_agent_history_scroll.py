@@ -299,17 +299,22 @@ def check_chat_header_menu(page, messages: int) -> None:
         option.focus()
         option.press("Enter")
 
-    for level in ("high", "low"):
+    for level, dom_policy, cap in (
+        ("dynamic-high", "high", 32),
+        ("dynamic-low", "low", 5),
+        ("fixed-high", "legacy", 32),
+        ("fixed-low", "legacy", 5),
+    ):
         choose(level)
         page.wait_for_function(
-            """([expected, level]) => {
+            """([expected, policy, maximum]) => {
               const list = document.querySelector('[data-agent-history-scroll-list="true"]');
               const rows = [...document.querySelectorAll('[data-agent-history-row]')];
-              return list?.getAttribute('data-agent-history-dom-level') === level &&
-                rows.length >= 1 && rows.length <= 32 &&
+              return list?.getAttribute('data-agent-history-dom-level') === policy &&
+                rows.length >= 1 && rows.length <= maximum &&
                 rows.every(row => row.getAttribute('aria-setsize') === String(expected));
             }""",
-            arg = [messages, level],
+            arg = [messages, dom_policy, cap],
             timeout = 60_000,
         )
         census(page, messages, f"dom-budget-{level}")
@@ -350,7 +355,8 @@ def check_chat_header_menu(page, messages: int) -> None:
             timeout = 15_000,
         )
         page.evaluate("() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()")
-        check_adaptive_thumb_drag(page, level)
+        if level.startswith("dynamic-"):
+            check_adaptive_thumb_drag(page, level)
 
     choose("off")
     page.wait_for_function(
