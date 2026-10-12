@@ -12,7 +12,7 @@ permissions:
   pull-requests: read
 jobs:
   compare:
-    name: Compare controlled eager imports vs lazy search/RAG tool cards
+    name: Compare exact PR30 baseline with isolated web-search lazy card
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -57,23 +57,20 @@ jobs:
           python app/scripts/lockfile_supply_chain_audit.py
           cd app/studio/frontend
           npm ci --strict-allow-scripts --no-fund --no-audit
-      - name: Preserve original source and obtain pre-tool-split comparator
+      - name: Preserve exact current source as baseline
         run: |
           set -euo pipefail
           mkdir -p reports
           cp app/studio/frontend/src/components/assistant-ui/thread.tsx reports/thread-current.tsx
-          git -C app fetch --no-tags --depth=1 origin 01b44a02dde5a441ddacba02d4a736d712438b18
-          git -C app show 01b44a02dde5a441ddacba02d4a736d712438b18:studio/frontend/src/components/assistant-ui/thread.tsx > reports/thread-before-tool-split.tsx
-          cp reports/thread-before-tool-split.tsx app/studio/frontend/src/components/assistant-ui/thread.tsx
-      - name: Measure original eager tool-card comparator
+      - name: Measure exact PR30 shipping HEAD startup budget
         working-directory: app/studio/frontend
         shell: bash
         run: |
           set -euo pipefail
           npm run build > ../../../reports/eager-build.log 2>&1 || { tail -n 120 ../../../reports/eager-build.log; exit 1; }
-          if npm run bundle:check > ../../../reports/eager-budget.log 2>&1; then echo "Original eager comparator within budget"; else echo "Original eager comparator over budget"; fi
+          if npm run bundle:check > ../../../reports/eager-budget.log 2>&1; then echo "Shipping HEAD within budget"; else echo "Shipping HEAD over budget"; fi
           cat ../../../reports/eager-budget.log
-      - name: Measure candidate lazy search/RAG tool UIs (scratch only)
+      - name: Measure candidate lazy Web Search only (scratch)
         working-directory: app/studio/frontend
         shell: bash
         run: |
@@ -83,9 +80,9 @@ jobs:
           if npm run bundle:check > ../../../reports/candidate-budget.log 2>&1; then echo "Experimental candidate within budget"; else echo "Experimental candidate still over budget"; fi
           cat ../../../reports/candidate-budget.log
           echo "## Side-by-side measured startup budgets" >> "$GITHUB_STEP_SUMMARY"
-          echo '### Original eager tool cards' >> "$GITHUB_STEP_SUMMARY"
+          echo '### Current PR30 production HEAD' >> "$GITHUB_STEP_SUMMARY"
           grep -E 'eager startup JS|over the startup budget|within budget' ../../../reports/eager-budget.log >> "$GITHUB_STEP_SUMMARY" || true
-          echo '### Experimental lazy web search / RAG' >> "$GITHUB_STEP_SUMMARY"
+          echo '### Experimental Web Search-only split' >> "$GITHUB_STEP_SUMMARY"
           grep -E 'eager startup JS|over the startup budget|within budget' ../../../reports/candidate-budget.log >> "$GITHUB_STEP_SUMMARY" || true
           echo "**Do not count as a production pass: only the shipping PR30 HEAD can satisfy that gate.**" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload controlled comparison evidence
