@@ -239,10 +239,11 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
     page.mouse.up()
     after = page.locator(VIEWPORT).evaluate("el => el.scrollTop")
     if abs(after - before) < box["height"]:
-        raise AssertionError(
+        detail = (
             f"{level}: physical scrollbar drag did not move the viewport: "
             f"{before} -> {after}; scrollbar: {metrics}; at ({x}, {bottom})"
         )
+        raise AssertionError(detail)
     page.wait_for_function(
         """() => {
           const viewport = document.querySelector('.aui-thread-viewport');
@@ -527,9 +528,8 @@ def run(url: str, username: str, password: str, messages: int) -> None:
         baseline = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
         baseline_messages = baseline["messages"]
         with sync_playwright() as driver:
-            browser = driver.chromium.launch(
-                headless = True, args = ["--disable-features=OverlayScrollbar,OverlayScrollbars"]
-            )
+            launch_args = ["--disable-features=OverlayScrollbar,OverlayScrollbars"]
+            browser = driver.chromium.launch(headless = True, args = launch_args)
             try:
                 context = browser.new_context(viewport = {"width": 1440, "height": 960})
                 # The auth bootstrap is rerun on each navigation. Preferences must
