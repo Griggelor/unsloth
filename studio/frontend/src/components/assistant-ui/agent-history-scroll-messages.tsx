@@ -229,6 +229,14 @@ export const AgentHistoryScrollMessages: FC<{
     if (lastWindowRows.current === windowRows && lastDomLevel.current === domLevel) return;
     lastWindowRows.current = windowRows;
     lastDomLevel.current = domLevel;
+    // A pending progressive destination belongs to the PREVIOUS mode. Do
+    // not let its next frame reintroduce rows outside the new DOM budget.
+    staged.current = null;
+    deferredScroll.current = false;
+    readerIntent.current = consumeAgentReaderScrollIntent(readerIntent.current, readerIntent.current.epoch);
+    pendingScrollEpoch.current = null;
+    if (animation.current !== null) cancelAnimationFrame(animation.current);
+    animation.current = null;
     if (following.current) jumpBottom("auto");
     else navigateViewport(heights.offset(visibleIndex.current));
   }, [windowRows, domLevel, range.start, range.end, heights, jumpBottom, navigateViewport]);
