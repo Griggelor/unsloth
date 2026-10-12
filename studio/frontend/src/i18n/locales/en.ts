@@ -2444,6 +2444,10 @@ export const en = {
       },
     },
     chat: {
+      agentHistoryBufferDynamicLow: "Dynamic Buffer Low (up to 5 messages)",
+      agentHistoryBufferDynamicHigh: "Dynamic Buffer High (up to 32 messages)",
+      agentHistoryBufferFixedLow: "Fixed Buffer Low (5 messages)",
+      agentHistoryBufferFixedHigh: "Fixed Buffer High (32 messages)",
       agentHistoryModeOff: "Off",
       agentHistoryModeLow: "Low",
       agentHistoryModeHigh: "High",
