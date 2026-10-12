@@ -98,26 +98,34 @@ export const AgentHistoryScrollMessages: FC<{
     if (heightFrame.current !== null) cancelAnimationFrame(heightFrame.current);
   }, []);
 
-  // Async history arrival must not mount the entire conversation in one commit.
-  const range = state.key !== resetKey ? latestAgentWindow(count, windowRows)
-    : state.windowRows !== windowRows
-      ? following.current
-        ? latestAgentWindow(count, windowRows)
-        : agentWindowAtIndex(
-            count, Math.min(visibleIndex.current, Math.max(0, count - 1)), undefined, windowRows,
-          )
+  // Preserve progressive staging and reader-intent ownership; only the
+  // selected window policy changes under an explicit Low/High preference.
+  const budgetWindow = (index: number) =>
+    budget === null ? null : agentBudgetWindow(count, index, costs, budget);
+  const latestWindow = () => budgetWindow(count - 1) ?? latestAgentWindow(count, windowRows);
+  const visibleWindow = () => budgetWindow(visibleIndex.current) ?? agentWindowAtIndex(
+    count, Math.min(visibleIndex.current, Math.max(0, count - 1)), undefined, windowRows,
+  );
+  const range = state.key !== resetKey ? latestWindow()
+    : state.domLevel !== domLevel || state.windowRows !== windowRows
+      ? following.current ? latestWindow() : visibleWindow()
       : state.count !== count
-        ? agentWindowOnAppend(state.range, state.count, count, following.current, windowRows)
+        ? budget !== null
+          ? following.current ? latestWindow() : state.range
+          : agentWindowOnAppend(state.range, state.count, count, following.current, windowRows)
         : state.range;
-  if (state.key !== resetKey || state.count !== count || state.windowRows !== windowRows) {
-    setState({ key: resetKey, count, windowRows, range });
+  if (state.key !== resetKey || state.count !== count ||
+      state.windowRows !== windowRows || state.domLevel !== domLevel) {
+    setState({ key: resetKey, count, windowRows, domLevel, range });
   }
   const rangeRef = useRef<AgentScrollWindow>(range);
   rangeRef.current = range;
 
   const seek = useCallback((index: number, snap?: "top" | "bottom") => {
     const viewport = viewportRef.current;
-    const next = agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
+    const next = budget !== null
+      ? agentBudgetWindow(countRef.current, index, costs, budget)
+      : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
     if (next.start === rangeRef.current.start && next.end === rangeRef.current.end) {
       if (snap === "bottom") jumpBottom("auto");
       if (snap === "top" && viewport) navigateViewport(0);
@@ -145,7 +153,7 @@ export const AgentHistoryScrollMessages: FC<{
     rangeRef.current = candidate;
     setState(old => ({ ...old, range: candidate }));
     return true;
-  }, [jumpBottom, navigateViewport, viewportRef, windowRows]);
+  }, [jumpBottom, navigateViewport, viewportRef, windowRows, costs, budget]);
 
   useEffect(() => {
     const task = staged.current;
@@ -198,6 +206,7 @@ export const AgentHistoryScrollMessages: FC<{
     // following a streaming tail. The viewport owner also detaches BEFORE
     // writing scrollTop once the destination row has mounted.
     following.current = false;
+    visibleIndex.current = index;
     anchor.current = null;
     jump.current = null;
     searchHitRef.current = index;
@@ -205,21 +214,24 @@ export const AgentHistoryScrollMessages: FC<{
     // A repeated hit may already be mounted, and setSearchHit(sameIndex)
     // does not produce a render. Force a fresh layout navigation transaction.
     setRevealRevision(v => v + 1);
-    const next = agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
+    const next = budget !== null
+      ? agentBudgetWindow(countRef.current, index, costs, budget)
+      : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
     if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
       rangeRef.current = next;
       setState(old => ({ ...old, range: next }));
     }
-  }, [windowRows]);
+  }, [windowRows, costs, budget]);
 
   // Changing the preference should not strand the reader at a stale scroll offset.
   // Keep height measurements; only the mounted window changes.
   useLayoutEffect(() => {
-    if (lastWindowRows.current === windowRows) return;
+    if (lastWindowRows.current === windowRows && lastDomLevel.current === domLevel) return;
     lastWindowRows.current = windowRows;
+    lastDomLevel.current = domLevel;
     if (following.current) jumpBottom("auto");
     else navigateViewport(heights.offset(visibleIndex.current));
-  }, [windowRows, range.start, range.end, heights, jumpBottom, navigateViewport]);
+  }, [windowRows, domLevel, range.start, range.end, heights, jumpBottom, navigateViewport]);
 
   // Register a search target only for the opt-in virtualized thread. The normal
   // find engine can keep its existing DOM semantics without mounting the history.
