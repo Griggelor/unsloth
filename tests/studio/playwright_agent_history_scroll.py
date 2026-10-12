@@ -200,7 +200,6 @@ def require_visible_search_row(page, row_index: int, label: str) -> None:
     )
 
 
-
 def check_adaptive_thumb_drag(page, level: str) -> None:
     """Actual pointer drag; no wheel or programmatic scroll recovery allowed."""
     page.add_style_tag(
