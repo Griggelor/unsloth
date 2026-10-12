@@ -617,16 +617,13 @@ export function ChatTab() {
               aria-label={t("settings.chat.agentHistoryGlobal")}
             />
             <Select
-              value={isAgentBufferMode(globalDomLevel) ? globalDomLevel :
-                globalDomLevel === "high" ||
-                (globalDomLevel === undefined && globalAgentWindowRows === 32)
-                  ? "fixed-high" : "fixed-low"}
+              value={isAgentBufferMode(globalDomLevel) ? globalDomLevel : undefined}
               onValueChange={(value) => {
                 if (isAgentBufferMode(value)) setGlobalDomLevel(value);
               }}
             >
               <SelectTrigger className="w-60" aria-label={t("settings.chat.agentHistoryChatMode")}>
-                <SelectValue />
+                <SelectValue placeholder={t("settings.chat.agentHistoryChatMode")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="dynamic-low">{t("settings.chat.agentHistoryBufferDynamicLow")}</SelectItem>
