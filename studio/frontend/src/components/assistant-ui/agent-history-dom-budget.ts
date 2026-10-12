@@ -2,6 +2,8 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 
 /** Budget targets apply to message descendants, not the entire application DOM. */
+import type { AgentScrollWindow } from "./agent-history-scroll-window";
+
 export type AgentDomLevel = "off" | "low" | "high";
 export const AGENT_DOM_TARGETS = { low: 5_000, high: 12_000 } as const;
 /** Unknown rows are charged conservatively until observed, so long chats start small. */
@@ -69,4 +71,25 @@ export function agentBudgetWindow(
     } else break;
   }
   return { start, end };
+}
+
+/**
+ * When measurements merely admit additional neighboring messages, keep the
+ * reader's already-filled viewport stable rather than moving text every frame.
+ * Contracting an over-budget window or revealing an absent target is mandatory.
+ */
+export function needsAgentBudgetRebalance(
+  current: AgentScrollWindow,
+  proposed: AgentScrollWindow,
+  target: number,
+  mountedContentHeight: number,
+  viewportHeight: number,
+): boolean {
+  if (current.start === proposed.start && current.end === proposed.end) return false;
+  if (!(current.start <= target && target < current.end)) return true;
+  if (proposed.start > current.start || proposed.end < current.end) return true;
+  // No speculative expansion above or below a reader-visible viewport. This
+  // is what stopped legacy mode from shifting text during its idle phase.
+  return Number.isFinite(mountedContentHeight) && Number.isFinite(viewportHeight) &&
+    mountedContentHeight + 16 < viewportHeight;
 }

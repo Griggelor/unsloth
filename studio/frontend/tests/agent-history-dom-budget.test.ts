@@ -2,7 +2,7 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AgentDomCostIndex, agentBudgetWindow, AGENT_DOM_TARGETS } from "../src/components/assistant-ui/agent-history-dom-budget.ts";
+import { AgentDomCostIndex, agentBudgetWindow, AGENT_DOM_TARGETS, needsAgentBudgetRebalance } from "../src/components/assistant-ui/agent-history-dom-budget.ts";
 
 test("low and high adapt to measured row complexity", () => {
   const costs = new AgentDomCostIndex(40);
@@ -87,4 +87,16 @@ test("repeated adversarial measurement updates never expand beyond measured budg
       assert.ok(unknown <= 1, "never mount a batch of unknown huge tool rows");
     }
   }
+});
+
+test("Low and High stop adding extra messages after the viewport is filled", () => {
+  const single = { start: 99, end: 100 };
+  const expanded = { start: 98, end: 100 };
+  assert.equal(needsAgentBudgetRebalance(single, expanded, 99, 500, 900), true);
+  assert.equal(needsAgentBudgetRebalance(single, expanded, 99, 920, 900), false);
+  assert.equal(needsAgentBudgetRebalance(single, expanded, 99, 890, 900), false);
+  assert.equal(needsAgentBudgetRebalance({ start: 96, end: 100 },
+    single, 99, 2200, 900), true);
+  assert.equal(needsAgentBudgetRebalance(single, expanded, 50, 920, 900), true);
+  assert.equal(needsAgentBudgetRebalance(single, single, 99, 500, 900), false);
 });

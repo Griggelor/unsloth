@@ -6,7 +6,7 @@ import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffec
 import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
-import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, type AgentDomLevel } from "./agent-history-dom-budget";
+import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, type AgentDomLevel, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
@@ -56,6 +56,7 @@ export const AgentHistoryScrollMessages: FC<{
   const anchor = useRef<{ index: number; top: number } | null>(null);
   const jump = useRef<"top" | "bottom" | null>(null);
   const staged = useRef<{ destination: AgentScrollWindow; target: number } | null>(null);
+  const pendingPassiveReveal = useRef<number | null>(null);
   // A real scroll received during staging must be sampled after the last
   // window commit, never allowed to abort staging with only one row mounted.
   const deferredScroll = useRef(false);
@@ -80,6 +81,7 @@ export const AgentHistoryScrollMessages: FC<{
     pendingScrollEpoch.current = null;
     navigation.current = initialAgentHistoryNavigation();
     staged.current = null;
+    pendingPassiveReveal.current = null;
     deferredScroll.current = false;
   }, [resetKey]);
   const revealFrame = useRef<number | null>(null);
@@ -139,6 +141,7 @@ export const AgentHistoryScrollMessages: FC<{
     const target = Math.min(Math.max(index, next.start), next.end - 1);
     const candidate = progressive ? { start: target, end: target + 1 } : next;
     staged.current = progressive ? { destination: next, target } : null;
+    pendingPassiveReveal.current = disjoint && !snap ? target : null;
     if (viewport && !snap) {
       const fold = viewport.getBoundingClientRect().top;
       for (const el of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
@@ -336,6 +339,28 @@ export const AgentHistoryScrollMessages: FC<{
       const row = viewport.querySelector<HTMLElement>('[data-agent-history-row="' + oldAnchor.index + '"]');
       if (row) correctAnchor(row.getBoundingClientRect().top - oldAnchor.top);
     }
+    // A scrollbar thumb can jump millions of estimated pixels in one event.
+    // Do not require a SECOND wheel gesture merely to reveal its destination:
+    // after the staged window is fully committed, reconcile the mounted target
+    // with the real viewport geometry once, before the browser paints.
+    const pending = pendingPassiveReveal.current;
+    if (pending !== null && staged.current === null) {
+      const row = viewport.querySelector<HTMLElement>(
+        '[data-agent-history-row="' + pending + '"]',
+      );
+      if (row) {
+        pendingPassiveReveal.current = null;
+        const viewportBox = viewport.getBoundingClientRect();
+        const rowBox = row.getBoundingClientRect();
+        if (rowBox.bottom <= viewportBox.top + 8 ||
+            rowBox.top >= viewportBox.bottom - 8) {
+          navigateViewport(
+            viewport.scrollTop + rowBox.top - viewportBox.top -
+            Math.min(72, viewport.clientHeight / 4),
+          );
+        }
+      }
+    }
   }, [range.start, range.end, searchHit, revealRevision, viewportRef, jumpBottom, correctAnchor, navigateViewport]);
 
   // A scroll event is not itself evidence of user navigation. Internal
@@ -445,9 +470,17 @@ export const AgentHistoryScrollMessages: FC<{
       const target = intent.kind === "search" ? intent.row
         : following.current ? countRef.current - 1 : visibleIndex.current;
       const next = agentBudgetWindow(countRef.current, target, costs, budget);
-      if (next.start === rangeRef.current.start && next.end === rangeRef.current.end) return;
       const viewport = viewportRef.current;
-      const row = viewport?.querySelector<HTMLElement>(
+      if (!viewport) return;
+      // The old policy greedily added one newly measured neighbor on every
+      // animation frame, moving anchored text over and over in Low/High mode.
+      // Never grow a window that already fills the reader's viewport.
+      const visibleHeight = [...viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")]
+        .reduce((sum, el) => sum + el.getBoundingClientRect().height, 0);
+      if (!needsAgentBudgetRebalance(
+        rangeRef.current, next, target, visibleHeight, viewport.clientHeight,
+      )) return;
+      const row = viewport.querySelector<HTMLElement>(
         '[data-agent-history-row="' + target + '"]',
       );
       anchor.current = row ? { index: target, top: row.getBoundingClientRect().top } : null;
