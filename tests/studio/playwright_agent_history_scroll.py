@@ -210,9 +210,24 @@ def check_chat_header_menu(page, messages: int) -> None:
         return
 
     def choose(level: str) -> None:
-        trigger.click()
+        # Radix may keep the parent menu open after choosing a nested radio
+        # item. Clicking its trigger unconditionally would CLOSE that menu.
+        if trigger.get_attribute("aria-expanded") != "true":
+            trigger.click()
         submenu = page.locator('[data-test-id="agent-dom-level-trigger"]')
-        submenu.wait_for(state = "visible", timeout = 30_000)
+        try:
+            submenu.wait_for(state = "visible", timeout = 30_000)
+        except Exception:
+            diagnostic = page.evaluate("""() => ({
+              expanded: document.querySelector('[data-test-id="chat-header-more-menu-trigger"]')
+                ?.getAttribute('aria-expanded') ?? null,
+              menus: [...document.querySelectorAll('[role="menu"]')]
+                .map(x => (x.textContent || '').slice(0, 350)),
+              rows: document.querySelectorAll('[data-agent-history-row]').length,
+              activeDomLevel: document.querySelector('[data-agent-history-scroll-list]')
+                ?.getAttribute('data-agent-history-dom-level') ?? null
+            })""")
+            raise AssertionError(f"DOM mode submenu missing for {level}: {diagnostic}")
         submenu.focus()
         submenu.press("ArrowRight")
         option = page.locator(f'[data-test-id="agent-dom-level-{level}"]')
@@ -270,9 +285,7 @@ def check_chat_header_menu(page, messages: int) -> None:
             arg = target,
             timeout = 15_000,
         )
-        page.evaluate(
-            "() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()"
-        )
+        page.evaluate("() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()")
 
     choose("off")
     page.wait_for_function(
@@ -296,7 +309,6 @@ def check_chat_header_menu(page, messages: int) -> None:
     )
     if any(value in ("off", "low", "high") for value in overrides.values()):
         raise AssertionError("Per-chat DOM mode override remained after inheritance")
-
 
 
 def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
