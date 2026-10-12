@@ -32,10 +32,11 @@ export function agentWindowAtIndex(
   index: number,
   current?: AgentScrollWindow,
   windowRows: number = AGENT_INITIAL_ROWS,
+  strict: boolean = false,
 ): AgentScrollWindow {
   if (count <= windowRows) return { start: 0, end: count };
   const target = clamp(Math.floor(index), 0, count - 1);
-  const maxRows = windowRows === AGENT_INITIAL_ROWS ? AGENT_MAX_ROWS : windowRows;
+  const maxRows = !strict && windowRows === AGENT_INITIAL_ROWS ? AGENT_MAX_ROWS : windowRows;
   // A partially staged window is not a stable reader window. If staging was
   // interrupted, recalculate a full window rather than retaining a lone row.
   if (current && current.start >= 0 && current.end <= count &&
@@ -80,12 +81,13 @@ export function agentWindowOnAppend(
   count: number,
   following: boolean,
   windowRows: number = AGENT_INITIAL_ROWS,
+  strict: boolean = false,
 ): AgentScrollWindow {
   if (count < oldCount) return latestAgentWindow(count, windowRows);
   if (oldCount === 0) return latestAgentWindow(count, windowRows);
   if (!following || previous.end !== oldCount) return previous;
   // Only the legacy default may grow to 96 rows. Small windows are strict bounds.
-  const maxRows = windowRows === AGENT_INITIAL_ROWS ? AGENT_MAX_ROWS : windowRows;
+  const maxRows = !strict && windowRows === AGENT_INITIAL_ROWS ? AGENT_MAX_ROWS : windowRows;
   if (count - previous.start > maxRows) return latestAgentWindow(count, windowRows);
   return { start: previous.start, end: count };
 }
