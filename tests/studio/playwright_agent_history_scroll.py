@@ -201,32 +201,63 @@ def require_visible_search_row(page, row_index: int, label: str) -> None:
 
 
 def check_chat_header_menu(page, messages: int) -> None:
-    """Exercise the real header menu, which lives outside AssistantRuntimeProvider."""
+    """Verify real per-chat Low/High/Off/Inherited settings, then restore v1."""
     trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
     trigger.wait_for(state = "visible", timeout = 30_000)
-    trigger.click()
-    disable = page.get_by_role("menuitem", name = "Agenten-Chatverlauf deaktivieren")
-    disable.wait_for(state = "visible", timeout = 30_000)
     if messages != 400:
+        trigger.click()
         page.keyboard.press("Escape")
         return
 
-    # On 400 rows also verify the complete user-facing opt-in/off path.
-    disable.click()
+    def choose(level: str) -> None:
+        trigger.click()
+        submenu = page.locator('[data-test-id="agent-dom-level-trigger"]')
+        submenu.wait_for(state = "visible", timeout = 30_000)
+        submenu.focus()
+        submenu.press("ArrowRight")
+        option = page.locator(f'[data-test-id="agent-dom-level-{level}"]')
+        option.wait_for(state = "visible", timeout = 30_000)
+        option.focus()
+        option.press("Enter")
+
+    for level in ("high", "low"):
+        choose(level)
+        page.wait_for_function(
+            """([expected, level]) => {
+              const list = document.querySelector('[data-agent-history-scroll-list="true"]');
+              const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+              return list?.getAttribute('data-agent-history-dom-level') === level &&
+                rows.length >= 1 && rows.length <= 32 &&
+                rows.every(row => row.getAttribute('aria-setsize') === String(expected));
+            }""",
+            arg = [messages, level],
+            timeout = 60_000,
+        )
+        census(page, messages, f"dom-budget-{level}")
+
+    choose("off")
     page.wait_for_function(
         """() => document.querySelector('[data-agent-history-scroll-list="true"]') === null""",
         timeout = 30_000,
     )
-    trigger.click()
-    page.get_by_role("menuitem", name = "Agenten-Chatverlauf aktivieren").click()
+    choose("inherit")
     page.wait_for_function(
-        """expected => !!document.querySelector(
-          '[data-agent-history-row][aria-setsize="' + expected + '"]'
-        )""",
+        """expected => {
+          const list = document.querySelector('[data-agent-history-scroll-list="true"]');
+          return list?.getAttribute('data-agent-history-dom-level') === 'legacy' &&
+            !!list.querySelector('[data-agent-history-row][aria-setsize="' + expected + '"]');
+        }""",
         arg = messages,
-        timeout = 30_000,
+        timeout = 60_000,
     )
-    census(page, messages, "menu-toggled-on")
+    census(page, messages, "dom-budget-inherit-legacy")
+    overrides = page.evaluate(
+        """() => JSON.parse(localStorage.getItem(
+          'unsloth_agent_chat_history_v1') || '{}').state?.domLevelByThreadId || {}"""
+    )
+    if any(value in ("off", "low", "high") for value in overrides.values()):
+        raise AssertionError("Per-chat DOM mode override remained after inheritance")
+
 
 
 def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
