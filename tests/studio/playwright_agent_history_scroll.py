@@ -338,6 +338,90 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
         raise AssertionError(f"{level}: text shifted after drag without input: {first} -> {second}")
 
 
+def check_dynamic_thumb_under_heavy_dom(page, level: str) -> None:
+    """Stress the real renderer with a 15k-descendant tool message before dragging."""
+    # Two closely spaced synthetic tool-output resizes exercise the
+    # trailing one-second recount; neither resize may lose the target.
+    target = page.evaluate(
+        """() => {
+          const row = [...document.querySelectorAll('[data-agent-history-row]')].at(-1);
+          const owner = row?.querySelector('[data-role]');
+          if (!row || !owner) throw Error('Adaptive target missing');
+          const heavy = document.createElement('div');
+          heavy.dataset.qaAdaptiveHeavy = 'true';
+          heavy.style.cssText = 'height:100px;overflow:hidden;contain:layout';
+          heavy.innerHTML = '<span>qa</span>'.repeat(200);
+          owner.appendChild(heavy);
+          return Number(row.dataset.agentHistoryRow);
+        }"""
+    )
+    page.wait_for_timeout(100)
+    page.evaluate(
+        """() => {
+          const heavy = document.querySelector('[data-qa-adaptive-heavy]');
+          if (!heavy) throw Error('Synthetic row disappeared before expansion');
+          heavy.style.height = '1600px';
+          heavy.innerHTML = '<span>qa</span>'.repeat(15000);
+        }"""
+    )
+    page.wait_for_function(
+        """target => {
+          const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+          return rows.length === 1 &&
+            Number(rows[0].dataset.agentHistoryRow) === target &&
+            rows[0].querySelector('[data-qa-adaptive-heavy]') !== null &&
+            rows[0].querySelectorAll('*').length > 15000;
+        }""",
+        arg = target,
+        timeout = 15_000,
+    )
+    page.evaluate("() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()")
+    check_adaptive_thumb_drag(page, level)
+
+
+def check_isolated_dynamic_thumb_modes(page, thread_id: str, messages: int) -> None:
+    """Test the native drag independently of Radix menu focus and mode selection.
+
+    Persisted per-thread preferences use the production Zustand hydration path.
+    The complete menu-selection E2E remains in check_chat_header_menu.
+    """
+    for level, policy, cap in (
+        ("dynamic-high", "high", 32),
+        ("dynamic-low", "low", 5),
+    ):
+        page.evaluate(
+            """([threadId, selected]) => {
+              const key = 'unsloth_agent_chat_history_v1';
+              const stored = JSON.parse(localStorage.getItem(key) || '{}');
+              const state = stored.state || {};
+              state.enabledThreads = { ...(state.enabledThreads || {}), [threadId]: true };
+              state.disabledThreads = { ...(state.disabledThreads || {}) };
+              delete state.disabledThreads[threadId];
+              state.domLevelByThreadId = {
+                ...(state.domLevelByThreadId || {}),
+                [threadId]: selected
+              };
+              localStorage.setItem(key, JSON.stringify({ ...stored, state }));
+            }""",
+            [thread_id, level],
+        )
+        # Reload forces the real persisted policy -> renderer activation path.
+        page.reload(wait_until = "domcontentloaded", timeout = 120_000)
+        page.wait_for_function(
+            """([expected, actualPolicy, maximum]) => {
+              const list = document.querySelector('[data-agent-history-scroll-list="true"]');
+              const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+              return list?.getAttribute('data-agent-history-dom-level') === actualPolicy &&
+                rows.length > 0 && rows.length <= maximum &&
+                rows.every(row => row.getAttribute('aria-setsize') === String(expected));
+            }""",
+            arg = [messages, policy, cap],
+            timeout = 60_000,
+        )
+        census(page, messages, f"isolated-dynamic-{level}")
+        check_dynamic_thumb_under_heavy_dom(page, level)
+
+
 def check_chat_header_menu(page, messages: int) -> None:
     """Verify real per-chat Low/High/Off/Inherited settings, then restore v1."""
     trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
@@ -394,43 +478,7 @@ def check_chat_header_menu(page, messages: int) -> None:
         census(page, messages, f"dom-budget-{level}")
 
         if level.startswith("dynamic-"):
-            # Two closely spaced synthetic tool-output resizes exercise the
-            # trailing one-second recount; neither resize may lose the target.
-            target = page.evaluate(
-                """() => {
-                  const row = [...document.querySelectorAll('[data-agent-history-row]')].at(-1);
-                  const owner = row?.querySelector('[data-role]');
-                  if (!row || !owner) throw Error('Adaptive target missing');
-                  const heavy = document.createElement('div');
-                  heavy.dataset.qaAdaptiveHeavy = 'true';
-                  heavy.style.cssText = 'height:100px;overflow:hidden;contain:layout';
-                  heavy.innerHTML = '<span>qa</span>'.repeat(200);
-                  owner.appendChild(heavy);
-                  return Number(row.dataset.agentHistoryRow);
-                }"""
-            )
-            page.wait_for_timeout(100)
-            page.evaluate(
-                """() => {
-                  const heavy = document.querySelector('[data-qa-adaptive-heavy]');
-                  if (!heavy) throw Error('Synthetic row disappeared before expansion');
-                  heavy.style.height = '1600px';
-                  heavy.innerHTML = '<span>qa</span>'.repeat(15000);
-                }"""
-            )
-            page.wait_for_function(
-                """target => {
-                  const rows = [...document.querySelectorAll('[data-agent-history-row]')];
-                  return rows.length === 1 &&
-                    Number(rows[0].dataset.agentHistoryRow) === target &&
-                    rows[0].querySelector('[data-qa-adaptive-heavy]') !== null &&
-                    rows[0].querySelectorAll('*').length > 15000;
-                }""",
-                arg = target,
-                timeout = 15_000,
-            )
-            page.evaluate("() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()")
-            check_adaptive_thumb_drag(page, level)
+            check_dynamic_thumb_under_heavy_dom(page, level)
 
     choose("off")
     page.wait_for_function(
@@ -625,18 +673,24 @@ def run(
                 tail = census(page, messages, "initial")
                 if tail["mounted"] != 5:
                     raise AssertionError(f"New agent-history default must mount five rows: {tail}")
-                check_chat_header_menu(page, messages)
                 if critical_scrollbar_only:
-                    # The real native-thumb mouse drag ran in BOTH dynamic
-                    # modes after the 15k-descendant tool-output mutation.
-                    # Preserve the full E2E path when the switch is absent.
+                    check_isolated_dynamic_thumb_modes(page, thread_id, messages)
+                    stored = auth_request_json(
+                        auth, f"{base}/api/chat/threads/{thread_id}/messages"
+                    )
+                    if stored.get("messages") != baseline_messages:
+                        raise AssertionError(
+                            "Isolated scrollbar test changed persisted message content or order"
+                        )
                     print(json.dumps({
                         "gate": "native-scrollbar",
                         "messages": messages,
                         "modes": ["dynamic-high", "dynamic-low"],
+                        "transcript_preserved": True,
                         "result": "passed",
                     }, sort_keys = True))
                     return
+                check_chat_header_menu(page, messages)
                 if messages == 400:
                     check_runtime_window_size(page, thread_id, messages)
                 if tail["ordinal"][-1] != messages:
