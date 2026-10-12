@@ -339,6 +339,28 @@ export const AgentHistoryScrollMessages: FC<{
       const row = viewport.querySelector<HTMLElement>('[data-agent-history-row="' + oldAnchor.index + '"]');
       if (row) correctAnchor(row.getBoundingClientRect().top - oldAnchor.top);
     }
+    // A scrollbar thumb can jump millions of estimated pixels in one event.
+    // Do not require a SECOND wheel gesture merely to reveal its destination:
+    // after the staged window is fully committed, reconcile the mounted target
+    // with the real viewport geometry once, before the browser paints.
+    const pending = pendingPassiveReveal.current;
+    if (pending !== null && staged.current === null) {
+      const row = viewport.querySelector<HTMLElement>(
+        '[data-agent-history-row="' + pending + '"]',
+      );
+      if (row) {
+        pendingPassiveReveal.current = null;
+        const viewportBox = viewport.getBoundingClientRect();
+        const rowBox = row.getBoundingClientRect();
+        if (rowBox.bottom <= viewportBox.top + 8 ||
+            rowBox.top >= viewportBox.bottom - 8) {
+          navigateViewport(
+            viewport.scrollTop + rowBox.top - viewportBox.top -
+            Math.min(72, viewport.clientHeight / 4),
+          );
+        }
+      }
+    }
   }, [range.start, range.end, searchHit, revealRevision, viewportRef, jumpBottom, correctAnchor, navigateViewport]);
 
   // A scroll event is not itself evidence of user navigation. Internal
