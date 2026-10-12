@@ -17,29 +17,29 @@ def test_newer_pypi_release_cannot_bypass_verified_offline_fast_path():
     scripts = (
         (
             ROOT / "studio" / "setup.ps1",
-            'elseif ($InstalledVer -and $LatestVer)',
-            'elseif (-not $LatestVer)',
-            '(Test-UvOfflineRequested)',
-            '(Test-StudioInstallVerified)',
-            '$SkipPythonDeps = $true',
-            '$script:OfflineFastPath = $true',
-            'Invoke-FastPathEscapes',
+            "elseif ($InstalledVer -and $LatestVer)",
+            "elseif (-not $LatestVer)",
+            "(Test-UvOfflineRequested)",
+            "(Test-StudioInstallVerified)",
+            "$SkipPythonDeps = $true",
+            "$script:OfflineFastPath = $true",
+            "Invoke-FastPathEscapes",
         ),
         (
             ROOT / "studio" / "setup.sh",
             'elif [ -n "$INSTALLED_VER" ] && [ -n "$LATEST_VER" ]; then',
             'elif [ -z "$LATEST_VER" ]; then',
-            '_uv_offline_requested',
-            '_setup_install_is_verified',
-            '_SKIP_PYTHON_DEPS=true',
-            '_OFFLINE_FAST_PATH=true',
-            '_fast_path_escapes',
+            "_uv_offline_requested",
+            "_setup_install_is_verified",
+            "_SKIP_PYTHON_DEPS=true",
+            "_OFFLINE_FAST_PATH=true",
+            "_fast_path_escapes",
         ),
     )
-    for path, branch_start, branch_end, offline, verified, skip, fast, escapes in scripts:
-        script = path.read_text(encoding="utf-8")
-        assert script.count(branch_start) == 1, path
-        branch = script.split(branch_start, 1)[1].split(branch_end, 1)[0]
+    for path, begin, end, offline, verified, skip, fast, escapes in scripts:
+        script = path.read_text(encoding = "utf-8")
+        assert script.count(begin) == 1, path
+        branch = script.split(begin, 1)[1].split(end, 1)[0]
         for required in (offline, verified, skip, fast, escapes):
-            assert required in branch, f"{path}: newer-release offline branch misses {required}"
+            assert required in branch, f"{path}: missing {required}"
         assert "keeping the verified install" in branch, path
