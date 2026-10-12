@@ -76,11 +76,11 @@ import { withToolConfirmation } from "@/components/assistant-ui/tool-confirmatio
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { ToolGroup } from "@/components/assistant-ui/tool-group";
 import { CodeExecutionToolUI } from "@/components/assistant-ui/tool-ui-code-execution";
-import { ImageGenerationToolUI } from "@/components/assistant-ui/tool-ui-image-generation";
+
 import { KnowledgeBaseToolUI } from "@/components/assistant-ui/tool-ui-knowledge-base";
 import { ReadSkillToolUI } from "@/components/assistant-ui/tool-ui-read-skill";
 import { SkillMentionPopover } from "@/components/assistant-ui/skill-mentions";
-import { RenderHtmlToolUI } from "@/components/assistant-ui/tool-ui-render-html";
+
 import { PythonToolUI } from "@/components/assistant-ui/tool-ui-python";
 import { TerminalToolUI } from "@/components/assistant-ui/tool-ui-terminal";
 import { WebSearchToolUI } from "@/components/assistant-ui/tool-ui-web-search";
@@ -7975,10 +7975,29 @@ const PythonToolUIConfirmable = withToolConfirmation(PythonToolUI);
 const TerminalToolUIConfirmable = withToolConfirmation(TerminalToolUI);
 const CodeExecutionToolUIConfirmable =
   withToolConfirmation(CodeExecutionToolUI);
-const ImageGenerationToolUIConfirmable = withToolConfirmation(
-  ImageGenerationToolUI,
+// These tool cards are not used when opening a chat. Keep both lazy boundaries
+// at module scope (part component identities must remain stable across renders).
+// The generic tool card remains visible while the on-demand chunk is loading.
+const DeferredImageGenerationToolUI = lazy(() =>
+  import("@/components/assistant-ui/tool-ui-image-generation").then(
+    ({ ImageGenerationToolUI }) => ({ default: ImageGenerationToolUI }),
+  ),
 );
-const RenderHtmlToolUIConfirmable = withToolConfirmation(RenderHtmlToolUI);
+const DeferredRenderHtmlToolUI = lazy(() =>
+  import("@/components/assistant-ui/tool-ui-render-html").then(
+    ({ RenderHtmlToolUI }) => ({ default: RenderHtmlToolUI }),
+  ),
+);
+const ImageGenerationToolUIConfirmable = withToolConfirmation((props) => (
+  <Suspense fallback={<ToolFallback {...props} />}>
+    <DeferredImageGenerationToolUI {...props} />
+  </Suspense>
+));
+const RenderHtmlToolUIConfirmable = withToolConfirmation((props) => (
+  <Suspense fallback={<ToolFallback {...props} />}>
+    <DeferredRenderHtmlToolUI {...props} />
+  </Suspense>
+));
 // Read at render time, not module scope: the skill modules reach the chat barrel.
 const ReadSkillToolUIConfirmable = withToolConfirmation((props) => (
   <ReadSkillToolUI {...props} />
