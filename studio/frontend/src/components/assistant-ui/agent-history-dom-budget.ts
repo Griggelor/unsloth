@@ -4,7 +4,19 @@
 /** Budget targets apply to message descendants, not the entire application DOM. */
 import type { AgentScrollWindow } from "./agent-history-scroll-window";
 
-export type AgentDomLevel = "off" | "low" | "high";
+export const AGENT_BUFFER_MODES = ["dynamic-low", "dynamic-high", "fixed-low", "fixed-high"] as const;
+export type AgentBufferMode = (typeof AGENT_BUFFER_MODES)[number];
+/** Old persisted "low" / "high" / "off" remain readable for v1 migration. */
+export type AgentDomLevel = "off" | "low" | "high" | AgentBufferMode;
+export function isAgentBufferMode(value: unknown): value is AgentBufferMode {
+  return typeof value === "string" && (AGENT_BUFFER_MODES as readonly string[]).includes(value);
+}
+export function agentBufferRowLimit(mode: AgentBufferMode): 5 | 32 {
+  return mode.endsWith("-low") ? 5 : 32;
+}
+export function agentBufferDomLevel(mode: AgentBufferMode): "low" | "high" | undefined {
+  return mode === "dynamic-low" ? "low" : mode === "dynamic-high" ? "high" : undefined;
+}
 export const AGENT_DOM_TARGETS = { low: 5_000, high: 12_000 } as const;
 /** Unknown rows are charged conservatively until observed, so long chats start small. */
 export const AGENT_UNKNOWN_ROW_COST = 1_000;
