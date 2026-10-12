@@ -2401,6 +2401,10 @@ export const ko = {
       },
     },
     chat: {
+      agentHistoryBufferDynamicLow: "동적 버퍼 Low (최대 5개 메시지)",
+      agentHistoryBufferDynamicHigh: "동적 버퍼 High (최대 32개 메시지)",
+      agentHistoryBufferFixedLow: "고정 버퍼 Low (5개 메시지)",
+      agentHistoryBufferFixedHigh: "고정 버퍼 High (32개 메시지)",
       agentHistoryModeOff: "끔",
       agentHistoryModeLow: "낮음",
       agentHistoryModeHigh: "높음",
