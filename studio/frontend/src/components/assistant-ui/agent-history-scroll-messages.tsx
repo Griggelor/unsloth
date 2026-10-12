@@ -6,6 +6,7 @@ import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffec
 import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
+import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, type AgentDomLevel } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
@@ -32,14 +33,18 @@ export const AgentHistoryScrollMessages: FC<{
   resetKey: string | undefined;
   viewportRef: RefObject<HTMLElement | null>;
   windowRows?: number;
+  domLevel?: Exclude<AgentDomLevel, "off">;
 }> = memo(function AgentHistoryScrollMessages({
-  renderMessage, resetKey, viewportRef, windowRows = AGENT_DEFAULT_ROWS,
+  renderMessage, resetKey, viewportRef, windowRows = AGENT_DEFAULT_ROWS, domLevel,
 }) {
   const count = useAuiState(({ thread }) => thread.messages.length);
   const aui = useAui();
   const gate = useMemo(() => createRowNotificationGate(aui), [aui]);
   const heights = useMemo(() => new AgentHeightIndex(count), [resetKey]);
   heights.resize(count);
+  const costs = useMemo(() => new AgentDomCostIndex(count), [resetKey]);
+  costs.resize(count);
+  const budget = domLevel ? AGENT_DOM_TARGETS[domLevel] : null;
   const jumpBottom = useScrollThreadToBottom();
   const correctAnchor = useAdjustForContentInsertedAbove();
   const navigateViewport = useNavigateThreadViewport();
@@ -55,10 +60,13 @@ export const AgentHistoryScrollMessages: FC<{
   // window commit, never allowed to abort staging with only one row mounted.
   const deferredScroll = useRef(false);
   const [state, setState] = useState(() => ({
-    key: resetKey, count, windowRows, range: latestAgentWindow(count, windowRows),
+    key: resetKey, count, windowRows, domLevel,
+    range: budget ? agentBudgetWindow(count, count - 1, costs, budget)
+      : latestAgentWindow(count, windowRows),
   }));
   const visibleIndex = useRef(Math.max(0, count - 1));
   const lastWindowRows = useRef(windowRows);
+  const lastDomLevel = useRef(domLevel);
   const [heightRevision, setHeightRevision] = useState(0);
   const [searchHit, setSearchHit] = useState(-1);
   const [revealRevision, setRevealRevision] = useState(0);
