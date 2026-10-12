@@ -7,7 +7,7 @@ import {
   type AgentWindowSize,
 } from "../../../components/assistant-ui/agent-history-scroll-window.ts";
 
-import { agentBufferRowLimit, isAgentBufferMode, type AgentDomLevel } from "../../../components/assistant-ui/agent-history-dom-budget";
+import { agentBufferRowLimit, isAgentBufferMode, type AgentDomLevel } from "../../../components/assistant-ui/agent-history-dom-budget.ts";
 
 export type AgentHistoryPreferenceSnapshot = {
   globalDomLevel?: AgentDomLevel;
