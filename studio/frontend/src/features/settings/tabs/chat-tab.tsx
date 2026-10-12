@@ -257,6 +257,8 @@ export function ChatTab() {
   const isOwner = useIsAccountOwner();
   const t = useT();
   const navigate = useNavigate();
+  const globalDomLevel = useAgentHistoryModeStore((state) => state.globalDomLevel);
+  const setGlobalDomLevel = useAgentHistoryModeStore((state) => state.setGlobalDomLevel);
   const globalAgentEnabled = useAgentHistoryModeStore((state) => state.globalEnabled);
   const globalAgentWindowRows = useAgentHistoryModeStore((state) => state.globalWindowRows);
   const setGlobalAgentEnabled = useAgentHistoryModeStore((state) => state.setGlobalEnabled);
@@ -605,35 +607,53 @@ export function ChatTab() {
           label={t("settings.chat.agentHistoryGlobal")}
           description={t("settings.chat.agentHistoryGlobalDescription")}
         >
-          <Switch
-            aria-label={t("settings.chat.agentHistoryGlobal")}
-            checked={globalAgentEnabled}
-            onCheckedChange={setGlobalAgentEnabled}
-          />
-        </SettingsRow>
-        <SettingsRow
-          label={t("settings.chat.agentHistoryRows")}
-          description={t("settings.chat.agentHistoryRowsDescription")}
-        >
           <Select
-            value={String(globalAgentWindowRows)}
+            value={globalDomLevel ?? (globalAgentEnabled ? "legacy" : "off")}
             onValueChange={(value) => {
-              const rows = Number(value);
-              if (isAgentWindowSize(rows)) setGlobalAgentWindowRows(rows);
+              if (value === "off" || value === "low" || value === "high") {
+                setGlobalDomLevel(value);
+              } else if (value === "legacy") {
+                setGlobalDomLevel(null);
+                setGlobalAgentEnabled(true);
+              }
             }}
           >
-            <SelectTrigger className="w-36" aria-label={t("settings.chat.agentHistoryRows")}>
+            <SelectTrigger className="w-36" aria-label={t("settings.chat.agentHistoryGlobal")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {AGENT_WINDOW_SIZES.map((rows) => (
-                <SelectItem key={rows} value={String(rows)}>
-                  {rows}
-                </SelectItem>
-              ))}
+              <SelectItem value="off">{t("settings.chat.agentHistoryModeOff")}</SelectItem>
+              <SelectItem value="low">{t("settings.chat.agentHistoryModeLow")}</SelectItem>
+              <SelectItem value="high">{t("settings.chat.agentHistoryModeHigh")}</SelectItem>
+              <SelectItem value="legacy">{t("settings.chat.agentHistoryLegacy")}</SelectItem>
             </SelectContent>
           </Select>
         </SettingsRow>
+        {globalDomLevel === undefined && globalAgentEnabled && (
+          <SettingsRow
+            label={t("settings.chat.agentHistoryRows")}
+            description={t("settings.chat.agentHistoryRowsDescription")}
+          >
+            <Select
+              value={String(globalAgentWindowRows)}
+              onValueChange={(value) => {
+                const rows = Number(value);
+                if (isAgentWindowSize(rows)) setGlobalAgentWindowRows(rows);
+              }}
+            >
+              <SelectTrigger className="w-36" aria-label={t("settings.chat.agentHistoryRows")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AGENT_WINDOW_SIZES.map((rows) => (
+                  <SelectItem key={rows} value={String(rows)}>
+                    {rows}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingsRow>
+        )}
         <SettingsRow
           label={t("settings.chat.webSearch.images")}
           description={t("settings.chat.webSearch.imagesDescription")}
