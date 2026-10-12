@@ -432,6 +432,33 @@ export const AgentHistoryScrollMessages: FC<{
         revealFrame.current = null;
       }
     };
+    // Chromium's native scrollbar captures pointer movement outside the DOM
+    // event stream. We see pointerdown/up and scroll events, but not pointermove
+    // while the thumb is dragged. After the first window change consumes an
+    // intent epoch, the later scroll events would otherwise leave old rows
+    // mounted at the new physical scrollTop (a blank viewport until wheel).
+    let nativeThumbDrag: { pointerId: number; scrollTop: number } | null = null;
+    const onPointerDown = (event: PointerEvent) => {
+      interrupt();
+      const gutterWidth = viewport.offsetWidth - viewport.clientWidth;
+      const rect = viewport.getBoundingClientRect();
+      const inGutter = gutterWidth >= 6 && (
+        (event.clientX >= rect.right - gutterWidth && event.clientX <= rect.right) ||
+        (event.clientX >= rect.left && event.clientX <= rect.left + gutterWidth)
+      );
+      nativeThumbDrag = event.pointerType === "mouse" && event.button === 0 && inGutter
+        ? { pointerId: event.pointerId, scrollTop: viewport.scrollTop } : null;
+    };
+    const onPointerRelease = (event: PointerEvent) => {
+      const drag = nativeThumbDrag;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      nativeThumbDrag = null;
+      if (Math.abs(viewport.scrollTop - drag.scrollTop) < 1) return;
+      // Reconcile the final *physical* position through the existing scroll
+      // owner. Do not write scrollTop or synthesize a wheel/scroll event.
+      interrupt();
+      onScroll();
+    };
     const onPointerMove = (event: PointerEvent) => {
       if (event.buttons !== 0) interrupt();
     };
@@ -447,15 +474,19 @@ export const AgentHistoryScrollMessages: FC<{
     };
     viewport.addEventListener("wheel", interrupt, { passive: true });
     viewport.addEventListener("touchmove", interrupt, { passive: true });
-    viewport.addEventListener("pointerdown", interrupt, { passive: true });
+    viewport.addEventListener("pointerdown", onPointerDown, { passive: true });
     viewport.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointerup", onPointerRelease, { passive: true });
+    window.addEventListener("pointercancel", onPointerRelease, { passive: true });
     window.addEventListener("keydown", onKeyDown);
     return () => {
       viewport.removeEventListener("scroll", onScroll);
       viewport.removeEventListener("wheel", interrupt);
       viewport.removeEventListener("touchmove", interrupt);
-      viewport.removeEventListener("pointerdown", interrupt);
+      viewport.removeEventListener("pointerdown", onPointerDown);
       viewport.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerRelease);
+      window.removeEventListener("pointercancel", onPointerRelease);
       window.removeEventListener("keydown", onKeyDown);
       if (animation.current !== null) cancelAnimationFrame(animation.current);
       animation.current = null;
