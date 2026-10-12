@@ -621,7 +621,11 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
 
 
 def run(
-    url: str, username: str, password: str, messages: int, critical_scrollbar_only: bool = False
+    url: str,
+    username: str,
+    password: str,
+    messages: int,
+    critical_scrollbar_only: bool = False,
 ) -> None:
     from playwright.sync_api import sync_playwright
 
@@ -682,13 +686,18 @@ def run(
                         raise AssertionError(
                             "Isolated scrollbar test changed persisted message content or order"
                         )
-                    print(json.dumps({
-                        "gate": "native-scrollbar",
-                        "messages": messages,
-                        "modes": ["dynamic-high", "dynamic-low"],
-                        "transcript_preserved": True,
-                        "result": "passed",
-                    }, sort_keys = True))
+                    print(
+                        json.dumps(
+                            {
+                                "gate": "native-scrollbar",
+                                "messages": messages,
+                                "modes": ["dynamic-high", "dynamic-low"],
+                                "transcript_preserved": True,
+                                "result": "passed",
+                            },
+                            sort_keys = True,
+                        )
+                    )
                     return
                 check_chat_header_menu(page, messages)
                 if messages == 400:
@@ -839,7 +848,8 @@ def main() -> None:
     parser.add_argument("--password", required = True)
     parser.add_argument("--messages", type = int, default = 400)
     parser.add_argument(
-        "--critical-scrollbar-only", action = "store_true",
+        "--critical-scrollbar-only",
+        action = "store_true",
         help = "Run the real native-thumb drag for both dynamic buffer modes only",
     )
     args = parser.parse_args()
@@ -848,7 +858,10 @@ def main() -> None:
     if args.critical_scrollbar_only and args.messages != 400:
         parser.error("--critical-scrollbar-only requires --messages 400")
     run(
-        args.url, args.username, args.password, args.messages,
+        args.url,
+        args.username,
+        args.password,
+        args.messages,
         critical_scrollbar_only = args.critical_scrollbar_only,
     )
 
