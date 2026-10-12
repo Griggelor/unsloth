@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readSrc } from "./helpers/kit.ts";
+import { agentWindowAtIndex } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
 import {
   allowsAgentReaderScrollIntent,
   consumeAgentReaderScrollIntent,
@@ -43,4 +44,26 @@ test("the production scroll handler gates passive seeks by gesture epoch", () =>
   assert.match(source, /allowsAgentReaderScrollIntent\(/);
   assert.match(source, /consumeAgentReaderScrollIntent\(/);
   assert.match(source, /requestAgentReaderScrollIntent\(/);
+});
+
+test("the observed A/B oscillation requires fresh intent before every new window", () => {
+  const windowA = { start: 99, end: 104 };
+  const windowB = { start: 101, end: 106 };
+  assert.deepEqual(agentWindowAtIndex(1000, 103, windowA, 5), windowB);
+  assert.deepEqual(agentWindowAtIndex(1000, 101, windowB, 5), windowA);
+
+  let intent = requestAgentReaderScrollIntent(initialAgentReaderScrollIntent());
+  let window = windowA;
+  let transitions = 0;
+  for (let i = 0; i < 200; i++) {
+    if (!allowsAgentReaderScrollIntent(intent, intent.epoch)) continue;
+    const next = agentWindowAtIndex(1000, i % 2 === 0 ? 103 : 101, window, 5);
+    if (next.start !== window.start || next.end !== window.end) {
+      transitions++;
+      window = next;
+      intent = consumeAgentReaderScrollIntent(intent, intent.epoch);
+    }
+  }
+  assert.deepEqual(window, windowB);
+  assert.equal(transitions, 1);
 });
