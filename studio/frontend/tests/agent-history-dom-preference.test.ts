@@ -2,7 +2,7 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 import assert from "node:assert/strict";
 import test from "node:test";
-import { agentHistoryLevelFor } from "../src/features/chat/stores/agent-history-preference-policy.ts";
+import { agentHistoryLevelFor, agentHistoryWindowFor } from "../src/features/chat/stores/agent-history-preference-policy.ts";
 import type { AgentHistoryPreferenceSnapshot } from "../src/features/chat/stores/agent-history-preference-policy.ts";
 
 const legacy: AgentHistoryPreferenceSnapshot = {
@@ -51,4 +51,28 @@ test("an explicit per-chat Off is never overridden by global High", () => {
     domLevelByThreadId: { parked: "off" as const } };
   assert.equal(agentHistoryLevelFor(prefs, "parked"), "off");
   assert.equal(agentHistoryLevelFor(prefs, "another"), "high");
+});
+
+test("four explicit modes respect message caps and per-chat overrides", () => {
+  for (const [mode, limit] of [
+    ["dynamic-low", 5], ["dynamic-high", 32],
+    ["fixed-low", 5], ["fixed-high", 32],
+  ] as const) {
+    const prefs = { ...legacy, globalEnabled: true, globalDomLevel: mode };
+    assert.equal(agentHistoryLevelFor(prefs, "new"), mode);
+    assert.equal(agentHistoryWindowFor(prefs, "new"), limit);
+    assert.equal(agentHistoryLevelFor({ ...prefs, globalEnabled: false }, "new"), "off");
+    assert.equal(agentHistoryLevelFor({
+      ...prefs, domLevelByThreadId: { one: "fixed-high" as const },
+    }, "one"), "fixed-high");
+  }
+});
+
+test("old numeric per-chat preferences remain readable until explicitly changed", () => {
+  const old = { ...legacy, globalEnabled: true, globalWindowRows: 8 as const,
+    windowRowsByThreadId: { olderChat: 16 as const } };
+  assert.equal(agentHistoryWindowFor(old, "olderChat"), 16);
+  assert.equal(agentHistoryWindowFor(old, "new"), 8);
+  assert.equal(agentHistoryWindowFor({ ...old,
+    domLevelByThreadId: { olderChat: "fixed-low" as const } }, "olderChat"), 5);
 });
