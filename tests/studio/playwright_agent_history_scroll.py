@@ -200,6 +200,70 @@ def require_visible_search_row(page, row_index: int, label: str) -> None:
     )
 
 
+
+def check_adaptive_thumb_drag(page, level: str) -> None:
+    """Actual pointer drag; no wheel or programmatic scroll recovery allowed."""
+    page.add_style_tag(content = (
+        ".aui-thread-viewport::-webkit-scrollbar{width:16px}"
+        ".aui-thread-viewport::-webkit-scrollbar-thumb{background:#888}"
+    ))
+    box = page.locator(VIEWPORT).bounding_box()
+    if box is None:
+        raise AssertionError("Agent viewport missing")
+    x = box["x"] + box["width"] - 7
+    bottom = box["y"] + box["height"] - 12
+    destination = box["y"] + box["height"] * 0.35
+    before = page.evaluate(
+        "() => document.querySelector('.aui-thread-viewport').scrollTop"
+    )
+    page.mouse.move(x, bottom)
+    page.mouse.down()
+    page.mouse.move(x, destination, steps = 10)
+    page.mouse.up()
+    after = page.evaluate(
+        "() => document.querySelector('.aui-thread-viewport').scrollTop"
+    )
+    if abs(after - before) < box["height"]:
+        raise AssertionError(f"{level}: thumb drag did not move viewport: {before} -> {after}")
+    page.wait_for_function(
+        """() => {
+          const viewport = document.querySelector('.aui-thread-viewport');
+          if (!viewport) return false;
+          const view = viewport.getBoundingClientRect();
+          return [...viewport.querySelectorAll('[data-agent-history-row]')]
+            .some(row => {
+              const r = row.getBoundingClientRect();
+              return r.bottom > view.top + 8 && r.top < view.bottom - 8;
+            });
+        }""",
+        timeout = 3_000,
+    )
+    first = page.evaluate(
+        """() => {
+          const viewport = document.querySelector('.aui-thread-viewport');
+          const v = viewport.getBoundingClientRect();
+          const row = [...viewport.querySelectorAll('[data-agent-history-row]')]
+            .find(el => el.getBoundingClientRect().bottom > v.top + 8
+              && el.getBoundingClientRect().top < v.bottom - 8);
+          return row && { index: row.dataset.agentHistoryRow,
+            y: row.getBoundingClientRect().top };
+        }"""
+    )
+    page.wait_for_timeout(650)
+    second = page.evaluate(
+        """index => {
+          const row = document.querySelector(
+            '[data-agent-history-row="' + index + '"]');
+          return row ? row.getBoundingClientRect().top : null;
+        }""",
+        first["index"],
+    )
+    if second is None or abs(second - first["y"]) > 5:
+        raise AssertionError(
+            f"{level}: text shifted after drag without input: {first} -> {second}"
+        )
+
+
 def check_chat_header_menu(page, messages: int) -> None:
     """Verify real per-chat Low/High/Off/Inherited settings, then restore v1."""
     trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
@@ -286,6 +350,7 @@ def check_chat_header_menu(page, messages: int) -> None:
             timeout = 15_000,
         )
         page.evaluate("() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()")
+        check_adaptive_thumb_drag(page, level)
 
     choose("off")
     page.wait_for_function(
