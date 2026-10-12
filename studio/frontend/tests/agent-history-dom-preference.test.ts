@@ -2,6 +2,7 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readSrc } from "./helpers/kit.ts";
 import { agentHistoryLevelFor, agentHistoryWindowFor } from "../src/features/chat/stores/agent-history-preference-policy.ts";
 import type { AgentHistoryPreferenceSnapshot } from "../src/features/chat/stores/agent-history-preference-policy.ts";
 
@@ -75,4 +76,14 @@ test("old numeric per-chat preferences remain readable until explicitly changed"
   assert.equal(agentHistoryWindowFor(old, "new"), 8);
   assert.equal(agentHistoryWindowFor({ ...old,
     domLevelByThreadId: { olderChat: "fixed-low" as const } }, "olderChat"), 5);
+});
+
+test("settings dropdown exposes exactly the four named modes, with Off as a switch", () => {
+  const source = readSrc("features/settings/tabs/chat-tab.tsx");
+  const section = source.split('label={t("settings.chat.agentHistoryGlobal")}')[1]
+    ?.split('label={t("settings.chat.webSearch.images")}')[0] ?? "";
+  const options = [...section.matchAll(/<SelectItem value="([^"]+)"/g)].map(match => match[1]);
+  assert.deepEqual(options, ["dynamic-low", "dynamic-high", "fixed-low", "fixed-high"]);
+  assert.match(section, /<Switch/);
+  assert.doesNotMatch(section, /value="off"|value="legacy"|agentHistoryLegacy/);
 });
