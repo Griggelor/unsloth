@@ -2230,8 +2230,10 @@ export const Thread: FC<{
                 resetKey={runtimeThreadId}
                 viewportRef={viewportElRef}
                 windowRows={agentWindowRows}
-                domLevel={agentHistoryLevel === "low" || agentHistoryLevel === "high"
-                  ? agentHistoryLevel : undefined}
+                domLevel={agentHistoryLevel === "low" || agentHistoryLevel === "dynamic-low"
+                  ? "low" : agentHistoryLevel === "high" || agentHistoryLevel === "dynamic-high"
+                    ? "high" : undefined}
+                fixedRowsStrict={agentHistoryLevel === "fixed-high"}
               />
             ) : (
               <ProgressiveMessages
