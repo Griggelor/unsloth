@@ -49,7 +49,7 @@ def run(url: str, password: str, output: Path) -> list[dict]:
     try:
         original = auth_request_json(auth, f"{base}/api/chat/threads/{thread}/messages")
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless = True)
+            browser = pw.chromium.launch(headless = False)
             try:
                 for mode in ("no_scroll", "immediate_scroll"):
                     context = browser.new_context(viewport = {"width": 1440, "height": 960})
@@ -83,11 +83,17 @@ def run(url: str, password: str, output: Path) -> list[dict]:
                         background = context.new_page()
                         background.goto("about:blank")
                         background.bring_to_front()
-                        if page.evaluate("document.visibilityState") != "hidden":
-                            raise AssertionError("Background visibility transition was not real")
+                        page.wait_for_function(
+                            "() => document.visibilityState === 'hidden'",
+                            timeout = 10000,
+                        )
                         page.wait_for_timeout(3000)
                         before = metrics(cdp)
                         page.bring_to_front()
+                        page.wait_for_function(
+                            "() => document.visibilityState === 'visible'",
+                            timeout = 10000,
+                        )
                         if mode == "immediate_scroll":
                             page.evaluate("""() => {
                               const el = document.querySelector('.aui-thread-viewport');
@@ -125,7 +131,7 @@ def run(url: str, password: str, output: Path) -> list[dict]:
         output.parent.mkdir(parents = True, exist_ok = True)
         output.write_text(json.dumps({
             "status": "PASS" if len(readings) == 2 else "INCOMPLETE",
-            "browser": "headless-chromium",
+            "browser": "headed-chromium-xvfb",
             "notWindowsLockUnlock": True,
             "modelLoaded": False,
             "messages": 1000,
