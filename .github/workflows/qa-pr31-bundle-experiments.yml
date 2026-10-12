@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Single-job scratch benchmark on PR31, not a shipping fix or release gate.
+name: QA PR31 Bundle Experiments
+on:
+  push:
+    branches: ['qa/agent-history-pr31-fast-gates']
+    paths:
+      - '.github/workflows/qa-pr31-bundle-experiments.yml'
+      - 'scripts/qa-pr31-bundle-experiments.py'
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  compare:
+    name: Compare controlled eager imports vs lazy search/RAG tool cards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Resolve draft PR30 HEAD
+        id: target
+        env:
+          GH_TOKEN: '${{ github.token }}'
+        run: |
+          set -euo pipefail
+          META="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/30" --jq '[.head.sha, .head.ref, .head.repo.full_name, .state, (.draft|tostring)] | join("|")')"
+          IFS='|' read -r SHA BRANCH REPO STATE DRAFT <<< "$META"
+          test "$REPO" = "$GITHUB_REPOSITORY"
+          test "$BRANCH" = "qa/agent-history-main-sync-20261012"
+          test "$STATE" = "open"
+          test "$DRAFT" = "true"
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]]
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Target PR30: $SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Checkout experimental scripts (PR31)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '${{ github.sha }}'
+          path: qa-harness
+          persist-credentials: false
+      - name: Checkout exact PR30 HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '${{ steps.target.outputs.sha }}'
+          path: app
+          persist-credentials: false
+      - name: Assert source identity
+        run: test "$(git -C app rev-parse HEAD)" = "${{ steps.target.outputs.sha }}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Use same npm and locked dependencies as production check
+        run: |
+          npm install -g npm@^11 --no-fund --no-audit
+          python app/scripts/lockfile_supply_chain_audit.py
+          cd app/studio/frontend
+          npm ci --strict-allow-scripts --no-fund --no-audit
+      - name: Preserve original source and obtain pre-tool-split comparator
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          cp app/studio/frontend/src/components/assistant-ui/thread.tsx reports/thread-current.tsx
+          git -C app fetch --no-tags --depth=1 origin 01b44a02dde5a441ddacba02d4a736d712438b18
+          git -C app show 01b44a02dde5a441ddacba02d4a736d712438b18:studio/frontend/src/components/assistant-ui/thread.tsx > reports/thread-before-tool-split.tsx
+          cp reports/thread-before-tool-split.tsx app/studio/frontend/src/components/assistant-ui/thread.tsx
+      - name: Measure original eager tool-card comparator
+        working-directory: app/studio/frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build > ../../../reports/eager-build.log 2>&1 || { tail -n 120 ../../../reports/eager-build.log; exit 1; }
+          if npm run bundle:check > ../../../reports/eager-budget.log 2>&1; then echo "Original eager comparator within budget"; else echo "Original eager comparator over budget"; fi
+          cat ../../../reports/eager-budget.log
+      - name: Measure candidate lazy search/RAG tool UIs (scratch only)
+        working-directory: app/studio/frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ../../../qa-harness/scripts/qa-pr31-bundle-experiments.py --thread src/components/assistant-ui/thread.tsx
+          npm run build > ../../../reports/candidate-build.log 2>&1 || { tail -n 120 ../../../reports/candidate-build.log; exit 1; }
+          if npm run bundle:check > ../../../reports/candidate-budget.log 2>&1; then echo "Experimental candidate within budget"; else echo "Experimental candidate still over budget"; fi
+          cat ../../../reports/candidate-budget.log
+          echo "## Side-by-side measured startup budgets" >> "$GITHUB_STEP_SUMMARY"
+          echo '### Original eager tool cards' >> "$GITHUB_STEP_SUMMARY"
+          grep -E 'eager startup JS|over the startup budget|within budget' ../../../reports/eager-budget.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo '### Experimental lazy web search / RAG' >> "$GITHUB_STEP_SUMMARY"
+          grep -E 'eager startup JS|over the startup budget|within budget' ../../../reports/candidate-budget.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo "**Do not count as a production pass: only the shipping PR30 HEAD can satisfy that gate.**" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload controlled comparison evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qa-pr31-bundle-experiment
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 7
