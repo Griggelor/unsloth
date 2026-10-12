@@ -221,17 +221,19 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
         """el => ({
           scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
           clientHeight: el.clientHeight, clientWidth: el.clientWidth,
-          offsetWidth: el.offsetWidth, scrollbarGutter: getComputedStyle(el).scrollbarGutter
+          offsetWidth: el.offsetWidth, offsetHeight: el.offsetHeight,
+          scrollbarGutter: getComputedStyle(el).scrollbarGutter
         })"""
     )
     track_width = metrics["offsetWidth"] - metrics["clientWidth"]
     if track_width < 8 or metrics["scrollHeight"] <= metrics["clientHeight"]:
         raise AssertionError(f"{level}: native scrollbar not testable: {metrics}")
-    # Reserve room for a native scrollbar end-button. On long histories the
-    # thumb can be tiny and clicking eight pixels from the bottom hits the
-    # track instead of the thumb.
+    # A tiny native thumb ends at the usable vertical track bottom, NOT
+    # necessarily at the box bottom (horizontal scrollbar/corner may occupy
+    # the last pixels). Stay close enough to the end to hit the small thumb.
     x = box["x"] + box["width"] - track_width / 2
-    bottom = box["y"] + box["height"] - 24
+    horizontal_gutter = max(0, metrics["offsetHeight"] - metrics["clientHeight"])
+    bottom = box["y"] + box["height"] - horizontal_gutter - 6
     destination = box["y"] + box["height"] * 0.35
     hit = page.evaluate(
         """([x, y]) => {
