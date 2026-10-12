@@ -260,9 +260,7 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
         first["index"],
     )
     if second is None or abs(second - first["y"]) > 5:
-        raise AssertionError(
-            f"{level}: text shifted after drag without input: {first} -> {second}"
-        )
+        raise AssertionError(f"{level}: text shifted after drag without input: {first} -> {second}")
 
 
 def check_chat_header_menu(page, messages: int) -> None:
