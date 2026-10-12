@@ -448,9 +448,17 @@ export const AgentHistoryScrollMessages: FC<{
       const target = intent.kind === "search" ? intent.row
         : following.current ? countRef.current - 1 : visibleIndex.current;
       const next = agentBudgetWindow(countRef.current, target, costs, budget);
-      if (next.start === rangeRef.current.start && next.end === rangeRef.current.end) return;
       const viewport = viewportRef.current;
-      const row = viewport?.querySelector<HTMLElement>(
+      if (!viewport) return;
+      // The old policy greedily added one newly measured neighbor on every
+      // animation frame, moving anchored text over and over in Low/High mode.
+      // Never grow a window that already fills the reader's viewport.
+      const visibleHeight = [...viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")]
+        .reduce((sum, el) => sum + el.getBoundingClientRect().height, 0);
+      if (!needsAgentBudgetRebalance(
+        rangeRef.current, next, target, visibleHeight, viewport.clientHeight,
+      )) return;
+      const row = viewport.querySelector<HTMLElement>(
         '[data-agent-history-row="' + target + '"]',
       );
       anchor.current = row ? { index: target, top: row.getBoundingClientRect().top } : null;
