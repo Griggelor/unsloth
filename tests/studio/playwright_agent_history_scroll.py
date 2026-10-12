@@ -228,12 +228,16 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
     track_width = metrics["offsetWidth"] - metrics["clientWidth"]
     if track_width < 8 or metrics["scrollHeight"] <= metrics["clientHeight"]:
         raise AssertionError(f"{level}: native scrollbar not testable: {metrics}")
-    # A tiny native thumb ends at the usable vertical track bottom, NOT
-    # necessarily at the box bottom (horizontal scrollbar/corner may occupy
-    # the last pixels). Stay close enough to the end to hit the small thumb.
+    # Chromium honours the app's scrollbar-width:thin over the injected
+    # ::-webkit-scrollbar width. With a 10px gutter its bottommost ~12px
+    # are NOT a draggable thumb (a bare Chromium pointer reproduction confirmed
+    # y=height-6 does nothing while y=height-18 drags normally). On a 16px
+    # normal scrollbar the short thumb IS at height-6; height-18 can hit the
+    # track instead. Select the inset using the measured *native* gutter.
     x = box["x"] + box["width"] - track_width / 2
     horizontal_gutter = max(0, metrics["offsetHeight"] - metrics["clientHeight"])
-    bottom = box["y"] + box["height"] - horizontal_gutter - 6
+    thumb_inset = 18 if track_width <= 12 else 6
+    bottom = box["y"] + box["height"] - horizontal_gutter - thumb_inset
     destination = box["y"] + box["height"] * 0.35
     hit = page.evaluate(
         """([x, y]) => {
