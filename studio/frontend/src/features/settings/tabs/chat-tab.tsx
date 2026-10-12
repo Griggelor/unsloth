@@ -3,7 +3,7 @@
 
 import { Button } from "@/components/ui/button";
 import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
-import { AGENT_WINDOW_SIZES, isAgentWindowSize } from "@/components/assistant-ui/agent-history-scroll-window";
+import { isAgentBufferMode } from "@/components/assistant-ui/agent-history-dom-budget";
 import {
   Select,
   SelectContent,
@@ -259,9 +259,9 @@ export function ChatTab() {
   const navigate = useNavigate();
   const globalDomLevel = useAgentHistoryModeStore((state) => state.globalDomLevel);
   const setGlobalDomLevel = useAgentHistoryModeStore((state) => state.setGlobalDomLevel);
+  const setGlobalAgentEnabled = useAgentHistoryModeStore((state) => state.setGlobalEnabled);
   const globalAgentEnabled = useAgentHistoryModeStore((state) => state.globalEnabled);
   const globalAgentWindowRows = useAgentHistoryModeStore((state) => state.globalWindowRows);
-  const setGlobalAgentWindowRows = useAgentHistoryModeStore((state) => state.setGlobalWindowRows);
   const plusPins = usePlusMenuPrefsStore((state) => state.pins);
   const togglePlusPin = usePlusMenuPrefsStore((state) => state.togglePin);
   const autoTitle = useChatRuntimeStore((state) => state.autoTitle);
@@ -606,54 +606,34 @@ export function ChatTab() {
           label={t("settings.chat.agentHistoryGlobal")}
           description={t("settings.chat.agentHistoryGlobalDescription")}
         >
-          <Select
-            value={globalDomLevel ?? (globalAgentEnabled ? "legacy" : "off")}
-            onValueChange={(value) => {
-              if (value === "off" || value === "low" || value === "high") {
-                setGlobalDomLevel(value);
-              } else if (value === "legacy") {
-                // Restore the persisted v1 preference; never silently enable
-                // virtualization for a profile that previously opted out.
-                setGlobalDomLevel(null);
-              }
-            }}
-          >
-            <SelectTrigger className="w-36" aria-label={t("settings.chat.agentHistoryGlobal")}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="off">{t("settings.chat.agentHistoryModeOff")}</SelectItem>
-              <SelectItem value="low">{t("settings.chat.agentHistoryModeLow")}</SelectItem>
-              <SelectItem value="high">{t("settings.chat.agentHistoryModeHigh")}</SelectItem>
-              <SelectItem value="legacy">{t("settings.chat.agentHistoryLegacy")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-        {globalDomLevel === undefined && globalAgentEnabled && (
-          <SettingsRow
-            label={t("settings.chat.agentHistoryRows")}
-            description={t("settings.chat.agentHistoryRowsDescription")}
-          >
+          <div className="flex items-center gap-3">
+            <Switch
+              checked={globalAgentEnabled}
+              onCheckedChange={(enabled) => {
+                if (!enabled) setGlobalAgentEnabled(false);
+                else setGlobalDomLevel(isAgentBufferMode(globalDomLevel) ? globalDomLevel :
+                  globalAgentWindowRows === 32 ? "fixed-high" : "fixed-low");
+              }}
+              aria-label={t("settings.chat.agentHistoryGlobal")}
+            />
             <Select
-              value={String(globalAgentWindowRows)}
+              value={isAgentBufferMode(globalDomLevel) ? globalDomLevel : undefined}
               onValueChange={(value) => {
-                const rows = Number(value);
-                if (isAgentWindowSize(rows)) setGlobalAgentWindowRows(rows);
+                if (isAgentBufferMode(value)) setGlobalDomLevel(value);
               }}
             >
-              <SelectTrigger className="w-36" aria-label={t("settings.chat.agentHistoryRows")}>
-                <SelectValue />
+              <SelectTrigger className="w-60" aria-label={t("settings.chat.agentHistoryChatMode")}>
+                <SelectValue placeholder={t("settings.chat.agentHistoryChatMode")} />
               </SelectTrigger>
               <SelectContent>
-                {AGENT_WINDOW_SIZES.map((rows) => (
-                  <SelectItem key={rows} value={String(rows)}>
-                    {rows}
-                  </SelectItem>
-                ))}
+                <SelectItem value="dynamic-low">{t("settings.chat.agentHistoryBufferDynamicLow")}</SelectItem>
+                <SelectItem value="dynamic-high">{t("settings.chat.agentHistoryBufferDynamicHigh")}</SelectItem>
+                <SelectItem value="fixed-low">{t("settings.chat.agentHistoryBufferFixedLow")}</SelectItem>
+                <SelectItem value="fixed-high">{t("settings.chat.agentHistoryBufferFixedHigh")}</SelectItem>
               </SelectContent>
             </Select>
-          </SettingsRow>
-        )}
+          </div>
+        </SettingsRow>
         <SettingsRow
           label={t("settings.chat.webSearch.images")}
           description={t("settings.chat.webSearch.imagesDescription")}

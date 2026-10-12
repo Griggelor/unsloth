@@ -2435,6 +2435,10 @@ export const es = {
       },
     },
     chat: {
+      agentHistoryBufferDynamicLow: "Búfer dinámico bajo (máx. 5 mensajes)",
+      agentHistoryBufferDynamicHigh: "Búfer dinámico alto (máx. 32 mensajes)",
+      agentHistoryBufferFixedLow: "Búfer fijo bajo (5 mensajes)",
+      agentHistoryBufferFixedHigh: "Búfer fijo alto (32 mensajes)",
       agentHistoryModeOff: "Desactivado",
       agentHistoryModeLow: "Bajo",
       agentHistoryModeHigh: "Alto",

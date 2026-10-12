@@ -2370,6 +2370,10 @@ export const zhCN = {
       },
     },
     chat: {
+      agentHistoryBufferDynamicLow: "动态缓冲 Low（最多5条消息）",
+      agentHistoryBufferDynamicHigh: "动态缓冲 High（最多32条消息）",
+      agentHistoryBufferFixedLow: "固定缓冲 Low（5条消息）",
+      agentHistoryBufferFixedHigh: "固定缓冲 High（32条消息）",
       agentHistoryModeOff: "关闭",
       agentHistoryModeLow: "低",
       agentHistoryModeHigh: "高",

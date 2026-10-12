@@ -8,7 +8,7 @@ import {
   isAgentWindowSize,
   type AgentWindowSize,
 } from "../../../components/assistant-ui/agent-history-scroll-window";
-import { type AgentDomLevel } from "../../../components/assistant-ui/agent-history-dom-budget";
+import { isAgentBufferMode, type AgentDomLevel } from "../../../components/assistant-ui/agent-history-dom-budget";
 import { type AgentHistoryPreferenceSnapshot } from "./agent-history-preference-policy";
 
 export type AgentHistoryModeState = AgentHistoryPreferenceSnapshot & {
@@ -32,12 +32,16 @@ export const useAgentHistoryModeStore = create<AgentHistoryModeState>()(
       disabledThreads: {},
       windowRowsByThreadId: {},
       setGlobalDomLevel: (level) => {
-        if (level !== null && level !== "off" && level !== "low" && level !== "high") return;
-        set({ globalDomLevel: level ?? undefined });
+        if (level !== null && level !== "off" && level !== "low" &&
+            level !== "high" && !isAgentBufferMode(level)) return;
+        set(state => ({
+          globalDomLevel: level ?? undefined,
+          globalEnabled: level === "off" ? false : level === null ? state.globalEnabled : true,
+        }));
       },
       setThreadDomLevel: (threadId, level) => {
         if (!threadId || (level !== null && level !== "off" &&
-          level !== "low" && level !== "high")) return;
+          level !== "low" && level !== "high" && !isAgentBufferMode(level))) return;
         set(state => {
           const domLevelByThreadId = { ...state.domLevelByThreadId };
           if (level === null) delete domLevelByThreadId[threadId];
@@ -106,17 +110,27 @@ export const useAgentHistoryModeStore = create<AgentHistoryModeState>()(
           : [];
         return {
           ...current,
-          globalDomLevel: saved.globalDomLevel === "off" ||
-            saved.globalDomLevel === "low" || saved.globalDomLevel === "high"
-            ? saved.globalDomLevel : undefined,
+          globalDomLevel: saved.globalDomLevel === "low" ? "dynamic-low" :
+            saved.globalDomLevel === "high" ? "dynamic-high" :
+            isAgentBufferMode(saved.globalDomLevel) ? saved.globalDomLevel : undefined,
           domLevelByThreadId: Object.fromEntries(
             saved.domLevelByThreadId && typeof saved.domLevelByThreadId === "object" &&
             !Array.isArray(saved.domLevelByThreadId)
-              ? Object.entries(saved.domLevelByThreadId).filter(([id, level]) =>
-                  id.length > 0 && (level === "off" || level === "low" || level === "high"))
+              ? Object.entries(saved.domLevelByThreadId)
+                  .filter(([id, level]) => id.length > 0 &&
+                    (level === "off" || level === "low" ||
+                      level === "high" || isAgentBufferMode(level)))
+                  .map(([id, level]) => [
+                    id, level === "low" ? "dynamic-low" :
+                      level === "high" ? "dynamic-high" : level,
+                  ])
               : [],
           ) as Record<string, AgentDomLevel>,
-          globalEnabled: saved.globalEnabled === true,
+          // Previously persisted dynamic low/high implicitly enabled the
+          // virtualizer, even when the v1 globalEnabled bit was false.
+          globalEnabled: saved.globalDomLevel === "off" ? false :
+            saved.globalEnabled === true || saved.globalDomLevel === "low" ||
+            saved.globalDomLevel === "high",
           globalWindowRows,
           enabledThreads: trueMap(saved.enabledThreads),
           disabledThreads: trueMap(saved.disabledThreads),

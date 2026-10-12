@@ -200,31 +200,68 @@ def require_visible_search_row(page, row_index: int, label: str) -> None:
     )
 
 
-
 def check_adaptive_thumb_drag(page, level: str) -> None:
     """Actual pointer drag; no wheel or programmatic scroll recovery allowed."""
-    page.add_style_tag(content = (
-        ".aui-thread-viewport::-webkit-scrollbar{width:16px}"
-        ".aui-thread-viewport::-webkit-scrollbar-thumb{background:#888}"
-    ))
+    page.add_style_tag(
+        content = (
+            ".aui-thread-viewport{overflow-y:scroll!important;scrollbar-gutter:stable!important}"
+            ".aui-thread-viewport::-webkit-scrollbar{width:16px}"
+            ".aui-thread-viewport::-webkit-scrollbar-track{background:#ddd}"
+            ".aui-thread-viewport::-webkit-scrollbar-thumb{background:#888}"
+        )
+    )
+    # Set up the scrollbar thumb at the bottom before the real pointer drag.
+    # No synthetic scroll or wheel is used AFTER the drag to repair the view.
+    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
+    page.wait_for_timeout(100)
     box = page.locator(VIEWPORT).bounding_box()
     if box is None:
         raise AssertionError("Agent viewport missing")
-    x = box["x"] + box["width"] - 7
-    bottom = box["y"] + box["height"] - 12
-    destination = box["y"] + box["height"] * 0.35
-    before = page.evaluate(
-        "() => document.querySelector('.aui-thread-viewport').scrollTop"
+    metrics = page.locator(VIEWPORT).evaluate(
+        """el => ({
+          scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
+          clientHeight: el.clientHeight, clientWidth: el.clientWidth,
+          offsetWidth: el.offsetWidth, offsetHeight: el.offsetHeight,
+          scrollbarGutter: getComputedStyle(el).scrollbarGutter
+        })"""
     )
+    track_width = metrics["offsetWidth"] - metrics["clientWidth"]
+    if track_width < 8 or metrics["scrollHeight"] <= metrics["clientHeight"]:
+        raise AssertionError(f"{level}: native scrollbar not testable: {metrics}")
+    # A tiny native thumb ends at the usable vertical track bottom, NOT
+    # necessarily at the box bottom (horizontal scrollbar/corner may occupy
+    # the last pixels). Stay close enough to the end to hit the small thumb.
+    x = box["x"] + box["width"] - track_width / 2
+    horizontal_gutter = max(0, metrics["offsetHeight"] - metrics["clientHeight"])
+    bottom = box["y"] + box["height"] - horizontal_gutter - 6
+    destination = box["y"] + box["height"] * 0.35
+    hit = page.evaluate(
+        """([x, y]) => {
+          const el = document.elementFromPoint(x, y);
+          const view = document.querySelector('.aui-thread-viewport');
+          return {
+            hitTag: el?.tagName, hitClass: String(el?.className ?? ''),
+            viewportHit: el === view || !!(view && el && view.contains(el)),
+            nativeScrollbarWidth: view ? getComputedStyle(view, '::-webkit-scrollbar').width : null,
+            devicePixelRatio: devicePixelRatio
+          };
+        }""",
+        [x, bottom],
+    )
+    if not hit["viewportHit"]:
+        raise AssertionError(f"{level}: scrollbar pointer occluded: {hit}; at ({x}, {bottom})")
+    before = metrics["scrollTop"]
     page.mouse.move(x, bottom)
     page.mouse.down()
     page.mouse.move(x, destination, steps = 10)
     page.mouse.up()
-    after = page.evaluate(
-        "() => document.querySelector('.aui-thread-viewport').scrollTop"
-    )
+    after = page.locator(VIEWPORT).evaluate("el => el.scrollTop")
     if abs(after - before) < box["height"]:
-        raise AssertionError(f"{level}: thumb drag did not move viewport: {before} -> {after}")
+        detail = (
+            f"{level}: physical scrollbar drag did not move the viewport: "
+            f"{before} -> {after}; scrollbar: {metrics}; hit: {hit}; at ({x}, {bottom})"
+        )
+        raise AssertionError(detail)
     page.wait_for_function(
         """() => {
           const viewport = document.querySelector('.aui-thread-viewport');
@@ -259,9 +296,7 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
         first["index"],
     )
     if second is None or abs(second - first["y"]) > 5:
-        raise AssertionError(
-            f"{level}: text shifted after drag without input: {first} -> {second}"
-        )
+        raise AssertionError(f"{level}: text shifted after drag without input: {first} -> {second}")
 
 
 def check_chat_header_menu(page, messages: int) -> None:
@@ -299,58 +334,64 @@ def check_chat_header_menu(page, messages: int) -> None:
         option.focus()
         option.press("Enter")
 
-    for level in ("high", "low"):
+    for level, dom_policy, cap in (
+        ("dynamic-high", "high", 32),
+        ("dynamic-low", "low", 5),
+        ("fixed-high", "legacy", 32),
+        ("fixed-low", "legacy", 5),
+    ):
         choose(level)
         page.wait_for_function(
-            """([expected, level]) => {
+            """([expected, policy, maximum]) => {
               const list = document.querySelector('[data-agent-history-scroll-list="true"]');
               const rows = [...document.querySelectorAll('[data-agent-history-row]')];
-              return list?.getAttribute('data-agent-history-dom-level') === level &&
-                rows.length >= 1 && rows.length <= 32 &&
+              return list?.getAttribute('data-agent-history-dom-level') === policy &&
+                rows.length >= 1 && rows.length <= maximum &&
                 rows.every(row => row.getAttribute('aria-setsize') === String(expected));
             }""",
-            arg = [messages, level],
+            arg = [messages, dom_policy, cap],
             timeout = 60_000,
         )
         census(page, messages, f"dom-budget-{level}")
 
-        # Two closely spaced synthetic tool-output resizes exercise the
-        # trailing one-second recount; neither resize may lose the target.
-        target = page.evaluate(
-            """() => {
-              const row = [...document.querySelectorAll('[data-agent-history-row]')].at(-1);
-              const owner = row?.querySelector('[data-role]');
-              if (!row || !owner) throw Error('Adaptive target missing');
-              const heavy = document.createElement('div');
-              heavy.dataset.qaAdaptiveHeavy = 'true';
-              heavy.style.cssText = 'height:100px;overflow:hidden;contain:layout';
-              heavy.innerHTML = '<span>qa</span>'.repeat(200);
-              owner.appendChild(heavy);
-              return Number(row.dataset.agentHistoryRow);
-            }"""
-        )
-        page.wait_for_timeout(100)
-        page.evaluate(
-            """() => {
-              const heavy = document.querySelector('[data-qa-adaptive-heavy]');
-              if (!heavy) throw Error('Synthetic row disappeared before expansion');
-              heavy.style.height = '1600px';
-              heavy.innerHTML = '<span>qa</span>'.repeat(15000);
-            }"""
-        )
-        page.wait_for_function(
-            """target => {
-              const rows = [...document.querySelectorAll('[data-agent-history-row]')];
-              return rows.length === 1 &&
-                Number(rows[0].dataset.agentHistoryRow) === target &&
-                rows[0].querySelector('[data-qa-adaptive-heavy]') !== null &&
-                rows[0].querySelectorAll('*').length > 15000;
-            }""",
-            arg = target,
-            timeout = 15_000,
-        )
-        page.evaluate("() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()")
-        check_adaptive_thumb_drag(page, level)
+        if level.startswith("dynamic-"):
+            # Two closely spaced synthetic tool-output resizes exercise the
+            # trailing one-second recount; neither resize may lose the target.
+            target = page.evaluate(
+                """() => {
+                  const row = [...document.querySelectorAll('[data-agent-history-row]')].at(-1);
+                  const owner = row?.querySelector('[data-role]');
+                  if (!row || !owner) throw Error('Adaptive target missing');
+                  const heavy = document.createElement('div');
+                  heavy.dataset.qaAdaptiveHeavy = 'true';
+                  heavy.style.cssText = 'height:100px;overflow:hidden;contain:layout';
+                  heavy.innerHTML = '<span>qa</span>'.repeat(200);
+                  owner.appendChild(heavy);
+                  return Number(row.dataset.agentHistoryRow);
+                }"""
+            )
+            page.wait_for_timeout(100)
+            page.evaluate(
+                """() => {
+                  const heavy = document.querySelector('[data-qa-adaptive-heavy]');
+                  if (!heavy) throw Error('Synthetic row disappeared before expansion');
+                  heavy.style.height = '1600px';
+                  heavy.innerHTML = '<span>qa</span>'.repeat(15000);
+                }"""
+            )
+            page.wait_for_function(
+                """target => {
+                  const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+                  return rows.length === 1 &&
+                    Number(rows[0].dataset.agentHistoryRow) === target &&
+                    rows[0].querySelector('[data-qa-adaptive-heavy]') !== null &&
+                    rows[0].querySelectorAll('*').length > 15000;
+                }""",
+                arg = target,
+                timeout = 15_000,
+            )
+            page.evaluate("() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()")
+            check_adaptive_thumb_drag(page, level)
 
     choose("off")
     page.wait_for_function(
@@ -372,7 +413,10 @@ def check_chat_header_menu(page, messages: int) -> None:
         """() => JSON.parse(localStorage.getItem(
           'unsloth_agent_chat_history_v1') || '{}').state?.domLevelByThreadId || {}"""
     )
-    if any(value in ("off", "low", "high") for value in overrides.values()):
+    if any(
+        value in ("off", "low", "high", "fixed-low", "fixed-high", "dynamic-low", "dynamic-high")
+        for value in overrides.values()
+    ):
         raise AssertionError("Per-chat DOM mode override remained after inheritance")
 
 
@@ -502,7 +546,11 @@ def run(url: str, username: str, password: str, messages: int) -> None:
         baseline = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
         baseline_messages = baseline["messages"]
         with sync_playwright() as driver:
-            browser = driver.chromium.launch(headless = True)
+            # Playwright normally starts headless Chromium with --hide-scrollbars,
+            # making a native-thumb mouse drag impossible regardless of CSS.
+            browser = driver.chromium.launch(
+                headless = True, ignore_default_args = ["--hide-scrollbars"]
+            )
             try:
                 context = browser.new_context(viewport = {"width": 1440, "height": 960})
                 # The auth bootstrap is rerun on each navigation. Preferences must

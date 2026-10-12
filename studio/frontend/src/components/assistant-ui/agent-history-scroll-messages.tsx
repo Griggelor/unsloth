@@ -6,7 +6,7 @@ import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffec
 import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
-import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, type AgentDomLevel, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
+import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
@@ -33,9 +33,10 @@ export const AgentHistoryScrollMessages: FC<{
   resetKey: string | undefined;
   viewportRef: RefObject<HTMLElement | null>;
   windowRows?: number;
-  domLevel?: Exclude<AgentDomLevel, "off">;
+  domLevel?: "low" | "high";
+  fixedRowsStrict?: boolean;
 }> = memo(function AgentHistoryScrollMessages({
-  renderMessage, resetKey, viewportRef, windowRows = AGENT_DEFAULT_ROWS, domLevel,
+  renderMessage, resetKey, viewportRef, windowRows = AGENT_DEFAULT_ROWS, domLevel, fixedRowsStrict = false,
 }) {
   const count = useAuiState(({ thread }) => thread.messages.length);
   const aui = useAui();
@@ -61,13 +62,14 @@ export const AgentHistoryScrollMessages: FC<{
   // window commit, never allowed to abort staging with only one row mounted.
   const deferredScroll = useRef(false);
   const [state, setState] = useState(() => ({
-    key: resetKey, count, windowRows, domLevel,
-    range: budget ? agentBudgetWindow(count, count - 1, costs, budget)
+    key: resetKey, count, windowRows, domLevel, fixedRowsStrict,
+    range: budget ? agentBudgetWindow(count, count - 1, costs, budget, domLevel === "low" ? 5 : 32)
       : latestAgentWindow(count, windowRows),
   }));
   const visibleIndex = useRef(Math.max(0, count - 1));
   const lastWindowRows = useRef(windowRows);
   const lastDomLevel = useRef(domLevel);
+  const lastFixedRowsStrict = useRef(fixedRowsStrict);
   const [heightRevision, setHeightRevision] = useState(0);
   const [searchHit, setSearchHit] = useState(-1);
   const [revealRevision, setRevealRevision] = useState(0);
@@ -103,22 +105,24 @@ export const AgentHistoryScrollMessages: FC<{
   // Preserve progressive staging and reader-intent ownership; only the
   // selected window policy changes under an explicit Low/High preference.
   const budgetWindow = (index: number) =>
-    budget === null ? null : agentBudgetWindow(count, index, costs, budget);
+    budget === null ? null : agentBudgetWindow(count, index, costs, budget, domLevel === "low" ? 5 : 32);
   const latestWindow = () => budgetWindow(count - 1) ?? latestAgentWindow(count, windowRows);
   const visibleWindow = () => budgetWindow(visibleIndex.current) ?? agentWindowAtIndex(
-    count, Math.min(visibleIndex.current, Math.max(0, count - 1)), undefined, windowRows,
+    count, Math.min(visibleIndex.current, Math.max(0, count - 1)), undefined, windowRows, fixedRowsStrict,
   );
   const range = state.key !== resetKey ? latestWindow()
-    : state.domLevel !== domLevel || state.windowRows !== windowRows
+    : state.domLevel !== domLevel || state.windowRows !== windowRows ||
+      state.fixedRowsStrict !== fixedRowsStrict
       ? following.current ? latestWindow() : visibleWindow()
       : state.count !== count
         ? budget !== null
           ? following.current ? latestWindow() : state.range
-          : agentWindowOnAppend(state.range, state.count, count, following.current, windowRows)
+          : agentWindowOnAppend(state.range, state.count, count, following.current, windowRows, fixedRowsStrict)
         : state.range;
   if (state.key !== resetKey || state.count !== count ||
-      state.windowRows !== windowRows || state.domLevel !== domLevel) {
-    setState({ key: resetKey, count, windowRows, domLevel, range });
+      state.windowRows !== windowRows || state.domLevel !== domLevel ||
+      state.fixedRowsStrict !== fixedRowsStrict) {
+    setState({ key: resetKey, count, windowRows, domLevel, fixedRowsStrict, range });
   }
   const rangeRef = useRef<AgentScrollWindow>(range);
   rangeRef.current = range;
@@ -126,8 +130,8 @@ export const AgentHistoryScrollMessages: FC<{
   const seek = useCallback((index: number, snap?: "top" | "bottom") => {
     const viewport = viewportRef.current;
     const next = budget !== null
-      ? agentBudgetWindow(countRef.current, index, costs, budget)
-      : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
+      ? agentBudgetWindow(countRef.current, index, costs, budget, domLevel === "low" ? 5 : 32)
+      : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows, fixedRowsStrict);
     if (next.start === rangeRef.current.start && next.end === rangeRef.current.end) {
       if (snap === "bottom") jumpBottom("auto");
       if (snap === "top" && viewport) navigateViewport(0);
@@ -156,7 +160,7 @@ export const AgentHistoryScrollMessages: FC<{
     rangeRef.current = candidate;
     setState(old => ({ ...old, range: candidate }));
     return true;
-  }, [jumpBottom, navigateViewport, viewportRef, windowRows, costs, budget]);
+  }, [jumpBottom, navigateViewport, viewportRef, windowRows, costs, budget, fixedRowsStrict]);
 
   useEffect(() => {
     const task = staged.current;
@@ -218,20 +222,22 @@ export const AgentHistoryScrollMessages: FC<{
     // does not produce a render. Force a fresh layout navigation transaction.
     setRevealRevision(v => v + 1);
     const next = budget !== null
-      ? agentBudgetWindow(countRef.current, index, costs, budget)
-      : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows);
+      ? agentBudgetWindow(countRef.current, index, costs, budget, domLevel === "low" ? 5 : 32)
+      : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows, fixedRowsStrict);
     if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
       rangeRef.current = next;
       setState(old => ({ ...old, range: next }));
     }
-  }, [windowRows, costs, budget]);
+  }, [windowRows, costs, budget, fixedRowsStrict]);
 
   // Changing the preference should not strand the reader at a stale scroll offset.
   // Keep height measurements; only the mounted window changes.
   useLayoutEffect(() => {
-    if (lastWindowRows.current === windowRows && lastDomLevel.current === domLevel) return;
+    if (lastWindowRows.current === windowRows && lastDomLevel.current === domLevel &&
+        lastFixedRowsStrict.current === fixedRowsStrict) return;
     lastWindowRows.current = windowRows;
     lastDomLevel.current = domLevel;
+    lastFixedRowsStrict.current = fixedRowsStrict;
     // A pending progressive destination belongs to the PREVIOUS mode. Do
     // not let its next frame reintroduce rows outside the new DOM budget.
     staged.current = null;
@@ -242,7 +248,7 @@ export const AgentHistoryScrollMessages: FC<{
     animation.current = null;
     if (following.current) jumpBottom("auto");
     else navigateViewport(heights.offset(visibleIndex.current));
-  }, [windowRows, domLevel, range.start, range.end, heights, jumpBottom, navigateViewport]);
+  }, [windowRows, domLevel, fixedRowsStrict, range.start, range.end, heights, jumpBottom, navigateViewport]);
 
   // Register a search target only for the opt-in virtualized thread. The normal
   // find engine can keep its existing DOM semantics without mounting the history.
@@ -469,7 +475,7 @@ export const AgentHistoryScrollMessages: FC<{
       const intent = navigation.current;
       const target = intent.kind === "search" ? intent.row
         : following.current ? countRef.current - 1 : visibleIndex.current;
-      const next = agentBudgetWindow(countRef.current, target, costs, budget);
+      const next = agentBudgetWindow(countRef.current, target, costs, budget, domLevel === "low" ? 5 : 32);
       const viewport = viewportRef.current;
       if (!viewport) return;
       // The old policy greedily added one newly measured neighbor on every
@@ -517,6 +523,23 @@ export const AgentHistoryScrollMessages: FC<{
     budgetFrame.current = null;
     budgetProbeTimer.current = null;
   }, [resetKey, budget]);
+  // Content changes do not necessarily resize a row: clipped tool output can
+  // add thousands of descendants without changing the observed box. Counting
+  // only in ResizeObserver would leave the DOM budget stale indefinitely.
+  // Observe mounted message content, not the entire page, and use the existing
+  // trailing throttled probe rather than counting on each mutation.
+  useEffect(() => {
+    if (budget === null || typeof MutationObserver === "undefined") return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const observer = new MutationObserver(() => scheduleBudgetProbe());
+    for (const wrapper of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
+      const content = wrapper.querySelector<HTMLElement>("[data-role]");
+      if (content) observer.observe(content, { childList: true, subtree: true });
+    }
+    return () => observer.disconnect();
+  }, [budget, range.start, range.end, viewportRef, scheduleBudgetProbe]);
+
   useLayoutEffect(() => {
     if (budget === null || staged.current !== null) return;
     const viewport = viewportRef.current;
