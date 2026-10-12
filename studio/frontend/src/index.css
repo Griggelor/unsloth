@@ -4584,22 +4584,6 @@ html[data-chat-font] .aui-root {
 		animation: none !important;
 	}
 
-	/* Historic messages in the virtualized Agent History viewport are mounted
-	 * again when the reader changes chats or seeks to another row window. The
-	 * ordinary user-message slide/fade (150ms) and Streamdown token fade replay
-	 * on those already-written messages; the resulting subpixel translation/
-	 * opacity animation is visible as brief text shimmer on every seek.
-	 *
-	 * The opt-in virtualized list, not the whole app, owns this rule: animations
-	 * in regular chats, menus and streaming outside Agent History are untouched.
-	 * A newly streaming message inside this list intentionally forgoes token
-	 * fade, because the mounted historic and live rows cannot safely share a
-	 * CSS-only "first mount" test. Scroll/anchor behavior is not altered. */
-	.aui-thread-root [data-agent-history-scroll-list="true"] .aui-user-message-root,
-	.aui-thread-root [data-agent-history-scroll-list="true"] [data-sd-animate] {
-		animation: none !important;
-	}
-
 	/* Off-screen maths costs a full RenderLayer walk on every scroll event.
 	 *
 	 * ON BY DEFAULT, AND ENGINE-GATED. `main.tsx` sets this attribute only when
