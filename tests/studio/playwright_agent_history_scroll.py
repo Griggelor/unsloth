@@ -1,0 +1,742 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+"""Real-browser regression gate for the opt-in, bounded Agenten-Chatverlauf.
+
+Run ONLY against an isolated disposable Studio instance, not a production installation:
+    python -m tests.studio.playwright_agent_history_scroll \
+        --url http://127.0.0.1:5401 --username unsloth --password '...' --messages 400
+
+Requires the repository's Playwright/Chromium test prerequisites and a running backend.
+This test writes and then deletes ONE uniquely named fixture thread on that instance.
+Missing prerequisites, auth failures, missing virtualizer and any incomplete traversal
+are hard failures, not skipped or counted as passes. It checks bounded find/reveal
+navigation, but not clipboard/export parity.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+import uuid
+from pathlib import Path
+
+# Executed as a standalone Playwright driver from the checkout root.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from tests.studio.studiobench.runtime.lifecycle import (
+    authenticate,
+    auth_request_json,
+    seed_init_script,
+)
+
+ROW = "[data-agent-history-row]"
+LIST = '[data-agent-history-scroll-list="true"]'
+VIEWPORT = ".aui-thread-viewport"
+MAX_ROWS = 96
+
+
+def create_fixture(base: str, auth, count: int) -> str:
+    thread_id = str(uuid.uuid4())
+    now = int(time.time() * 1000) - count * 1000
+    auth_request_json(
+        auth,
+        f"{base}/api/chat/threads",
+        method = "POST",
+        body = {
+            "id": thread_id,
+            "title": "agent-history-e2e-" + thread_id,
+            "modelType": "base",
+            "modelId": "agent-history-fixture",
+            "createdAt": now,
+        },
+    )
+    messages = []
+    parent = None
+    for index in range(count):
+        message_id = str(uuid.uuid4())
+        messages.append(
+            {
+                "id": message_id,
+                "threadId": thread_id,
+                "parentId": parent,
+                "role": "user" if index % 2 == 0 else "assistant",
+                "content": [
+                    {"type": "text", "text": f"agent-history-e2e-row-{index:05d} unique-fixture"}
+                ],
+                "attachments": None,
+                "metadata": None,
+                "createdAt": now + index * 1000,
+            }
+        )
+        parent = message_id
+    auth_request_json(
+        auth,
+        f"{base}/api/chat/threads/{thread_id}/messages",
+        method = "PUT",
+        timeout = 120,
+        body = {"messages": messages, "pruneMissing": True},
+    )
+    persisted = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
+    if len(persisted.get("messages", [])) != count:
+        raise AssertionError("The backend did not persist the complete fixture")
+    return thread_id
+
+
+def census(page, expected: int, where: str) -> dict:
+    state = page.evaluate("""() => {
+      const rows = Array.from(document.querySelectorAll('[data-agent-history-row]'));
+      const list = document.querySelector('[data-agent-history-scroll-list="true"]');
+      const viewport = document.querySelector('.aui-thread-viewport');
+      return {
+        hasList: !!list, mounted: rows.length,
+        ordinal: rows.map(row => Number(row.getAttribute('aria-posinset'))),
+        sizes: rows.map(row => Number(row.getAttribute('aria-setsize'))),
+        viewport: !!viewport,
+        scrollTop: viewport?.scrollTop ?? null,
+        scrollHeight: viewport?.scrollHeight ?? null
+      };
+    }""")
+    if not state["hasList"] or not state["viewport"]:
+        raise AssertionError(f"{where}: active agent renderer/viewport absent: {state}")
+    if not (1 <= state["mounted"] <= MAX_ROWS):
+        raise AssertionError(f"{where}: mounted rows not bounded: {state}")
+    ordinals = state["ordinal"]
+    if (
+        len(set(ordinals)) != len(ordinals)
+        or ordinals != list(range(ordinals[0], ordinals[-1] + 1))
+        or any(size != expected for size in state["sizes"])
+        or not (1 <= ordinals[0] <= ordinals[-1] <= expected)
+    ):
+        raise AssertionError(f"{where}: invalid ARIA positions/total: {state}")
+    return state
+
+
+def scroll_to(page, fraction: float, expected: int, label: str) -> dict:
+    # Like the shipped Studio readiness probe, scroll + user wheel intent together.
+    # A one-shot programmatic jump alone can be cancelled by intent-aware autoscroll.
+    viewport = page.locator(VIEWPORT)
+    viewport.hover()
+    for _ in range(12):
+        page.mouse.wheel(0, -1800 if fraction == 0 else 1800)
+        page.evaluate(
+            """fraction => {
+          const el = document.querySelector('.aui-thread-viewport');
+          el.scrollTop = (el.scrollHeight - el.clientHeight) * fraction;
+          el.dispatchEvent(new Event('scroll'));
+        }""",
+            fraction,
+        )
+        page.wait_for_timeout(100)
+    state = census(page, expected, label)
+    first, last = state["ordinal"][0], state["ordinal"][-1]
+    if fraction == 0 and first != 1:
+        raise AssertionError(f"{label}: first row not reachable: {state}")
+    if fraction == 1 and last != expected:
+        raise AssertionError(f"{label}: final row not reachable: {state}")
+    if fraction == 0.5 and not (expected // 4 <= first <= 3 * expected // 4):
+        raise AssertionError(f"{label}: middle of the transcript not reached: {state}")
+    return state
+
+
+def search_snapshot(page) -> dict:
+    """Read-only diagnostics. A missing search result is always a hard failure."""
+    return page.evaluate("""() => {
+      const bar = document.querySelector('[data-find-bar-layer]');
+      const input = bar?.querySelector('input');
+      const counter = bar?.querySelector('[aria-live="polite"]');
+      const viewport = document.querySelector('.aui-thread-viewport');
+      const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+      const marked = [...document.querySelectorAll('[data-agent-history-find-active="true"]')];
+      return {
+        query: input?.value ?? null,
+        counter: counter?.textContent?.trim() ?? null,
+        focused: document.activeElement === input,
+        barVisible: !!bar && !bar.hidden,
+        currentRows: [rows[0]?.getAttribute('data-agent-history-row') ?? null,
+                      rows.at(-1)?.getAttribute('data-agent-history-row') ?? null],
+        mounted: rows.length,
+        searchHitRows: marked.map(row => row.getAttribute('data-agent-history-row')),
+        scrollTop: viewport?.scrollTop ?? null,
+        scrollHeight: viewport?.scrollHeight ?? null,
+        pageErrors: window.__agentSearchErrors ?? null
+      };
+    }""")
+
+
+def require_search_state(
+    page,
+    script: str,
+    label: str,
+    timeout: int = 15_000,
+    arg = None,
+) -> None:
+    try:
+        page.wait_for_function(script, arg = arg, timeout = timeout)
+    except Exception as exc:
+        raise AssertionError(f"{label}: {search_snapshot(page)}") from exc
+
+
+def require_visible_search_row(page, row_index: int, label: str) -> None:
+    """Indexing + DOM mounting is not enough: the hit must intersect the viewport."""
+    require_search_state(
+        page,
+        """index => {
+          const viewport = document.querySelector('.aui-thread-viewport');
+          const row = document.querySelector(
+            '[data-agent-history-row="' + index +
+            '"][data-agent-history-find-active="true"]'
+          );
+          if (!viewport || !row || !viewport.contains(row)) return false;
+          const view = viewport.getBoundingClientRect();
+          const hit = row.getBoundingClientRect();
+          return hit.width > 0 && hit.height > 0 &&
+            hit.bottom > view.top + 8 && hit.top < view.bottom - 8 &&
+            document.querySelectorAll('[data-agent-history-row]').length <= 96;
+        }""",
+        label,
+        arg = row_index,
+    )
+
+
+def check_adaptive_thumb_drag(page, level: str) -> None:
+    """Actual pointer drag; no wheel or programmatic scroll recovery allowed."""
+    page.add_style_tag(
+        content = (
+            ".aui-thread-viewport{overflow-y:scroll!important;scrollbar-gutter:stable!important}"
+            ".aui-thread-viewport::-webkit-scrollbar{width:16px}"
+            ".aui-thread-viewport::-webkit-scrollbar-track{background:#ddd}"
+            ".aui-thread-viewport::-webkit-scrollbar-thumb{background:#888}"
+        )
+    )
+    # Set up the scrollbar thumb at the bottom before the real pointer drag.
+    # No synthetic scroll or wheel is used AFTER the drag to repair the view.
+    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
+    page.wait_for_timeout(100)
+    box = page.locator(VIEWPORT).bounding_box()
+    if box is None:
+        raise AssertionError("Agent viewport missing")
+    metrics = page.locator(VIEWPORT).evaluate(
+        """el => ({
+          scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
+          clientHeight: el.clientHeight, clientWidth: el.clientWidth,
+          offsetWidth: el.offsetWidth, offsetHeight: el.offsetHeight,
+          scrollbarGutter: getComputedStyle(el).scrollbarGutter
+        })"""
+    )
+    track_width = metrics["offsetWidth"] - metrics["clientWidth"]
+    if track_width < 8 or metrics["scrollHeight"] <= metrics["clientHeight"]:
+        raise AssertionError(f"{level}: native scrollbar not testable: {metrics}")
+    # A tiny native thumb ends at the usable vertical track bottom, NOT
+    # necessarily at the box bottom (horizontal scrollbar/corner may occupy
+    # the last pixels). Stay close enough to the end to hit the small thumb.
+    x = box["x"] + box["width"] - track_width / 2
+    horizontal_gutter = max(0, metrics["offsetHeight"] - metrics["clientHeight"])
+    bottom = box["y"] + box["height"] - horizontal_gutter - 6
+    destination = box["y"] + box["height"] * 0.35
+    hit = page.evaluate(
+        """([x, y]) => {
+          const el = document.elementFromPoint(x, y);
+          const view = document.querySelector('.aui-thread-viewport');
+          return {
+            hitTag: el?.tagName, hitClass: String(el?.className ?? ''),
+            viewportHit: el === view || !!(view && el && view.contains(el)),
+            nativeScrollbarWidth: view ? getComputedStyle(view, '::-webkit-scrollbar').width : null,
+            devicePixelRatio: devicePixelRatio
+          };
+        }""",
+        [x, bottom],
+    )
+    if not hit["viewportHit"]:
+        raise AssertionError(f"{level}: scrollbar pointer occluded: {hit}; at ({x}, {bottom})")
+    before = metrics["scrollTop"]
+    page.mouse.move(x, bottom)
+    page.mouse.down()
+    page.mouse.move(x, destination, steps = 10)
+    page.mouse.up()
+    after = page.locator(VIEWPORT).evaluate("el => el.scrollTop")
+    if abs(after - before) < box["height"]:
+        detail = (
+            f"{level}: physical scrollbar drag did not move the viewport: "
+            f"{before} -> {after}; scrollbar: {metrics}; hit: {hit}; at ({x}, {bottom})"
+        )
+        raise AssertionError(detail)
+    page.wait_for_function(
+        """() => {
+          const viewport = document.querySelector('.aui-thread-viewport');
+          if (!viewport) return false;
+          const view = viewport.getBoundingClientRect();
+          return [...viewport.querySelectorAll('[data-agent-history-row]')]
+            .some(row => {
+              const r = row.getBoundingClientRect();
+              return r.bottom > view.top + 8 && r.top < view.bottom - 8;
+            });
+        }""",
+        timeout = 3_000,
+    )
+    first = page.evaluate(
+        """() => {
+          const viewport = document.querySelector('.aui-thread-viewport');
+          const v = viewport.getBoundingClientRect();
+          const row = [...viewport.querySelectorAll('[data-agent-history-row]')]
+            .find(el => el.getBoundingClientRect().bottom > v.top + 8
+              && el.getBoundingClientRect().top < v.bottom - 8);
+          return row && { index: row.dataset.agentHistoryRow,
+            y: row.getBoundingClientRect().top };
+        }"""
+    )
+    page.wait_for_timeout(650)
+    second = page.evaluate(
+        """index => {
+          const row = document.querySelector(
+            '[data-agent-history-row="' + index + '"]');
+          return row ? row.getBoundingClientRect().top : null;
+        }""",
+        first["index"],
+    )
+    if second is None or abs(second - first["y"]) > 5:
+        raise AssertionError(f"{level}: text shifted after drag without input: {first} -> {second}")
+
+
+def check_chat_header_menu(page, messages: int) -> None:
+    """Verify real per-chat Low/High/Off/Inherited settings, then restore v1."""
+    trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
+    trigger.wait_for(state = "visible", timeout = 30_000)
+    if messages != 400:
+        trigger.click()
+        page.keyboard.press("Escape")
+        return
+
+    def choose(level: str) -> None:
+        # Radix may keep the parent menu open after choosing a nested radio
+        # item. Clicking its trigger unconditionally would CLOSE that menu.
+        if trigger.get_attribute("aria-expanded") != "true":
+            trigger.click()
+        submenu = page.locator('[data-test-id="agent-dom-level-trigger"]')
+        try:
+            submenu.wait_for(state = "visible", timeout = 30_000)
+        except Exception:
+            diagnostic = page.evaluate("""() => ({
+              expanded: document.querySelector('[data-test-id="chat-header-more-menu-trigger"]')
+                ?.getAttribute('aria-expanded') ?? null,
+              menus: [...document.querySelectorAll('[role="menu"]')]
+                .map(x => (x.textContent || '').slice(0, 350)),
+              rows: document.querySelectorAll('[data-agent-history-row]').length,
+              activeDomLevel: document.querySelector('[data-agent-history-scroll-list]')
+                ?.getAttribute('data-agent-history-dom-level') ?? null
+            })""")
+            raise AssertionError(f"DOM mode submenu missing for {level}: {diagnostic}")
+        submenu.focus()
+        submenu.press("ArrowRight")
+        option = page.locator(f'[data-test-id="agent-dom-level-{level}"]')
+        option.wait_for(state = "visible", timeout = 30_000)
+        option.focus()
+        option.press("Enter")
+
+    for level, dom_policy, cap in (
+        ("dynamic-high", "high", 32),
+        ("dynamic-low", "low", 5),
+        ("fixed-high", "legacy", 32),
+        ("fixed-low", "legacy", 5),
+    ):
+        choose(level)
+        page.wait_for_function(
+            """([expected, policy, maximum]) => {
+              const list = document.querySelector('[data-agent-history-scroll-list="true"]');
+              const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+              return list?.getAttribute('data-agent-history-dom-level') === policy &&
+                rows.length >= 1 && rows.length <= maximum &&
+                rows.every(row => row.getAttribute('aria-setsize') === String(expected));
+            }""",
+            arg = [messages, dom_policy, cap],
+            timeout = 60_000,
+        )
+        census(page, messages, f"dom-budget-{level}")
+
+        if level.startswith("dynamic-"):
+            # Two closely spaced synthetic tool-output resizes exercise the
+            # trailing one-second recount; neither resize may lose the target.
+            target = page.evaluate(
+                """() => {
+                  const row = [...document.querySelectorAll('[data-agent-history-row]')].at(-1);
+                  const owner = row?.querySelector('[data-role]');
+                  if (!row || !owner) throw Error('Adaptive target missing');
+                  const heavy = document.createElement('div');
+                  heavy.dataset.qaAdaptiveHeavy = 'true';
+                  heavy.style.cssText = 'height:100px;overflow:hidden;contain:layout';
+                  heavy.innerHTML = '<span>qa</span>'.repeat(200);
+                  owner.appendChild(heavy);
+                  return Number(row.dataset.agentHistoryRow);
+                }"""
+            )
+            page.wait_for_timeout(100)
+            page.evaluate(
+                """() => {
+                  const heavy = document.querySelector('[data-qa-adaptive-heavy]');
+                  if (!heavy) throw Error('Synthetic row disappeared before expansion');
+                  heavy.style.height = '1600px';
+                  heavy.innerHTML = '<span>qa</span>'.repeat(15000);
+                }"""
+            )
+            page.wait_for_function(
+                """target => {
+                  const rows = [...document.querySelectorAll('[data-agent-history-row]')];
+                  return rows.length === 1 &&
+                    Number(rows[0].dataset.agentHistoryRow) === target &&
+                    rows[0].querySelector('[data-qa-adaptive-heavy]') !== null &&
+                    rows[0].querySelectorAll('*').length > 15000;
+                }""",
+                arg = target,
+                timeout = 15_000,
+            )
+            page.evaluate("() => document.querySelector('[data-qa-adaptive-heavy]')?.remove()")
+            check_adaptive_thumb_drag(page, level)
+
+    choose("off")
+    page.wait_for_function(
+        """() => document.querySelector('[data-agent-history-scroll-list="true"]') === null""",
+        timeout = 30_000,
+    )
+    choose("inherit")
+    page.wait_for_function(
+        """expected => {
+          const list = document.querySelector('[data-agent-history-scroll-list="true"]');
+          return list?.getAttribute('data-agent-history-dom-level') === 'legacy' &&
+            !!list.querySelector('[data-agent-history-row][aria-setsize="' + expected + '"]');
+        }""",
+        arg = messages,
+        timeout = 60_000,
+    )
+    census(page, messages, "dom-budget-inherit-legacy")
+    overrides = page.evaluate(
+        """() => JSON.parse(localStorage.getItem(
+          'unsloth_agent_chat_history_v1') || '{}').state?.domLevelByThreadId || {}"""
+    )
+    if any(
+        value in ("off", "low", "high", "fixed-low", "fixed-high", "dynamic-low", "dynamic-high")
+        for value in overrides.values()
+    ):
+        raise AssertionError("Per-chat DOM mode override remained after inheritance")
+
+
+def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
+    """Change row limits through the real menu, verify DOM and persisted per-chat scope."""
+    trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
+
+    def choose(size: int) -> None:
+        before_click = trigger.get_attribute("aria-expanded")
+        trigger.focus()
+        trigger.press("Enter")
+        after_click = trigger.get_attribute("aria-expanded")
+        submenu = page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
+            has_text = "Agentenfenster:"
+        )
+        try:
+            # Use keyboard navigation instead of a pointer hover across a portal.
+            submenu.wait_for(state = "visible", timeout = 10_000)
+            submenu.focus()
+            submenu.press("ArrowRight")
+            page.locator(f'[data-test-id="agent-window-size-{size}"]').wait_for(
+                state = "visible", timeout = 10_000
+            )
+        except Exception as exc:
+            # Do not retry/skip a disappearing menu: capture its real state.
+            # This instance and its settings contain only synthetic fixture data.
+            try:
+                diagnostic = page.evaluate("""() => ({
+                  triggerExpanded: document.querySelector(
+                    '[data-test-id="chat-header-more-menu-trigger"]'
+                  )?.getAttribute('aria-expanded') ?? null,
+                  menuItems: [...document.querySelectorAll('[role="menuitem"]')]
+                    .map(el => (el.textContent ?? '').trim()),
+                  activeMenus: [...document.querySelectorAll('[role="menu"]')]
+                    .map(el => (el.textContent ?? '').slice(0, 1000)),
+                  mountedRows: document.querySelectorAll('[data-agent-history-row]').length,
+                  agentHistoryPreference: JSON.parse(
+                    localStorage.getItem('unsloth_agent_chat_history_v1') || '{}'
+                  ).state ?? null
+                })""")
+            except Exception as snapshot_error:
+                diagnostic = {"snapshotError": str(snapshot_error)}
+            diagnostic["triggerBeforeClick"] = before_click
+            diagnostic["triggerAfterClick"] = after_click
+            evidence_dir = Path("logs/agent-history")
+            evidence_dir.mkdir(parents = True, exist_ok = True)
+            (evidence_dir / "menu-submenu-failure.json").write_text(
+                json.dumps(diagnostic, indent = 2), encoding = "utf-8"
+            )
+            try:
+                page.screenshot(path = str(evidence_dir / "menu-submenu-failure.png"))
+            except Exception:
+                pass
+            raise AssertionError(f"Agent window submenu interaction failed: {diagnostic}") from exc
+        radio = page.locator(f'[data-test-id="agent-window-size-{size}"]')
+        radio.focus()
+        radio.press("Enter")
+        page.wait_for_function(
+            """size => {
+              const rows = document.querySelectorAll('[data-agent-history-row]');
+              return rows.length === size;
+            }""",
+            arg = size,
+            timeout = 30_000,
+        )
+        state = census(page, messages, f"window-{size}")
+        if state["mounted"] != size:
+            raise AssertionError(f"window-{size}: expected exactly {size} mounted rows: {state}")
+
+    choose(5)
+    stored = page.evaluate(
+        """threadId => JSON.parse(localStorage.getItem(
+          'unsloth_agent_chat_history_v1'
+        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? 5""",
+        thread_id,
+    )
+    if stored != 5:
+        raise AssertionError(f"Small window preference not persisted: {stored}")
+
+    # Preserve the bounded navigation contract at the recommended small setting.
+    scroll_to(page, 0, messages, "five-top")
+    scroll_to(page, 1, messages, "five-bottom")
+
+    page.reload(wait_until = "domcontentloaded")
+    page.locator(LIST).wait_for(state = "attached", timeout = 60_000)
+    page.wait_for_function(
+        """() => document.querySelectorAll('[data-agent-history-row]').length === 5""",
+        timeout = 60_000,
+    )
+    census(page, messages, "five-after-reload")
+    choose(2)
+    choose(8)
+    choose(16)
+    # Explicit legacy mode is retained as a per-thread override.
+    choose(32)
+    legacy = page.evaluate(
+        """threadId => JSON.parse(localStorage.getItem(
+          'unsloth_agent_chat_history_v1'
+        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? 5""",
+        thread_id,
+    )
+    if legacy != 32:
+        raise AssertionError(f"Explicit legacy 32 preference not persisted: {legacy}")
+    # Choosing the new default must remove the override without disabling the mode.
+    choose(5)
+    stored = page.evaluate(
+        """threadId => JSON.parse(localStorage.getItem(
+          'unsloth_agent_chat_history_v1'
+        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? null""",
+        thread_id,
+    )
+    if stored is not None:
+        raise AssertionError(f"Default window should not store an override: {stored}")
+    census(page, messages, "window-default-restored")
+
+
+def run(url: str, username: str, password: str, messages: int) -> None:
+    from playwright.sync_api import sync_playwright
+
+    base = url.rstrip("/")
+    auth = authenticate(base, username, password)
+    thread_id = None
+    try:
+        thread_id = create_fixture(base, auth, messages)
+        # Read-after-write snapshot before any browser rendering, navigation or
+        # search. A mere message count cannot detect silent edits or reordering.
+        baseline = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
+        baseline_messages = baseline["messages"]
+        with sync_playwright() as driver:
+            # Playwright normally starts headless Chromium with --hide-scrollbars,
+            # making a native-thumb mouse drag impossible regardless of CSS.
+            browser = driver.chromium.launch(
+                headless = True, ignore_default_args = ["--hide-scrollbars"]
+            )
+            try:
+                context = browser.new_context(viewport = {"width": 1440, "height": 960})
+                # The auth bootstrap is rerun on each navigation. Preferences must
+                # only be seeded once, or reloading wipes the value under test.
+                history_state = {
+                    "state": {"enabledThreads": {thread_id: True}},
+                    "version": 0,
+                }
+                context.add_init_script(seed_init_script(auth, []))
+                context.add_init_script(
+                    "(() => { const key = 'unsloth_agent_chat_history_v1';"
+                    " if (localStorage.getItem(key) !== null) return;"
+                    " localStorage.setItem(key, "
+                    + json.dumps(json.dumps(history_state))
+                    + "); })();"
+                )
+                page = context.new_page()
+                page.goto(
+                    f"{base}/chat?thread={thread_id}",
+                    wait_until = "domcontentloaded",
+                    timeout = 120_000,
+                )
+                page.locator(LIST).wait_for(state = "attached", timeout = 60_000)
+                page.wait_for_function(
+                    """expected => document.querySelectorAll(
+                      '[data-agent-history-row][aria-setsize="' + expected + '"]'
+                    ).length > 0""",
+                    arg = messages,
+                    timeout = 60_000,
+                )
+                tail = census(page, messages, "initial")
+                if tail["mounted"] != 5:
+                    raise AssertionError(f"New agent-history default must mount five rows: {tail}")
+                check_chat_header_menu(page, messages)
+                if messages == 400:
+                    check_runtime_window_size(page, thread_id, messages)
+                if tail["ordinal"][-1] != messages:
+                    raise AssertionError(f"initial window not at transcript tail: {tail}")
+                top = scroll_to(page, 0, messages, "top")
+                middle = scroll_to(page, 0.5, messages, "middle")
+                bottom = scroll_to(page, 1, messages, "bottom")
+                # Reproduction: a query for message 6 must reach beyond the
+                # 32 rows mounted at the transcript tail, without disabling
+                # bounded virtualization or changing the persisted history.
+                page.keyboard.press("Control+f")
+                find_input = page.locator("[data-find-bar-layer] input")
+                find_input.wait_for(state = "visible", timeout = 30_000)
+                find_input.fill("row-00005")
+                # Distinguish indexing / count from seek / mount / scroll.
+                require_search_state(
+                    page,
+                    """() => document.querySelector(
+                      '[data-find-bar-layer] [aria-live="polite"]'
+                    )?.textContent?.includes('1/1') ?? false""",
+                    "search-index",
+                )
+                require_search_state(
+                    page,
+                    """() => !!document.querySelector(
+                      '[data-agent-history-row="5"][data-agent-history-find-active="true"]'
+                    )""",
+                    "search-reveal",
+                )
+                require_visible_search_row(page, 5, "search-early-visible")
+                census(page, messages, "search-early-message")
+                # Prove actual browser copy of a selected mounted message works
+                # under the bounded renderer. This does NOT claim that Ctrl+A
+                # across the *entire* transcript is yet equivalent to default.
+                context.grant_permissions(["clipboard-read", "clipboard-write"])
+                page.locator('[data-agent-history-row="5"]').click()
+                selected = page.evaluate(
+                    """() => {
+                      const row = document.querySelector('[data-agent-history-row="5"]');
+                      if (!row) return false;
+                      const selection = window.getSelection();
+                      const range = document.createRange();
+                      range.selectNodeContents(row);
+                      selection.removeAllRanges();
+                      selection.addRange(range);
+                      return !selection.isCollapsed && selection.toString().includes('row-00005');
+                    }"""
+                )
+                if not selected:
+                    raise AssertionError("Visible virtualized row could not be selected")
+                page.keyboard.press("Control+c")
+                copied = page.evaluate("async () => navigator.clipboard.readText()")
+                if "agent-history-e2e-row-00005" not in copied:
+                    raise AssertionError(
+                        f"Copy of visible virtualized message differs: {copied[:160]!r}"
+                    )
+                page.evaluate("() => window.getSelection()?.removeAllRanges()")
+                # Scrolling away from an active one-result query then pressing
+                # Enter must re-seek even if React's selected hit is unchanged.
+                scroll_to(page, 1, messages, "search-reader-scroll-away")
+                find_input.focus()
+                find_input.press("Enter")
+                require_visible_search_row(page, 5, "search-repeat-visible")
+                census(page, messages, "search-repeat-single-result")
+                find_input.fill("unique-fixture")
+                require_search_state(
+                    page,
+                    """expected => {
+                      const counter = document.querySelector(
+                        '[data-find-bar-layer] [aria-live="polite"]'
+                      )?.textContent?.trim() ?? '';
+                      const fields = counter.split('/');
+                      const current = Number(fields[0]);
+                      return fields.length === 2 && Number(fields[1]) === expected &&
+                        Number.isInteger(current) && current >= 1 && current <= expected;
+                    }""",
+                    "search-all-rows",
+                    arg = messages,
+                )
+                census(page, messages, "search-full-thread")
+                find_input.fill(f"row-{messages - 1:05d}")
+                require_search_state(
+                    page,
+                    """expected => !!document.querySelector(
+                      '[data-agent-history-row="' + String(expected - 1) + '"][data-agent-history-find-active="true"]'
+                    )""",
+                    "search-last-row",
+                    arg = messages,
+                )
+                require_visible_search_row(page, messages - 1, "search-last-visible")
+                census(page, messages, "search-latest-message")
+                page.keyboard.press("Escape")
+                page.reload(wait_until = "domcontentloaded", timeout = 120_000)
+                page.locator(LIST).wait_for(state = "attached", timeout = 60_000)
+                page.wait_for_function(
+                    """expected => Array.from(document.querySelectorAll(
+                      '[data-agent-history-row]')).some(
+                        row => row.getAttribute('aria-setsize') === String(expected)
+                      )""",
+                    arg = messages,
+                    timeout = 60_000,
+                )
+                after_reload = census(page, messages, "reload")
+                if after_reload["ordinal"][-1] != messages:
+                    raise AssertionError("Reload lost the transcript tail")
+                stored = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
+                if len(stored.get("messages", [])) != messages:
+                    raise AssertionError("Virtual scrolling changed the persisted transcript count")
+                if stored["messages"] != baseline_messages:
+                    raise AssertionError(
+                        "Virtual scrolling or search altered persisted message content, "
+                        "metadata, identity or order"
+                    )
+                print(
+                    json.dumps(
+                        {
+                            "status": "PASS",
+                            "messages": messages,
+                            "mounted_initial": tail["mounted"],
+                            "mounted_top": top["mounted"],
+                            "mounted_middle": middle["mounted"],
+                            "mounted_bottom": bottom["mounted"],
+                            "mounted_reload": after_reload["mounted"],
+                            "transcript_preserved": True,
+                            "visible_message_clipboard_copy": True,
+                        },
+                        sort_keys = True,
+                    )
+                )
+            finally:
+                browser.close()
+    finally:
+        if thread_id is not None:
+            auth_request_json(
+                auth,
+                f"{base}/api/chat/threads",
+                method = "DELETE",
+                body = {"ids": [thread_id]},
+            )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description = __doc__)
+    parser.add_argument("--url", required = True, help = "Disposable Studio instance only")
+    parser.add_argument("--username", default = "unsloth")
+    parser.add_argument("--password", required = True)
+    parser.add_argument("--messages", type = int, default = 400)
+    args = parser.parse_args()
+    if args.messages < 128 or args.messages % 2:
+        parser.error("--messages must be even and at least 128")
+    run(args.url, args.username, args.password, args.messages)
+
+
+if __name__ == "__main__":
+    main()

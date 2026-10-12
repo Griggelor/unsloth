@@ -2,6 +2,8 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 
 import { Button } from "@/components/ui/button";
+import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
+import { isAgentBufferMode } from "@/components/assistant-ui/agent-history-dom-budget";
 import {
   Select,
   SelectContent,
@@ -255,6 +257,11 @@ export function ChatTab() {
   const isOwner = useIsAccountOwner();
   const t = useT();
   const navigate = useNavigate();
+  const globalDomLevel = useAgentHistoryModeStore((state) => state.globalDomLevel);
+  const setGlobalDomLevel = useAgentHistoryModeStore((state) => state.setGlobalDomLevel);
+  const setGlobalAgentEnabled = useAgentHistoryModeStore((state) => state.setGlobalEnabled);
+  const globalAgentEnabled = useAgentHistoryModeStore((state) => state.globalEnabled);
+  const globalAgentWindowRows = useAgentHistoryModeStore((state) => state.globalWindowRows);
   const plusPins = usePlusMenuPrefsStore((state) => state.pins);
   const togglePlusPin = usePlusMenuPrefsStore((state) => state.togglePin);
   const autoTitle = useChatRuntimeStore((state) => state.autoTitle);
@@ -595,6 +602,38 @@ export function ChatTab() {
       </SettingsSection>
 
       <SettingsSection title={t("settings.chat.groups.display.title")}>
+        <SettingsRow
+          label={t("settings.chat.agentHistoryGlobal")}
+          description={t("settings.chat.agentHistoryGlobalDescription")}
+        >
+          <div className="flex items-center gap-3">
+            <Switch
+              checked={globalAgentEnabled}
+              onCheckedChange={(enabled) => {
+                if (!enabled) setGlobalAgentEnabled(false);
+                else setGlobalDomLevel(isAgentBufferMode(globalDomLevel) ? globalDomLevel :
+                  globalAgentWindowRows === 32 ? "fixed-high" : "fixed-low");
+              }}
+              aria-label={t("settings.chat.agentHistoryGlobal")}
+            />
+            <Select
+              value={isAgentBufferMode(globalDomLevel) ? globalDomLevel : undefined}
+              onValueChange={(value) => {
+                if (isAgentBufferMode(value)) setGlobalDomLevel(value);
+              }}
+            >
+              <SelectTrigger className="w-60" aria-label={t("settings.chat.agentHistoryChatMode")}>
+                <SelectValue placeholder={t("settings.chat.agentHistoryChatMode")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dynamic-low">{t("settings.chat.agentHistoryBufferDynamicLow")}</SelectItem>
+                <SelectItem value="dynamic-high">{t("settings.chat.agentHistoryBufferDynamicHigh")}</SelectItem>
+                <SelectItem value="fixed-low">{t("settings.chat.agentHistoryBufferFixedLow")}</SelectItem>
+                <SelectItem value="fixed-high">{t("settings.chat.agentHistoryBufferFixedHigh")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </SettingsRow>
         <SettingsRow
           label={t("settings.chat.webSearch.images")}
           description={t("settings.chat.webSearch.imagesDescription")}

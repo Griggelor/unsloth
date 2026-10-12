@@ -75,6 +75,8 @@ type AutoScrollContextValue = {
    * re-attaches; explicit pins (run start, button) still work.
    */
   detachFromBottom: () => void;
+  /** Explicit reader/search navigation wins over active follow and its pending frames. */
+  navigateTo: (top: number) => void;
   /**
    * `deltaPx` of content was inserted ABOVE the viewport; shift by it so the
    * user keeps looking at the same thing. Progressive mounting (see
@@ -96,6 +98,9 @@ const noopContext: AutoScrollContextValue = {
     /* no-op */
   },
   detachFromBottom: () => {
+    /* no viewport mounted */
+  },
+  navigateTo: () => {
     /* no viewport mounted */
   },
   adjustForContentInsertedAbove: () => false,
@@ -123,6 +128,10 @@ export function useScrollThreadToBottom(): ScrollToBottom {
 }
 
 /** See AutoScrollContextValue.adjustForContentInsertedAbove. */
+export function useNavigateThreadViewport(): (top: number) => void {
+  return useContext(AutoScrollContext).navigateTo;
+}
+
 export function useAdjustForContentInsertedAbove(): (deltaPx: number) => boolean {
   return useContext(AutoScrollContext).adjustForContentInsertedAbove;
 }
@@ -165,6 +174,9 @@ export function useIntentAwareAutoScroll(): {
   const detachImplRef = useRef<() => void>(() => {
     /* no viewport mounted */
   });
+  const navigateImplRef = useRef<(top: number) => void>(() => {
+    /* no viewport mounted */
+  });
   const adjustImplRef = useRef<(deltaPx: number) => void>(() => {
     /* no viewport mounted */
   });
@@ -196,6 +208,10 @@ export function useIntentAwareAutoScroll(): {
 
   const detachFromBottom = useCallback(() => {
     detachImplRef.current();
+  }, []);
+
+  const navigateTo = useCallback((top: number) => {
+    navigateImplRef.current(top);
   }, []);
 
   const adjustForContentInsertedAbove = useCallback((deltaPx: number) => {
@@ -445,6 +461,17 @@ export function useIntentAwareAutoScroll(): {
       // the tick refresh updates isAtBottom.
       detachImplRef.current = () => {
         detach();
+        requestTick();
+      };
+
+      navigateImplRef.current = (top: number) => {
+        if (!Number.isFinite(top)) return;
+        // Search navigation is a deliberate detach, not an inert programmatic
+        // scroll that follow/layout observers are entitled to undo.
+        detach();
+        el.scrollTo({ top: Math.max(0, top), behavior: "instant" });
+        lastScrollTop = el.scrollTop;
+        lastDistanceFromBottom = distanceFromBottom();
         requestTick();
       };
 
@@ -795,6 +822,9 @@ export function useIntentAwareAutoScroll(): {
         detachImplRef.current = () => {
           /* no viewport mounted */
         };
+        navigateImplRef.current = () => {
+          /* no viewport mounted */
+        };
         adjustImplRef.current = () => {
           /* no viewport mounted */
         };
@@ -852,6 +882,7 @@ export function useIntentAwareAutoScroll(): {
       getIsAtBottom,
       subscribe,
       detachFromBottom,
+      navigateTo,
       adjustForContentInsertedAbove,
       notifyContentResized,
     }),
@@ -860,6 +891,7 @@ export function useIntentAwareAutoScroll(): {
       getIsAtBottom,
       subscribe,
       detachFromBottom,
+      navigateTo,
       adjustForContentInsertedAbove,
       notifyContentResized,
     ],
