@@ -528,8 +528,11 @@ def run(url: str, username: str, password: str, messages: int) -> None:
         baseline = auth_request_json(auth, f"{base}/api/chat/threads/{thread_id}/messages")
         baseline_messages = baseline["messages"]
         with sync_playwright() as driver:
-            launch_args = ["--disable-features=OverlayScrollbar,OverlayScrollbars"]
-            browser = driver.chromium.launch(headless = True, args = launch_args)
+            # Playwright normally starts headless Chromium with --hide-scrollbars,
+            # making a native-thumb mouse drag impossible regardless of CSS.
+            browser = driver.chromium.launch(
+                headless = True, ignore_default_args = ["--hide-scrollbars"]
+            )
             try:
                 context = browser.new_context(viewport = {"width": 1440, "height": 960})
                 # The auth bootstrap is rerun on each navigation. Preferences must
