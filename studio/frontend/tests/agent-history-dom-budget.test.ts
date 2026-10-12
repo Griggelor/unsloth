@@ -100,3 +100,16 @@ test("Low and High stop adding extra messages after the viewport is filled", () 
   assert.equal(needsAgentBudgetRebalance(single, expanded, 50, 920, 900), true);
   assert.equal(needsAgentBudgetRebalance(single, single, 99, 500, 900), false);
 });
+
+test("dynamic Low never admits more than five rows and High never exceeds 32", () => {
+  const costs = new AgentDomCostIndex(200);
+  for (let row = 0; row < 200; row++) costs.measure(row, 10);
+  for (let target = 0; target < 200; target += 7) {
+    const low = agentBudgetWindow(200, target, costs, AGENT_DOM_TARGETS.low, 5);
+    const high = agentBudgetWindow(200, target, costs, AGENT_DOM_TARGETS.high, 32);
+    assert.ok(low.end - low.start >= 1 && low.end - low.start <= 5);
+    assert.ok(high.end - high.start >= 1 && high.end - high.start <= 32);
+    assert.ok(low.start <= target && target < low.end);
+    assert.ok(high.start <= target && target < high.end);
+  }
+});
