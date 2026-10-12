@@ -40,12 +40,15 @@ jobs:
           persist-credentials: false
       - name: Assert pinned exact PR30 checkout
         run: test "$(git rev-parse HEAD)" = "${{ steps.target.outputs.sha }}"
-      - name: Fetch PR31 probe only
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: '${{ github.sha }}'
-          path: qa-harness
-          persist-credentials: false
+      - name: Load pinned PR31 test driver without nesting a checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qa-harness/scripts
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git show "${GITHUB_SHA}:scripts/qa-pr31-menu-gesture.py" \
+            > qa-harness/scripts/qa-pr31-menu-gesture.py
+          test -s qa-harness/scripts/qa-pr31-menu-gesture.py
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22'
