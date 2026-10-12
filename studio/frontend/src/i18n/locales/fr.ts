@@ -2441,6 +2441,12 @@ export const fr = {
       },
     },
     chat: {
+      agentHistoryModeOff: "Désactivé",
+      agentHistoryModeLow: "Faible",
+      agentHistoryModeHigh: "Élevé",
+      agentHistoryChatMode: "Optimisation du DOM",
+      agentHistoryInherit: "Utiliser le réglage global",
+      agentHistoryLegacy: "Réglage précédent",
       agentHistoryGlobal: "Virtualiser l’historique des discussions",
       agentHistoryGlobalDescription: "N’afficher qu’un petit nombre de messages dans chaque discussion. L’historique reste accessible ; les exceptions par discussion sont prioritaires.",
       agentHistoryRows: "Messages visibles par discussion",

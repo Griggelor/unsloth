@@ -2406,6 +2406,12 @@ export const ar = {
       },
     },
     chat: {
+      agentHistoryModeOff: "إيقاف",
+      agentHistoryModeLow: "منخفض",
+      agentHistoryModeHigh: "مرتفع",
+      agentHistoryChatMode: "تحسين DOM",
+      agentHistoryInherit: "استخدام الإعداد العام",
+      agentHistoryLegacy: "الإعداد السابق",
       agentHistoryGlobal: "عرض سجل الدردشة افتراضيًا",
       agentHistoryGlobalDescription: "اعرض عددًا قليلاً فقط من الرسائل في كل دردشة. يظل السجل الكامل متاحًا، وتكون لاستثناءات الدردشة الأولوية.",
       agentHistoryRows: "الرسائل الظاهرة لكل دردشة",
