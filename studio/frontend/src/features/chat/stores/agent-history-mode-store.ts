@@ -110,10 +110,9 @@ export const useAgentHistoryModeStore = create<AgentHistoryModeState>()(
           : [];
         return {
           ...current,
-          globalDomLevel: saved.globalDomLevel === "off" ||
-            saved.globalDomLevel === "low" || saved.globalDomLevel === "high" ||
-            isAgentBufferMode(saved.globalDomLevel)
-            ? saved.globalDomLevel : undefined,
+          globalDomLevel: saved.globalDomLevel === "low" ? "dynamic-low" :
+            saved.globalDomLevel === "high" ? "dynamic-high" :
+            isAgentBufferMode(saved.globalDomLevel) ? saved.globalDomLevel : undefined,
           domLevelByThreadId: Object.fromEntries(
             saved.domLevelByThreadId && typeof saved.domLevelByThreadId === "object" &&
             !Array.isArray(saved.domLevelByThreadId)
