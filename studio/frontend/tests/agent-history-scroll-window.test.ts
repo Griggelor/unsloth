@@ -177,3 +177,20 @@ test("virtualized agent rows inherit upstream stale-safe message-index resolver"
   assert.doesNotMatch(source, /import \{[^\n]*MessageByIndexProvider[^\n]*\} from "@assistant-ui\/react"/);
   assert.match(source, /<MessageByIndexProvider index=\{index\}>/);
 });
+
+test("explicit fixed 32 keeps exactly 32 mounted rows across 300 appends and seeks", () => {
+  let count = 400;
+  let range = latestAgentWindow(count, 32);
+  for (let i = 0; i < 300; i++) {
+    range = agentWindowOnAppend(range, count, count + 1, true, 32, true);
+    count += 1;
+    assert.equal(range.end, count);
+    assert.equal(range.end - range.start, 32);
+  }
+  for (let target = 0; target < count; target += 13) {
+    range = agentWindowAtIndex(count, target, range, 32, true);
+    assert.ok(range.start <= target && target < range.end);
+    assert.equal(range.end - range.start, 32);
+  }
+  assert.deepEqual(agentWindowOnAppend(range, count, count + 1, false, 32, true), range);
+});
