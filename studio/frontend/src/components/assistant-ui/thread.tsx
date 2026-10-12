@@ -49,7 +49,7 @@ import { ComposerDraftPreview } from "@/components/assistant-ui/composer-draft-p
 import { PromptQueueList } from "@/components/assistant-ui/lazy-prompt-queue-list";
 import { QueueResumeIcon } from "@/components/assistant-ui/queue-resume-icon";
 import { ProgressiveMessages } from "@/components/assistant-ui/progressive-messages";
-import { AgentHistoryScrollMessages } from "@/components/assistant-ui/agent-history-scroll-messages";
+
 import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
 import { agentHistoryLevelFor, agentHistoryWindowFor } from "@/features/chat/stores/agent-history-preference-policy";
 import { MessageMenuTime } from "@/components/assistant-ui/message-menu-time";
@@ -430,7 +430,9 @@ import {
   type ReactNode,
   type RefObject,
   Fragment,
+  Suspense,
   createContext,
+  lazy,
   memo,
   useCallback,
   useContext,
@@ -2004,6 +2006,14 @@ const renderThreadMessage = proplessSlot(ThreadMessage);
 
 // Memoized: chat-page renders this inline in a store-subscribing component, so a parent render
 // would otherwise reconcile the whole message list.
+// The bounded Agent History renderer is opt-in. Keep its sizable DOM/windowing
+// implementation out of the eager normal-chat startup bundle.
+const AgentHistoryScrollMessages = lazy(() =>
+  import("@/components/assistant-ui/agent-history-scroll-messages").then(
+    ({ AgentHistoryScrollMessages }) => ({ default: AgentHistoryScrollMessages }),
+  ),
+);
+
 export const Thread: FC<{
   hideComposer?: boolean;
   hideWelcome?: boolean;
@@ -2289,16 +2299,18 @@ export const Thread: FC<{
           reason: React's bail-out needs one shared element per row. See
           progressive-mount-controller.ts. */}
           {agentHistoryEnabled ? (
-            <AgentHistoryScrollMessages
-              renderMessage={renderThreadMessage}
-              resetKey={runtimeThreadId}
-              viewportRef={viewportElRef}
-              windowRows={agentWindowRows}
-              domLevel={agentHistoryLevel === "low" || agentHistoryLevel === "dynamic-low"
-                ? "low" : agentHistoryLevel === "high" || agentHistoryLevel === "dynamic-high"
-                  ? "high" : undefined}
-              fixedRowsStrict={agentHistoryLevel === "fixed-high"}
-            />
+            <Suspense fallback={null}>
+              <AgentHistoryScrollMessages
+                renderMessage={renderThreadMessage}
+                resetKey={runtimeThreadId}
+                viewportRef={viewportElRef}
+                windowRows={agentWindowRows}
+                domLevel={agentHistoryLevel === "low" || agentHistoryLevel === "dynamic-low"
+                  ? "low" : agentHistoryLevel === "high" || agentHistoryLevel === "dynamic-high"
+                    ? "high" : undefined}
+                fixedRowsStrict={agentHistoryLevel === "fixed-high"}
+              />
+            </Suspense>
           ) : (
             <ProgressiveMessages
               renderMessage={renderThreadMessage}
