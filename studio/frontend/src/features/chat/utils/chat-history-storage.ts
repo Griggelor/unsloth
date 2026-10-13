@@ -1152,6 +1152,7 @@ function forgetChatThreads(threadIds: string[]): void {
 
 export async function saveStoredChatMessage(
   message: MessageRecord,
+  options: { strictProtected?: boolean } = {},
 ): Promise<MessageRecord> {
   if (isThreadIncognito(message.threadId)) return message;
   if (isChatThreadDeleted(message.threadId)) {
@@ -1169,6 +1170,10 @@ export async function saveStoredChatMessage(
     return await saveChatMessage(message, { coalesce: true });
   } catch (error) {
     if (error instanceof ChatMessageProtectedError) {
+      // Per-chunk streaming may suppress an unrecoverable protected row.
+      // A digest-based checkpoint MUST see the failure: otherwise it would
+      // mark an unsaved edit as durable and silently skip every later retry.
+      if (options.strictProtected) throw error;
       rememberRejectedPayload(message.threadId, message.id, payload);
       return message;
     }
