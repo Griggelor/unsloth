@@ -97,9 +97,7 @@ def select_rows(page, rows: int) -> None:
     UI has only three modes; old row windows remain supported for backwards
     compatibility and are exercised without resurrecting duplicate controls.
     """
-    if page.evaluate(
-        "() => document.querySelectorAll('[data-agent-history-row]').length"
-    ) != rows:
+    if page.evaluate("() => document.querySelectorAll('[data-agent-history-row]').length") != rows:
         page.evaluate(
             """rows => {
               const key = 'unsloth_agent_chat_history_v1';

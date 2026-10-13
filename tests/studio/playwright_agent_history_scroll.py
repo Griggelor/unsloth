@@ -586,6 +586,7 @@ def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
     control. Seed only the disposable synthetic test profile, reload through
     the actual production hydration path, and assert the exact mounted rows.
     """
+
     def choose(size: int) -> None:
         page.evaluate(
             """([threadId, rows]) => {
