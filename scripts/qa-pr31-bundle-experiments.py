@@ -5,6 +5,7 @@
 Never write to PR30 branch; operate on the temporary checked-out source tree
 in a hosted runner. Inference from size measurements is NOT release approval.
 """
+
 import argparse
 from pathlib import Path
 
@@ -18,9 +19,9 @@ def one(source: str, old: str, new: str, label: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--thread", type=Path, required=True)
+    parser.add_argument("--thread", type = Path, required = True)
     args = parser.parse_args()
-    source = args.thread.read_text(encoding="utf-8")
+    source = args.thread.read_text(encoding = "utf-8")
 
     source = one(
         source,
@@ -45,8 +46,10 @@ const WebSearchToolUIConfirmable = withToolConfirmation((props) => (
     )
     if "const ASSISTANT_PART_COMPONENTS = {" not in source:
         raise RuntimeError("stable by_name tools table absent")
-    args.thread.write_text(source, encoding="utf-8")
-    print("Disposable bundle candidate applied: lazy WebSearchToolUI only (RAG stays statically linked)")
+    args.thread.write_text(source, encoding = "utf-8")
+    print(
+        "Disposable bundle candidate applied: lazy WebSearchToolUI only (RAG stays statically linked)"
+    )
 
 
 if __name__ == "__main__":
