@@ -22,6 +22,11 @@ def trace_call(phase: str, fn: Callable, *args: Any, messages: int = 0, **kwargs
     """Do not record arguments, results, private paths or exception text."""
     if not enabled():
         return fn(*args, **kwargs)
+    LOG.info(
+        "context_perf phase=%s status=begin messages=%d",
+        phase,
+        max(0, int(messages)),
+    )
     started = time.perf_counter()
     cpu = time.process_time()
     status = "error"
@@ -50,6 +55,8 @@ class StageBook:
         self.started = time.perf_counter() if self.active else 0.0
         self.cpu = time.process_time() if self.active else 0.0
         self.stats: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0, 0.0])
+        if self.active:
+            LOG.info("context_perf phase=%s status=begin evicted_messages=%d", self.label, self.evicted_messages)
 
     def call(self, phase: str, fn: Callable, *args: Any, **kwargs: Any):
         if not self.active:
@@ -68,6 +75,11 @@ class StageBook:
         finally:
             row[1] += (time.perf_counter() - wall) * 1000
             row[2] += (time.process_time() - cpu) * 1000
+            if phase == "match_evicted_turn" and int(row[0]) % 250 == 0:
+                LOG.info(
+                    "context_perf phase=match_evicted_turn status=progress calls=%d wall_ms=%.3f cpu_ms=%.3f",
+                    int(row[0]), row[1], row[2],
+                )
 
     def report(self, *, archived_messages: int = 0, evicted_turns: int = 0) -> None:
         if not self.active:
