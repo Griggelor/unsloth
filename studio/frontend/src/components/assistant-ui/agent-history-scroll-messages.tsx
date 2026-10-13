@@ -11,6 +11,7 @@ import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agent
 import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
   allowsAgentReaderScrollIntent,
+  allowsRecentAgentBoundaryReconcile,
   allowsPassiveAgentScroll,
   completeAgentHistoryReveal,
   consumeAgentReaderScrollIntent,
@@ -77,9 +78,11 @@ export const AgentHistoryScrollMessages: FC<{
   const navigation = useRef<AgentHistoryNavigation>(initialAgentHistoryNavigation());
   const readerIntent = useRef(initialAgentReaderScrollIntent());
   const pendingScrollEpoch = useRef<number | null>(null);
+  const lastReaderGestureAt = useRef(Number.NEGATIVE_INFINITY);
   // Old reader gestures must not carry over when the user changes threads.
   useLayoutEffect(() => {
     readerIntent.current = initialAgentReaderScrollIntent();
+    lastReaderGestureAt.current = Number.NEGATIVE_INFINITY;
     pendingScrollEpoch.current = null;
     navigation.current = initialAgentHistoryNavigation();
     staged.current = null;
@@ -376,17 +379,28 @@ export const AgentHistoryScrollMessages: FC<{
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
+    const physicalEdgeReconcile = () => {
+      const atTop = viewport.scrollTop < 1;
+      const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 24;
+      return allowsRecentAgentBoundaryReconcile(
+        readerIntent.current, lastReaderGestureAt.current, performance.now(),
+        rangeRef.current.start, rangeRef.current.end, countRef.current, atTop, atBottom,
+      );
+    };
     const onScroll = () => {
       const epoch = readerIntent.current.epoch;
-      if (!allowsAgentReaderScrollIntent(readerIntent.current, epoch)) return;
+      if (!allowsAgentReaderScrollIntent(readerIntent.current, epoch) &&
+          !physicalEdgeReconcile()) return;
       pendingScrollEpoch.current = epoch;
       if (animation.current !== null) return;
       animation.current = requestAnimationFrame(() => {
         animation.current = null;
         const pendingEpoch = pendingScrollEpoch.current;
         pendingScrollEpoch.current = null;
-        if (pendingEpoch === null ||
-            !allowsAgentReaderScrollIntent(readerIntent.current, pendingEpoch) ||
+        const freshGesture = pendingEpoch !== null &&
+          allowsAgentReaderScrollIntent(readerIntent.current, pendingEpoch);
+        const recentPhysicalEdge = !freshGesture && physicalEdgeReconcile();
+        if (pendingEpoch === null || (!freshGesture && !recentPhysicalEdge) ||
             !allowsPassiveAgentScroll(navigation.current)) return;
         if (staged.current !== null) {
           // A gesture during staging is replayed only after the final commit.
@@ -398,7 +412,7 @@ export const AgentHistoryScrollMessages: FC<{
         const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 24;
         following.current = atBottom;
         let changed = false;
-        if (atBottom) changed = seek(total - 1);
+        if (atBottom) changed = seek(total - 1, recentPhysicalEdge ? "bottom" : undefined);
         else if (viewport.scrollTop < 1) changed = seek(0, "top");
         else {
           const spacer = topSpacer.current;
@@ -413,7 +427,7 @@ export const AgentHistoryScrollMessages: FC<{
           visibleIndex.current = index;
           changed = seek(index);
         }
-        if (changed) {
+        if (changed && freshGesture) {
           // Consume BEFORE React commits rows and correction writes scrollTop.
           // Those native scroll events cannot reverse this chosen window.
           readerIntent.current = consumeAgentReaderScrollIntent(readerIntent.current, pendingEpoch);
@@ -425,6 +439,7 @@ export const AgentHistoryScrollMessages: FC<{
     // reader transaction. A pointer drag needs repeated epochs because scroll
     // bars can move continuously while the button remains depressed.
     const interrupt = () => {
+      lastReaderGestureAt.current = performance.now();
       readerIntent.current = requestAgentReaderScrollIntent(readerIntent.current);
       navigation.current = interruptAgentHistoryReveal(navigation.current);
       if (revealFrame.current !== null) {

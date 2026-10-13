@@ -7,6 +7,7 @@ import { readSrc } from "./helpers/kit.ts";
 import { agentWindowAtIndex } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
 import {
   allowsAgentReaderScrollIntent,
+  allowsRecentAgentBoundaryReconcile,
   consumeAgentReaderScrollIntent,
   initialAgentReaderScrollIntent,
   requestAgentReaderScrollIntent,
@@ -66,4 +67,33 @@ test("the observed A/B oscillation requires fresh intent before every new window
   }
   assert.deepEqual(window, windowB);
   assert.equal(transitions, 1);
+});
+
+test("a consumed gesture may finish at the physical boundary, never on passive scroll echoes", () => {
+  const gesture = requestAgentReaderScrollIntent(initialAgentReaderScrollIntent());
+  const consumed = consumeAgentReaderScrollIntent(gesture, gesture.epoch);
+  const at = (
+    intent: typeof consumed, timestamp: number, now: number,
+    start: number, end: number, total: number,
+    top: boolean, bottom: boolean,
+  ) => allowsRecentAgentBoundaryReconcile(
+    intent, timestamp, now, start, end, total, top, bottom,
+  );
+  assert.equal(at(consumed, 100, 150, 2002, 2007, 4000, false, true), true);
+  assert.equal(at(consumed, 100, 150, 2002, 2007, 4000, true, false), true);
+  assert.equal(at(consumed, 100, 150, 2002, 4000, 4000, false, true), false);
+  assert.equal(at(consumed, 100, 150, 0, 5, 4000, true, false), false);
+  assert.equal(at(consumed, 100, 150, 2002, 2007, 4000, false, false), false);
+  assert.equal(at(consumed, 100, 851, 2002, 2007, 4000, false, true), false);
+  assert.equal(at(consumed, 100, 99, 2002, 2007, 4000, false, true), false);
+  assert.equal(at(initialAgentReaderScrollIntent(), 100, 150, 2002, 2007, 4000, false, true), false);
+  assert.equal(at(gesture, 100, 150, 2002, 2007, 4000, false, true), false);
+});
+
+test("the renderer reconciles a recent physical edge with a snap but never grants passive seeks elsewhere", () => {
+  const source = readSrc("components/assistant-ui/agent-history-scroll-messages.tsx");
+  assert.match(source, /physicalEdgeReconcile\(\)/);
+  assert.match(source, /if \(changed && freshGesture\)/);
+  assert.match(source, /recentPhysicalEdge \? "bottom" : undefined/);
+  assert.match(source, /lastReaderGestureAt\.current = performance\.now\(\)/);
 });

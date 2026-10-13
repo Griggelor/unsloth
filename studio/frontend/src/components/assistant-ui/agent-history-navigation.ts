@@ -84,3 +84,23 @@ export function consumeAgentReaderScrollIntent(
   return allowsAgentReaderScrollIntent(current, epoch)
     ? { ...current, sampledEpoch: epoch } : current;
 }
+
+/** A consumed wheel/pointer epoch may finish at the physical edge after React
+ * committed an intermediate virtual window. Permit only a short-lived edge
+ * reconciliation while that same real gesture is recent, never passive layout
+ * or anchor scroll events elsewhere in the transcript.
+ */
+export function allowsRecentAgentBoundaryReconcile(
+  intent: AgentReaderScrollIntent,
+  lastGestureAtMs: number,
+  nowMs: number,
+  rangeStart: number,
+  rangeEnd: number,
+  total: number,
+  atTop: boolean,
+  atBottom: boolean,
+): boolean {
+  return intent.epoch > 0 && intent.sampledEpoch === intent.epoch &&
+    nowMs >= lastGestureAtMs && nowMs - lastGestureAtMs <= 750 &&
+    ((atTop && rangeStart > 0) || (atBottom && rangeEnd < total));
+}
