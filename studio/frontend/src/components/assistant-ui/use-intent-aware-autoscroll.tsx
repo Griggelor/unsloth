@@ -67,6 +67,8 @@ export type ScrollToBottom = (behavior?: ScrollBehavior) => void;
 type AutoScrollContextValue = {
   scrollToBottom: ScrollToBottom;
   getIsAtBottom: () => boolean;
+  /** Canonical intent; physical proximity is not proof of following. */
+  getIsFollowingBottom: () => boolean;
   subscribe: (listener: () => void) => () => void;
   /**
    * Mark the user as detached, as if they scrolled up. Called when the
@@ -94,6 +96,7 @@ const noopContext: AutoScrollContextValue = {
     /* no viewport mounted */
   },
   getIsAtBottom: () => true,
+  getIsFollowingBottom: () => true,
   subscribe: () => () => {
     /* no-op */
   },
@@ -147,6 +150,11 @@ export function useIsThreadAtBottom(): boolean {
   return useSyncExternalStore(ctx.subscribe, ctx.getIsAtBottom, () => true);
 }
 
+/** An imperative read for the virtualizer when a new row is committed. */
+export function useGetThreadBottomFollowIntent(): () => boolean {
+  return useContext(AutoScrollContext).getIsFollowingBottom;
+}
+
 export function useIntentAwareAutoScroll(): {
   ref: RefCallback<HTMLElement>;
   markerRef: RefCallback<HTMLElement>;
@@ -166,6 +174,7 @@ export function useIntentAwareAutoScroll(): {
   const runEndAtRef = useRef(Number.NEGATIVE_INFINITY);
 
   const isAtBottomRef = useRef(true);
+  const getIsFollowingBottom = useCallback(() => !userDetachedRef.current, []);
   const listenersRef = useRef<Set<() => void>>(new Set());
 
   const scrollImplRef = useRef<ScrollToBottom>(() => {
@@ -880,6 +889,7 @@ export function useIntentAwareAutoScroll(): {
     () => ({
       scrollToBottom,
       getIsAtBottom,
+      getIsFollowingBottom,
       subscribe,
       detachFromBottom,
       navigateTo,
@@ -889,6 +899,7 @@ export function useIntentAwareAutoScroll(): {
     [
       scrollToBottom,
       getIsAtBottom,
+      getIsFollowingBottom,
       subscribe,
       detachFromBottom,
       navigateTo,

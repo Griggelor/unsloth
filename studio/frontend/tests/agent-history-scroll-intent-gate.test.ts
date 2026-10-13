@@ -97,3 +97,12 @@ test("the renderer reconciles a recent physical edge with a snap but never grant
   assert.match(source, /recentPhysicalEdge \? "bottom" : undefined/);
   assert.match(source, /lastReaderGestureAt\.current = performance\.now\(\)/);
 });
+
+test("streaming tail follows the canonical viewport owner, not a stale gesture cache", () => {
+  const autoscroll = readSrc("components/assistant-ui/use-intent-aware-autoscroll.tsx");
+  const renderer = readSrc("components/assistant-ui/agent-history-scroll-messages.tsx");
+  assert.match(autoscroll, /getIsFollowingBottom = useCallback/);
+  assert.match(renderer, /const followingOnAppend = getIsFollowingBottom\(\)/);
+  assert.match(renderer, /if \(getIsFollowingBottom\(\)\) \{\s*following\.current = true;/);
+  assert.match(renderer, /if \(inGutter\) interrupt\(\)/);
+});

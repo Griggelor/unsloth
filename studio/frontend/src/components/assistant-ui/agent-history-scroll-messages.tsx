@@ -8,7 +8,7 @@ import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-searc
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
 import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
-import { useAdjustForContentInsertedAbove, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
+import { useAdjustForContentInsertedAbove, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
   allowsAgentReaderScrollIntent,
   allowsRecentAgentBoundaryReconcile,
@@ -48,6 +48,7 @@ export const AgentHistoryScrollMessages: FC<{
   costs.resize(count);
   const budget = domLevel ? AGENT_DOM_TARGETS[domLevel] : null;
   const jumpBottom = useScrollThreadToBottom();
+  const getIsFollowingBottom = useGetThreadBottomFollowIntent();
   const correctAnchor = useAdjustForContentInsertedAbove();
   const navigateViewport = useNavigateThreadViewport();
   const following = useRef(true);
@@ -81,6 +82,9 @@ export const AgentHistoryScrollMessages: FC<{
   const lastReaderGestureAt = useRef(Number.NEGATIVE_INFINITY);
   // Old reader gestures must not carry over when the user changes threads.
   useLayoutEffect(() => {
+    // A previous chat's detached window must not survive a thread switch.
+    following.current = true;
+    visibleIndex.current = Math.max(0, countRef.current - 1);
     readerIntent.current = initialAgentReaderScrollIntent();
     lastReaderGestureAt.current = Number.NEGATIVE_INFINITY;
     pendingScrollEpoch.current = null;
@@ -113,20 +117,32 @@ export const AgentHistoryScrollMessages: FC<{
   const visibleWindow = () => budgetWindow(visibleIndex.current) ?? agentWindowAtIndex(
     count, Math.min(visibleIndex.current, Math.max(0, count - 1)), undefined, windowRows, fixedRowsStrict,
   );
+  // The shared viewport owner, not our gesture cache, decides whether a new
+  // streamed message belongs in the visible tail window.
+  const followingOnAppend = getIsFollowingBottom();
   const range = state.key !== resetKey ? latestWindow()
     : state.domLevel !== domLevel || state.windowRows !== windowRows ||
       state.fixedRowsStrict !== fixedRowsStrict
       ? following.current ? latestWindow() : visibleWindow()
       : state.count !== count
         ? budget !== null
-          ? following.current ? latestWindow() : state.range
-          : agentWindowOnAppend(state.range, state.count, count, following.current, windowRows, fixedRowsStrict)
+          ? followingOnAppend ? latestWindow() : state.range
+          : agentWindowOnAppend(state.range, state.count, count, followingOnAppend, windowRows, fixedRowsStrict)
         : state.range;
   if (state.key !== resetKey || state.count !== count ||
       state.windowRows !== windowRows || state.domLevel !== domLevel ||
       state.fixedRowsStrict !== fixedRowsStrict) {
     setState({ key: resetKey, count, windowRows, domLevel, fixedRowsStrict, range });
   }
+  const previousCountRef = useRef(count);
+  useLayoutEffect(() => {
+    if (previousCountRef.current === count) return;
+    previousCountRef.current = count;
+    if (getIsFollowingBottom()) {
+      following.current = true;
+      visibleIndex.current = Math.max(0, count - 1);
+    }
+  }, [count, getIsFollowingBottom]);
   const rangeRef = useRef<AgentScrollWindow>(range);
   rangeRef.current = range;
 
@@ -409,6 +425,14 @@ export const AgentHistoryScrollMessages: FC<{
         }
         const total = countRef.current;
         if (!total) return;
+        // Automatic follow pins can fire scroll events after a click has armed
+        // a gesture epoch. An echo is not an instruction to leave the tail.
+        if (getIsFollowingBottom()) {
+          following.current = true;
+          visibleIndex.current = total - 1;
+          if (rangeRef.current.end !== total) seek(total - 1, "bottom");
+          return;
+        }
         const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 24;
         following.current = atBottom;
         let changed = false;
@@ -454,13 +478,14 @@ export const AgentHistoryScrollMessages: FC<{
     // mounted at the new physical scrollTop (a blank viewport until wheel).
     let nativeThumbDrag: { pointerId: number; scrollTop: number } | null = null;
     const onPointerDown = (event: PointerEvent) => {
-      interrupt();
       const gutterWidth = viewport.offsetWidth - viewport.clientWidth;
       const rect = viewport.getBoundingClientRect();
       const inGutter = gutterWidth >= 6 && (
         (event.clientX >= rect.right - gutterWidth && event.clientX <= rect.right) ||
         (event.clientX >= rect.left && event.clientX <= rect.left + gutterWidth)
       );
+      // A click on a tool or message is not a scrolling gesture.
+      if (inGutter) interrupt();
       nativeThumbDrag = event.pointerType === "mouse" && event.button === 0 && inGutter
         ? { pointerId: event.pointerId, scrollTop: viewport.scrollTop } : null;
     };
@@ -507,7 +532,7 @@ export const AgentHistoryScrollMessages: FC<{
       animation.current = null;
       pendingScrollEpoch.current = null;
     };
-  }, [viewportRef, heights, seek]);
+  }, [viewportRef, heights, seek, getIsFollowingBottom]);
   // Measure the committed window and settle towards the known DOM budget.
   // Never supersede an in-progress staged seek or an active search epoch.
   const budgetFrame = useRef<number | null>(null);
