@@ -456,8 +456,9 @@ def check_isolated_dynamic_thumb_modes(page, thread_id: str, messages: int) -> N
     The complete menu-selection E2E remains in check_chat_header_menu.
     """
     for level, policy, cap in (
-        ("dynamic-high", "high", 32),
-        ("dynamic-low", "low", 5),
+        ("dynamic", "medium", 16),
+        ("dynamic-high", "medium", 16),
+        ("dynamic-low", "medium", 16),
     ):
         page.evaluate(
             """([threadId, selected]) => {
@@ -533,7 +534,7 @@ def check_chat_header_menu(page, messages: int) -> None:
         option.press("Enter")
 
     for level, dom_policy, cap in (
-        ("dynamic", "low", 5),
+        ("dynamic", "medium", 16),
         ("fixed", "legacy", 5),
     ):
         choose(level)
@@ -706,7 +707,7 @@ def run(
                             {
                                 "gate": "native-scrollbar",
                                 "messages": messages,
-                                "modes": ["dynamic-high", "dynamic-low"],
+                                "modes": ["dynamic", "dynamic-high", "dynamic-low"],
                                 "transcript_preserved": True,
                                 "result": "passed",
                             },

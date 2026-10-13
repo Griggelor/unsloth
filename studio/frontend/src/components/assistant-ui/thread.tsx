@@ -2305,9 +2305,10 @@ export const Thread: FC<{
                 resetKey={runtimeThreadId}
                 viewportRef={viewportElRef}
                 windowRows={agentWindowRows}
-                domLevel={agentHistoryLevel === "low" || agentHistoryLevel === "dynamic-low"
-                  ? "low" : agentHistoryLevel === "high" || agentHistoryLevel === "dynamic-high"
-                    ? "high" : undefined}
+                domLevel={agentHistoryLevel === "dynamic"
+                  ? "medium" : agentHistoryLevel === "low" || agentHistoryLevel === "dynamic-low"
+                    ? "low" : agentHistoryLevel === "high" || agentHistoryLevel === "dynamic-high"
+                      ? "high" : undefined}
                 fixedRowsStrict={agentHistoryLevel === "fixed-high"}
               />
             </Suspense>

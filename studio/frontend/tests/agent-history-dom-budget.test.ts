@@ -113,3 +113,16 @@ test("dynamic Low never admits more than five rows and High never exceeds 32", (
     assert.ok(high.start <= target && target < high.end);
   }
 });
+
+
+test("canonical dynamic admits at most 16 rows under an 8k DOM-node budget", () => {
+  assert.equal(AGENT_DOM_TARGETS.medium, 8_000);
+  const costs = new AgentDomCostIndex(200);
+  for (let row = 0; row < 200; row++) costs.measure(row, 1);
+  assert.deepEqual(agentBudgetWindow(200, 199, costs, AGENT_DOM_TARGETS.medium, 16),
+    { start: 184, end: 200 });
+  costs.measure(199, 7_900);
+  const tight = agentBudgetWindow(200, 199, costs, AGENT_DOM_TARGETS.medium, 16);
+  assert.ok(tight.end - tight.start <= 16);
+  assert.ok(tight.start <= 199 && tight.end > 199);
+});

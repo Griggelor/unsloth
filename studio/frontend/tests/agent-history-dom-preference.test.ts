@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readSrc } from "./helpers/kit.ts";
-import { agentHistoryLevelFor, agentHistoryStorageModeForUi, agentHistoryUiModeFor, agentHistoryWindowFor } from "../src/features/chat/stores/agent-history-preference-policy.ts";
+import { agentHistoryLevelFor, agentHistoryStorageModeForUi, agentHistoryUiModeFor, agentHistoryWindowFor, normalizeAgentHistoryDomMode } from "../src/features/chat/stores/agent-history-preference-policy.ts";
 import type { AgentHistoryPreferenceSnapshot } from "../src/features/chat/stores/agent-history-preference-policy.ts";
 
 const legacy: AgentHistoryPreferenceSnapshot = {
@@ -86,7 +86,7 @@ test("UI collapses legacy High/Low into three modes without changing persisted s
     assert.equal(agentHistoryUiModeFor(mode), "fixed");
   }
   assert.equal(agentHistoryUiModeFor("off"), "off");
-  assert.equal(agentHistoryStorageModeForUi("dynamic"), "dynamic-low");
+  assert.equal(agentHistoryStorageModeForUi("dynamic"), "dynamic");
   assert.equal(agentHistoryStorageModeForUi("fixed"), "fixed-low");
   assert.equal(agentHistoryStorageModeForUi("off"), "off");
 
@@ -101,4 +101,21 @@ test("UI collapses legacy High/Low into three modes without changing persisted s
     ?.split('<Item\n        glyph={<HugeiconsIcon icon={ForkIcon}')[0] ?? "";
   assert.match(submenu, /agent-dom-level-\$\{value\}/);
   assert.doesNotMatch(submenu, /agent-window-size-|setEnabled\(/);
+});
+
+
+test("legacy mode preferences hydrate to one medium dynamic or five-row fixed profile", () => {
+  for (const mode of ["low", "high", "dynamic-low", "dynamic-high", "dynamic"]) {
+    assert.equal(normalizeAgentHistoryDomMode(mode), "dynamic");
+  }
+  for (const mode of ["fixed-low", "fixed-high"]) {
+    assert.equal(normalizeAgentHistoryDomMode(mode), "fixed-low");
+  }
+  assert.equal(normalizeAgentHistoryDomMode("off"), "off");
+  assert.equal(normalizeAgentHistoryDomMode("nonsense"), undefined);
+  const state = { ...legacy, globalEnabled: true, globalDomLevel: "dynamic" as const };
+  assert.equal(agentHistoryWindowFor(state, "new"), 16);
+  assert.equal(agentHistoryWindowFor({
+    ...state, domLevelByThreadId: { fixed: "fixed-low" as const },
+  }, "fixed"), 5);
 });

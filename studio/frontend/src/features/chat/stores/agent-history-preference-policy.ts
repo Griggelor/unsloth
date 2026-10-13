@@ -81,11 +81,21 @@ export type AgentHistoryUiMode = "off" | "dynamic" | "fixed";
 export function agentHistoryUiModeFor(level: AgentDomLevel | "legacy"): AgentHistoryUiMode {
   if (level === "off") return "off";
   if (level === "low" || level === "high" ||
-      level === "dynamic-low" || level === "dynamic-high") return "dynamic";
+      level === "dynamic" || level === "dynamic-low" || level === "dynamic-high") return "dynamic";
   return "fixed";
 }
 export function agentHistoryStorageModeForUi(mode: AgentHistoryUiMode): AgentDomLevel {
-  if (mode === "dynamic") return "dynamic-low";
+  if (mode === "dynamic") return "dynamic";
   if (mode === "fixed") return "fixed-low";
   return "off";
+}
+
+
+/** Normalize historical UI variants without changing persisted message content. */
+export function normalizeAgentHistoryDomMode(level: unknown): AgentDomLevel | undefined {
+  if (level === "off") return "off";
+  if (level === "low" || level === "high" || level === "dynamic" ||
+      level === "dynamic-low" || level === "dynamic-high") return "dynamic";
+  if (level === "fixed-low" || level === "fixed-high") return "fixed-low";
+  return undefined;
 }

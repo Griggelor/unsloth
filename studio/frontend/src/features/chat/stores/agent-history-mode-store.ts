@@ -9,7 +9,7 @@ import {
   type AgentWindowSize,
 } from "../../../components/assistant-ui/agent-history-scroll-window";
 import { isAgentBufferMode, type AgentDomLevel } from "../../../components/assistant-ui/agent-history-dom-budget";
-import { type AgentHistoryPreferenceSnapshot } from "./agent-history-preference-policy";
+import { normalizeAgentHistoryDomMode, type AgentHistoryPreferenceSnapshot } from "./agent-history-preference-policy";
 
 export type AgentHistoryModeState = AgentHistoryPreferenceSnapshot & {
   setGlobalDomLevel: (level: AgentDomLevel | null) => void;
@@ -110,20 +110,14 @@ export const useAgentHistoryModeStore = create<AgentHistoryModeState>()(
           : [];
         return {
           ...current,
-          globalDomLevel: saved.globalDomLevel === "low" ? "dynamic-low" :
-            saved.globalDomLevel === "high" ? "dynamic-high" :
-            isAgentBufferMode(saved.globalDomLevel) ? saved.globalDomLevel : undefined,
+          globalDomLevel: normalizeAgentHistoryDomMode(saved.globalDomLevel),
           domLevelByThreadId: Object.fromEntries(
             saved.domLevelByThreadId && typeof saved.domLevelByThreadId === "object" &&
             !Array.isArray(saved.domLevelByThreadId)
               ? Object.entries(saved.domLevelByThreadId)
                   .filter(([id, level]) => id.length > 0 &&
-                    (level === "off" || level === "low" ||
-                      level === "high" || isAgentBufferMode(level)))
-                  .map(([id, level]) => [
-                    id, level === "low" ? "dynamic-low" :
-                      level === "high" ? "dynamic-high" : level,
-                  ])
+                    normalizeAgentHistoryDomMode(level) !== undefined)
+                  .map(([id, level]) => [id, normalizeAgentHistoryDomMode(level)])
               : [],
           ) as Record<string, AgentDomLevel>,
           // Previously persisted dynamic low/high implicitly enabled the
