@@ -406,6 +406,8 @@ def archive_turns(
     # Conversation order from the persisted thread, not arrival order (`_transcript_positions`).
     positions = profile.call("load_branch_positions", _transcript_positions, thread_id, branch or live)
     live_positions = _live_positions(live)
+    position_index = profile.call("index_branch_positions", _position_index, positions)
+    live_index = profile.call("index_live_positions", _position_index, live_positions)
     written = 0
     conn = None
     try:
@@ -423,8 +425,14 @@ def archive_turns(
             if not text:
                 continue
             digest = hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
-            seats = profile.call("match_evicted_turn", _occurrences, positions, group)
-            budget = profile.call("match_live_turn", _write_budget, positions, seats, live_positions, group)
+            seats = profile.call(
+                "match_evicted_turn", _occurrences, positions, group,
+                position_index = position_index,
+            )
+            budget = profile.call(
+                "match_live_turn", _write_budget, positions, seats, live_positions, group,
+                position_index = live_index,
+            )
             if _archived_under(conn, scope, digest, expected_identity, occurrences = budget):
                 # Commit here: this path holds no transaction of its own and can return before reaching the write
                 # lock, the ordinary case on a re-compacted thread, so it is the only chance an upgraded archive has
@@ -1321,7 +1329,23 @@ def _transcript_positions(thread_id: str, branch = None) -> Optional[list[str]]:
     ]
 
 
-def _occurrences(positions: Optional[list[list[str]]], group: list[dict]) -> list[int]:
+def _position_index(
+    positions: Optional[list[list[str]]],
+) -> dict[tuple[int, str], list[int]]:
+    """Reuse exact text anchors across evicted turns; no private data is logged."""
+    result: dict[tuple[int, str], list[int]] = {}
+    for row_index, parts in enumerate(positions or ()):
+        for part_index, text in enumerate(parts[:3]):
+            result.setdefault((part_index, text), []).append(row_index)
+    return result
+
+
+def _occurrences(
+    positions: Optional[list[list[str]]],
+    group: list[dict],
+    *,
+    position_index: Optional[dict[tuple[int, str], list[int]]] = None,
+) -> list[int]:
     """Where this turn sits in the transcript, every time it was said.
 
     The WHOLE turn, not just its opening line. Matching on the first message alone made two
@@ -1344,6 +1368,17 @@ def _occurrences(positions: Optional[list[list[str]]], group: list[dict]) -> lis
     if not texts or not texts[0]:
         return []
     calls = [bool(message.get("tool_calls")) for message in group]
+    # Tool-call arguments permit fuzzy comparison; only non-call members can
+    # be used as exact index anchors. The last partial persisted turn remains
+    # eligible even when it lacks the member that supplied our index anchor.
+    anchor = next((n for n in range(min(len(texts), 3)) if not calls[n]), None)
+    if position_index is not None and anchor is not None:
+        candidate_indexes = list(position_index.get((anchor, texts[anchor]), ()))
+        last = len(positions) - 1
+        if not candidate_indexes or candidate_indexes[-1] != last:
+            candidate_indexes.append(last)
+    else:
+        candidate_indexes = range(len(positions))
 
     def _same(stored: str, live: str, is_call: bool) -> bool:
         # A tool call is compared as needle in haystack, never for equality: the store keeps arguments as an OBJECT
@@ -1370,8 +1405,8 @@ def _occurrences(positions: Optional[list[list[str]]], group: list[dict]) -> lis
 
     return [
         index
-        for index, position in enumerate(positions)
-        if position
+        for index in candidate_indexes
+        if (position := positions[index])
         # A position SHORTER than the turn may only match the trailing one: `zip` stops at the shorter side, so an
         # orphan user row (a deleted reply, or a reload before the reply was appended) prefix-matched and gave the
         # answered turn two seats. `>=` rather than `==`, since a position legitimately runs LONGER: `_archivable`
@@ -1452,6 +1487,8 @@ def _write_budget(
     seats: list[int],
     live_positions: Optional[list[list[str]]],
     group: Optional[list[dict]] = None,
+    *,
+    position_index: Optional[dict[tuple[int, str], list[int]]] = None,
 ) -> int:
     """How many copies of a repeated turn the archive may hold RIGHT NOW.
 
@@ -1477,7 +1514,7 @@ def _write_budget(
         return 1
     if not live_positions or not positions:
         return len(seats)
-    live = len(_occurrences(live_positions, group)) if group else 0
+    live = len(_occurrences(live_positions, group, position_index = position_index)) if group else 0
     return max(len(seats) - live, 1)
 
 

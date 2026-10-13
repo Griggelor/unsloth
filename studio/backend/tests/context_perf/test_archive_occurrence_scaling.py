@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Demonstrate archive position scan multiplicity with the actual _occurrences body.
+"""Verify indexing preserves the production archive matcher and avoids quadratic scans.
 
-This extracts the production function by AST. The two text normalizers are stubbed
-so the test exercises the position-scanning algorithm without embedding packages.
-Not a complete archive correctness or Windows timing benchmark.
+AST extraction executes actual _occurrences and _position_index without loading RAG
+dependencies. This is a targeted deterministic test, not a Windows replay.
 """
 
 from __future__ import annotations
@@ -16,19 +15,21 @@ ROOT = Path(__file__).resolve().parents[4]
 SOURCE = ROOT / "studio/backend/core/rag/conversation_archive.py"
 
 
-def function_from_source():
+def matcher_functions():
     parsed = ast.parse(SOURCE.read_text(encoding = "utf-8"))
-    target = next(
+    target = [
         node
         for node in parsed.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_occurrences"
-    )
+        if isinstance(node, ast.FunctionDef)
+        and node.name in ("_occurrences", "_position_index")
+    ]
+    assert len(target) == 2
     namespace = {
         "_probe_text": lambda item: item.get("content", ""),
         "_normalise_cased": lambda value: value,
     }
-    exec(compile(ast.Module(body = [target], type_ignores = []), str(SOURCE), "exec"), namespace)
-    return namespace["_occurrences"]
+    exec(compile(ast.Module(body = target, type_ignores = []), str(SOURCE), "exec"), namespace)
+    return namespace["_occurrences"], namespace["_position_index"]
 
 
 class CountingPositions(list):
@@ -43,43 +44,64 @@ class CountingPositions(list):
 
 
 class ArchiveOccurrenceScaling(unittest.TestCase):
-    def test_full_history_scanned_once_per_evicted_turn(self):
-        occurrences = function_from_source()
+    def test_index_keeps_results_and_replaces_quadratic_scans(self):
+        occurrences, index_positions = matcher_functions()
         for n in (60, 180):
             positions = CountingPositions(
                 [[f"request-{i}", f"response-{i}"] for i in range(n)]
             )
-            for i in range(n):
-                group = [
+            groups = [
+                [
                     {"role": "user", "content": f"request-{i}"},
                     {"role": "assistant", "content": f"response-{i}"},
                 ]
-                self.assertEqual(occurrences(positions, group), [i])
-            # This deterministic counter establishes quadratic scanning, not wall time.
+                for i in range(n)
+            ]
+            baseline = [occurrences(positions, group) for group in groups]
+            self.assertEqual(baseline, [[i] for i in range(n)])
             self.assertEqual(positions.scanned, n * n)
+            index = index_positions(positions)
+            self.assertEqual(positions.scanned, n * n + n)
+            indexed = [
+                occurrences(positions, group, position_index = index)
+                for group in groups
+            ]
+            self.assertEqual(indexed, baseline)
+            self.assertEqual(positions.scanned, n * n + n)
 
-    def test_duplicate_turns_and_final_partial_position_are_preserved(self):
-        occurrences = function_from_source()
+    def test_duplicates_partial_last_and_tool_arguments_preserved(self):
+        occurrences, index_positions = matcher_functions()
         positions = [
             ["same request", "reply"],
             ["different request"],
             ["same request", "reply"],
             ["unfinished request"],
+            ["assistant call args plus details", "tool result"],
         ]
-        group = [
-            {"content": "same request"},
-            {"content": "reply"},
+        groups = [
+            [{"content": "same request"}, {"content": "reply"}],
+            [{"content": "unfinished request"}, {"content": "unpersisted reply"}],
+            [
+                {"content": "assistant call args", "tool_calls": [{"id": "tool"}]},
+                {"content": "tool result"},
+            ],
+            [{"content": "missing content"}],
         ]
-        self.assertEqual(occurrences(positions, group), [0, 2])
+        index = index_positions(positions)
+        for group in groups:
+            self.assertEqual(
+                occurrences(positions, group, position_index = index),
+                occurrences(positions, group),
+            )
+
+    def test_all_tool_calls_still_use_fuzzy_fallback(self):
+        occurrences, index_positions = matcher_functions()
+        positions = [["assistant call args plus details"], ["different tool"]]
+        group = [{"content": "assistant call args", "tool_calls": [{"id": "a"}]}]
+        self.assertEqual(occurrences(positions, group), [0])
         self.assertEqual(
-            occurrences(
-                positions,
-                [
-                    {"content": "unfinished request"},
-                    {"content": "not-yet-persisted assistant response"},
-                ],
-            ),
-            [3],
+            occurrences(positions, group, position_index = index_positions(positions)),
+            [0],
         )
 
 

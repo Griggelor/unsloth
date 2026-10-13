@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - experiment/context-preflight-22min-trace-20261013
+      - experiment/context-archive-indexed-match-20261013
     paths:
       - 'studio/backend/core/inference/checkpoint.py'
       - 'studio/backend/core/inference/context_perf_trace.py'
