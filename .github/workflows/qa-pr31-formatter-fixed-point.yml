@@ -30,16 +30,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/run_ruff_format.py \
-            scripts/qa-pr31-bundle-experiments.py \
-            scripts/qa-pr31-menu-gesture.py \
-            scripts/qa-pr31-rag-split.py
+          # Use Git's tracked set rather than a brittle list of disposed
+          # experiments. New helpers get checked; removed helpers never fail.
+          mapfile -d '' -t qa_scripts < <(git ls-files -z -- 'scripts/qa-pr31-*.py')
+          test "${#qa_scripts[@]}" -ge 2
+          printf 'Checking %s tracked PR31 helper scripts\n' "${#qa_scripts[@]}"
+          python scripts/run_ruff_format.py "${qa_scripts[@]}"
           git diff --check
-          git diff -- \
-            scripts/qa-pr31-bundle-experiments.py \
-            scripts/qa-pr31-menu-gesture.py \
-            scripts/qa-pr31-rag-split.py
-          git diff --exit-code -- \
-            scripts/qa-pr31-bundle-experiments.py \
-            scripts/qa-pr31-menu-gesture.py \
-            scripts/qa-pr31-rag-split.py
+          git diff -- "${qa_scripts[@]}"
+          git diff --exit-code -- "${qa_scripts[@]}"
