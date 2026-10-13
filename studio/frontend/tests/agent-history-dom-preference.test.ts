@@ -78,12 +78,12 @@ test("old numeric per-chat preferences remain readable until explicitly changed"
     domLevelByThreadId: { olderChat: "fixed-low" as const } }, "olderChat"), 5);
 });
 
-test("settings dropdown exposes exactly the four named modes, with Off as a switch", () => {
+test("settings dropdown exposes Dynamic, Fixed, Off without a duplicate toggle", () => {
   const source = readSrc("features/settings/tabs/chat-tab.tsx");
   const section = source.split('\n          label={t("settings.chat.agentHistoryGlobal")}')[1]
     ?.split('\n          label={t("settings.chat.webSearch.images")}')[0] ?? "";
   const options = [...section.matchAll(/<SelectItem value="([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(options, ["dynamic-low", "dynamic-high", "fixed-low", "fixed-high"]);
-  assert.match(section, /<Switch/);
+  assert.deepEqual(options, ["off", "dynamic-low", "fixed-high"]);
+  assert.doesNotMatch(section, /<Switch/);
   assert.doesNotMatch(section, /value="off"|value="legacy"|agentHistoryLegacy/);
 });

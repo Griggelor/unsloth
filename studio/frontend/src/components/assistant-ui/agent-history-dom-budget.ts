@@ -17,6 +17,14 @@ export function agentBufferRowLimit(mode: AgentBufferMode): 5 | 32 {
 export function agentBufferDomLevel(mode: AgentBufferMode): "low" | "high" | undefined {
   return mode === "dynamic-low" ? "low" : mode === "dynamic-high" ? "high" : undefined;
 }
+/** Present one adaptive and one fixed choice; old variants remain testable. */
+export function agentBufferUiChoice(level: unknown): "off" | "dynamic-low" | "fixed-high" | null {
+  if (level === "off") return "off";
+  if (level === "low" || level === "high" ||
+      level === "dynamic-low" || level === "dynamic-high") return "dynamic-low";
+  if (level === "fixed-low" || level === "fixed-high") return "fixed-high";
+  return null;
+}
 export const AGENT_DOM_TARGETS = { low: 5_000, high: 12_000 } as const;
 /** Unknown rows are charged conservatively until observed, so long chats start small. */
 export const AGENT_UNKNOWN_ROW_COST = 1_000;
