@@ -513,7 +513,22 @@ def fit_checkpoint_context(
         return messages, None
 
     prompt_target = prompt_budget(context_length, max_tokens)
-    initial_tokens = count_tokens(list(messages))
+    # Experimental huge-history admission: count an earlier complete prefix
+    # first. Only if its exact count far exceeds the budget AND archive reset
+    # is available do we avoid the initial 10M-token count. The prefix count is
+    # NOT an exact total; metadata below marks it unambiguously.
+    prefix_probe = None
+    if os.environ.get("UNSLOTH_CONTEXT_EARLY_PROBE") == "1" and not force_reset:
+        from core.inference.early_context_probe import bounded_exact_prefix_probe
+        candidate = bounded_exact_prefix_probe(
+            messages,
+            context_length = context_length,
+            prompt_target = prompt_target,
+            count_tokens = count_tokens,
+        )
+        if candidate is not None and _resolved(can_reset):
+            prefix_probe = candidate
+    initial_tokens = prefix_probe[0] if prefix_probe else count_tokens(list(messages))
     if initial_tokens <= prompt_target and sticky_dropped <= 0 and not force_reset:
         return messages, None
 
@@ -635,6 +650,8 @@ def fit_checkpoint_context(
             "fits": False,
             "dropped_messages": 0,
             "prompt_tokens_before": initial_tokens,
+            **({"prompt_tokens_before_is_prefix_probe": True,
+                "prefix_tokenized_messages": prefix_probe[1]} if prefix_probe else {}),
             "prompt_tokens_after": initial_tokens,
             "irreducible_tokens": current_tokens,
             **turn_diagnosis(
@@ -647,6 +664,8 @@ def fit_checkpoint_context(
     return projected, {
         "dropped_messages": dropped,
         "prompt_tokens_before": initial_tokens,
+            **({"prompt_tokens_before_is_prefix_probe": True,
+                "prefix_tokenized_messages": prefix_probe[1]} if prefix_probe else {}),
         "prompt_tokens_after": current_tokens,
         "context_length": context_length,
         "fits": True,
