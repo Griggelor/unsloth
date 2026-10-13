@@ -10,7 +10,16 @@
  * without retaining a second multi-megabyte copy of the transcript in memory.
  */
 import type { MessageRecord } from "../types";
-import { hasResearchMetadata } from "./research-message-sync";
+// Mirrors RESEARCH_METADATA_KEYS from research-message-sync.ts. This file is
+// deliberately import-free at runtime so the CPU-only node:test harness can
+// exercise the same code without bundler dependency stubs.
+const RESEARCH_METADATA_KEYS = [
+  "researchRunId", "researchRun", "researchStatus", "researchPlanRevision", "serverManaged",
+] as const;
+function hasResearchMetadata(value: unknown): boolean {
+  return !!value && typeof value === "object" &&
+    RESEARCH_METADATA_KEYS.some((key) => key in value);
+}
 
 export type CheckpointSnapshot = ReadonlyMap<string, string>;
 export type CheckpointPlan =
@@ -118,4 +127,24 @@ export async function planCheckpointDelta(
     }
   }
   return { mode: "delta", nextSnapshot: next, changed: ordered };
+}
+
+/** The returned snapshot is valid only when ALL writes have acknowledged. */
+export async function persistCheckpointMessages(
+  messages: readonly MessageRecord[],
+  previous: CheckpointSnapshot | null,
+  writers: {
+    full: () => Promise<unknown>;
+    message: (record: MessageRecord) => Promise<unknown>;
+  },
+): Promise<CheckpointSnapshot | null> {
+  const plan = await planCheckpointDelta(messages, previous);
+  if (plan.mode === "full") {
+    await writers.full();
+  } else if (plan.mode === "delta") {
+    for (const record of plan.changed) {
+      await writers.message(record);
+    }
+  }
+  return plan.nextSnapshot;
 }
