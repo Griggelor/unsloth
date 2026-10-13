@@ -8,12 +8,14 @@ Windows networking, a real TCP socket or the frontend, and no model is loaded.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 from pathlib import Path
 import sys
 import tempfile
 import time
+from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "studio" / "backend"))
@@ -22,7 +24,16 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from storage import studio_db  # noqa: E402
-from routes import chat_history  # noqa: E402
+
+# The global routes/models package initializers import *all* Studio endpoints
+# and ML/data layers. This test intentionally mounts the real chat-history
+# router alone. Use namespace package wrappers to load its real submodules
+# without unrelated startup imports (and their substantial dependencies).
+for package in ("routes", "models"):
+    stub = ModuleType(package)
+    stub.__path__ = [str(ROOT / "studio" / "backend" / package)]
+    sys.modules[package] = stub
+chat_history = importlib.import_module("routes.chat_history")
 from bench_production_storage import messages_for, synthetic_tokens  # noqa: E402
 
 
