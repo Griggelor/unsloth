@@ -21,7 +21,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: '${{ github.event.pull_request.head.sha }}'
           persist-credentials: false
+      - name: Assert immutable test HEAD
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha }}') { throw 'Checkout SHA does not match PR head' }
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
@@ -51,11 +56,22 @@ jobs:
           if (-not (Test-Path $exe)) { throw "Tauri did not produce $exe" }
           New-Item -ItemType Directory -Force 'qa-windows-exe' | Out-Null
           Copy-Item $exe 'qa-windows-exe/unsloth-studio-QA-UNSIGNED.exe'
-          Get-FileHash 'qa-windows-exe/unsloth-studio-QA-UNSIGNED.exe' -Algorithm SHA256 | Format-List
+          $exeHash = (Get-FileHash 'qa-windows-exe/unsloth-studio-QA-UNSIGNED.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = [ordered]@{
+            build_kind = 'QA_UNSIGNED_EXE_NO_INSTALLER'
+            source_commit = '${{ github.event.pull_request.head.sha }}'
+            source_branch = '${{ github.event.pull_request.head.ref }}'
+            pull_request = '${{ github.event.pull_request.number }}'
+            workflow_run_id = '${{ github.run_id }}'
+            executable_name = 'unsloth-studio-QA-UNSIGNED.exe'
+            executable_sha256 = $exeHash
+          }
+          $manifest | ConvertTo-Json -Depth 3 | Set-Content 'qa-windows-exe/QA_MANIFEST.json' -Encoding utf8
+          Write-Host "QA EXE SHA256: $exeHash"
       - name: Upload unsigned QA EXE
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: agent-history-windows-qa-unsigned-exe
-          path: qa-windows-exe/unsloth-studio-QA-UNSIGNED.exe
+          path: qa-windows-exe/*
           retention-days: 7
           if-no-files-found: error

@@ -25,6 +25,7 @@ on:
       - 'studio/frontend/tests/checkpoint-protected-cache.test.ts'
       - 'studio/frontend/tests/bench-checkpoint-delta.ts'
       - 'docs/performance/context-perf-ci-plan.md'
+      - 'tests/studio/**'  # combined QA harness edits also invalidate context test evidence
       - '.github/workflows/context-perf-experiment.yml'
   workflow_dispatch:
 
@@ -97,7 +98,7 @@ jobs:
           PY
       - name: Upload structured measurements
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: context-perf-baseline-${{ github.sha }}
           path: context-perf-evidence/*.json
@@ -123,7 +124,7 @@ jobs:
           python studio/backend/tests/context_perf/bench_production_storage.py --out context-perf-evidence/production-sqlite.json --tokens 200000 1000000 10000000
       - name: Upload real DB measurements
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: production-sqlite-${{ github.sha }}
           path: context-perf-evidence/production-sqlite.json
@@ -150,7 +151,7 @@ jobs:
           python studio/backend/tests/context_perf/bench_production_http.py --out context-perf-evidence/production-asgi.json --tokens 200000 1000000
       - name: Upload FastAPI/SQLite measurements
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: production-asgi-${{ github.sha }}
           path: context-perf-evidence/production-asgi.json
@@ -180,7 +181,7 @@ jobs:
         run: node --experimental-strip-types studio/frontend/tests/bench-checkpoint-delta.ts --out context-perf-evidence/frontend-delta.json
       - name: Upload frontend delta evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: frontend-delta-${{ github.sha }}
           path: context-perf-evidence/frontend-delta.json

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# QA-only fast regression loop for PR #30; not an alternative release gate.
+# QA-only fast regression loop for PR #30 and combined QA PR #33; not an alternative release gate.
 name: QA Agent History Blocker Loop
 
 on:
@@ -34,7 +34,7 @@ concurrency:
 jobs:
   native-scrollbar:
     name: Linux Chromium real-thumb + dynamic buffer modes
-    if: github.event.pull_request.number == 30 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'qa/agent-history-main-sync-20261012'
+    if: github.event.pull_request.head.repo.full_name == github.repository && ((github.event.pull_request.number == 30 && github.event.pull_request.head.ref == 'qa/agent-history-main-sync-20261012') || (github.event.pull_request.number == 33 && github.event.pull_request.head.ref == 'integration/agent-history-context-perf-20261013'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -105,7 +105,7 @@ jobs:
 
   startup-bundle:
     name: Frontend build + unchanged startup budget
-    if: github.event.pull_request.number == 30 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'qa/agent-history-main-sync-20261012'
+    if: github.event.pull_request.head.repo.full_name == github.repository && ((github.event.pull_request.number == 30 && github.event.pull_request.head.ref == 'qa/agent-history-main-sync-20261012') || (github.event.pull_request.number == 33 && github.event.pull_request.head.ref == 'integration/agent-history-context-perf-20261013'))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -134,7 +134,7 @@ jobs:
 
   windows-chat-auth:
     name: Windows real chat auth/session teardown (no other UI suites)
-    if: github.event.pull_request.number == 30 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'qa/agent-history-main-sync-20261012'
+    if: github.event.pull_request.head.repo.full_name == github.repository && ((github.event.pull_request.number == 30 && github.event.pull_request.head.ref == 'qa/agent-history-main-sync-20261012') || (github.event.pull_request.number == 33 && github.event.pull_request.head.ref == 'integration/agent-history-context-perf-20261013'))
     runs-on: windows-latest
     timeout-minutes: 40
     defaults:
