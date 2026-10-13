@@ -202,6 +202,9 @@ def run(
             try:
                 context = browser.new_context(viewport = {"width": 1440, "height": 960})
                 context.add_init_script(seed_init_script(auth, []))
+                # The page reloads for each numeric history window. Install on
+                # every document, not only on the initial page before reload.
+                context.add_init_script(f"({INSTALL_INPUT_PROBE})();")
                 history_state = {
                     "state": {
                         "enabledThreads": {thread_id: True},
@@ -231,7 +234,6 @@ def run(
                     "() => document.querySelectorAll('[data-agent-history-row]').length === 32",
                     timeout = 60_000,
                 )
-                page.evaluate(INSTALL_INPUT_PROBE)
                 for rows in SIZES:
                     record = condition(page, cdp, rows, cards_per_row, keys)
                     results.append(record)
