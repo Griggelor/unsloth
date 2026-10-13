@@ -104,6 +104,7 @@ def describe_fit(policy, original, context_size: int = 262144):
         "counter_bytes_scanned": counter.scanned_bytes,
         "input_messages": len(original),
         "output_messages": len(fitted),
+        "fitted_sha256": hashlib.sha256(json.dumps(fitted, sort_keys=True, ensure_ascii=False).encode("utf8")).hexdigest(),
         "output_estimated_tokens": approx_tokens(fitted),
         "dropped_messages": (metadata or {}).get("dropped_messages", 0),
         "fits": (metadata or {}).get("fits", True),
@@ -196,6 +197,17 @@ def run(output: Path, quick: bool = False):
             "input_messages": len(messages),
             "fits": [describe_fit(policy, messages) for policy in ("rolling", "checkpoint", "checkpoint_early")],
         }
+        # The experimental optimization is allowed to change HOW we obtain the
+        # overflow witness, not WHICH conversation is presented to the model.
+        # A deterministic hash checks all retained tool/body/role fields.
+        conventional, early = row["fits"][1], row["fits"][2]
+        for key in ("fitted_sha256", "output_messages", "dropped_messages", "fits"):
+            if conventional[key] != early[key]:
+                raise AssertionError(
+                    f"{label}: early context fit changed {key}: "
+                    f"{conventional[key]} vs {early[key]}"
+                )
+        row["exact_fit_parity"] = "verified"
         # Keep one large snapshot experiment (10m), or 1m in quick mode.
         if label == ("1m" if quick else "10m"):
             row["snapshot"] = snapshot_surrogate(messages, run_sqlite=True)
