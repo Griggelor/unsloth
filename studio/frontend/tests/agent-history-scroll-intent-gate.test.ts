@@ -106,3 +106,11 @@ test("streaming tail follows the canonical viewport owner, not a stale gesture c
   assert.match(renderer, /if \(getIsFollowingBottom\(\)\) \{\s*following\.current = true;/);
   assert.match(renderer, /if \(inGutter\) interrupt\(\)/);
 });
+
+
+test("DOM budget rebalance follows viewport tail intent during tool-output streaming", () => {
+  const renderer = readSrc("components/assistant-ui/agent-history-scroll-messages.tsx");
+  assert.match(renderer, /const followingTail = getIsFollowingBottom\(\)/);
+  assert.match(renderer, /followingTail \? countRef\.current - 1 : visibleIndex\.current/);
+  assert.match(renderer, /if \(followingTail\) jump\.current = "bottom"/);
+});

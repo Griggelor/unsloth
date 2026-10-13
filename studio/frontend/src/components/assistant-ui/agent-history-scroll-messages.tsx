@@ -123,7 +123,7 @@ export const AgentHistoryScrollMessages: FC<{
   const range = state.key !== resetKey ? latestWindow()
     : state.domLevel !== domLevel || state.windowRows !== windowRows ||
       state.fixedRowsStrict !== fixedRowsStrict
-      ? following.current ? latestWindow() : visibleWindow()
+      ? followingOnAppend ? latestWindow() : visibleWindow()
       : state.count !== count
         ? budget !== null
           ? followingOnAppend ? latestWindow() : state.range
@@ -265,9 +265,9 @@ export const AgentHistoryScrollMessages: FC<{
     pendingScrollEpoch.current = null;
     if (animation.current !== null) cancelAnimationFrame(animation.current);
     animation.current = null;
-    if (following.current) jumpBottom("auto");
+    if (getIsFollowingBottom()) jumpBottom("auto");
     else navigateViewport(heights.offset(visibleIndex.current));
-  }, [windowRows, domLevel, fixedRowsStrict, range.start, range.end, heights, jumpBottom, navigateViewport]);
+  }, [windowRows, domLevel, fixedRowsStrict, range.start, range.end, heights, jumpBottom, navigateViewport, getIsFollowingBottom]);
 
   // Register a search target only for the opt-in virtualized thread. The normal
   // find engine can keep its existing DOM semantics without mounting the history.
@@ -544,8 +544,9 @@ export const AgentHistoryScrollMessages: FC<{
       budgetFrame.current = null;
       if (staged.current !== null) return;
       const intent = navigation.current;
+      const followingTail = getIsFollowingBottom();
       const target = intent.kind === "search" ? intent.row
-        : following.current ? countRef.current - 1 : visibleIndex.current;
+        : followingTail ? countRef.current - 1 : visibleIndex.current;
       const next = agentBudgetWindow(countRef.current, target, costs, budget, domLevel === "low" ? 5 : 32);
       const viewport = viewportRef.current;
       if (!viewport) return;
@@ -561,11 +562,11 @@ export const AgentHistoryScrollMessages: FC<{
         '[data-agent-history-row="' + target + '"]',
       );
       anchor.current = row ? { index: target, top: row.getBoundingClientRect().top } : null;
-      if (following.current) jump.current = "bottom";
+      if (followingTail) jump.current = "bottom";
       rangeRef.current = next;
       setState(old => ({ ...old, range: next }));
     });
-  }, [budget, costs, viewportRef]);
+  }, [budget, costs, viewportRef, getIsFollowingBottom]);
   // Throttle costly descendant counting but ALWAYS keep one trailing probe:
   // a final resize during the throttle window must not leave an oversized
   // streaming tool result at its old, underestimated cost indefinitely.
