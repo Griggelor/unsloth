@@ -1160,6 +1160,12 @@ export async function saveStoredChatMessage(
   }
   const payload = stableStringify(message);
   if (rejectedChatMessagePayloads.get(message.threadId)?.get(message.id) === payload) {
+    // A previous server-managed 409 is not a durable ACK. Ordinary per-chunk
+    // autosave can suppress a repeated rejected payload; a checkpoint cannot,
+    // or its digest would mark an unsaved server-owned edit as committed.
+    if (options.strictProtected) {
+      throw new ChatMessageProtectedError(message.threadId, message.id);
+    }
     // Refresh: otherwise the message being resent right now is the one aging out.
     rememberRejectedPayload(message.threadId, message.id, payload);
     return message;
