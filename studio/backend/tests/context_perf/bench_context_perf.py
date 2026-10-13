@@ -80,10 +80,18 @@ def describe_fit(policy, original, context_size: int = 262144):
     )
     if policy == "rolling":
         fitted, metadata = rolling.fit_rolling_context(original, **kwargs)
-    elif policy == "checkpoint":
-        fitted, metadata = checkpoint.fit_checkpoint_context(
-            original, can_reset=True, searchable=False, **kwargs
-        )
+    elif policy in ("checkpoint", "checkpoint_early"):
+        prior = os.environ.get("UNSLOTH_CONTEXT_EARLY_PROBE")
+        os.environ["UNSLOTH_CONTEXT_EARLY_PROBE"] = "1" if policy == "checkpoint_early" else "0"
+        try:
+            fitted, metadata = checkpoint.fit_checkpoint_context(
+                original, can_reset=True, searchable=False, **kwargs
+            )
+        finally:
+            if prior is None:
+                os.environ.pop("UNSLOTH_CONTEXT_EARLY_PROBE", None)
+            else:
+                os.environ["UNSLOTH_CONTEXT_EARLY_PROBE"] = prior
     else:
         raise ValueError(policy)
     return {
@@ -99,6 +107,8 @@ def describe_fit(policy, original, context_size: int = 262144):
         "output_estimated_tokens": approx_tokens(fitted),
         "dropped_messages": (metadata or {}).get("dropped_messages", 0),
         "fits": (metadata or {}).get("fits", True),
+        "prefix_exact_probe_used": (metadata or {}).get("prompt_tokens_before_is_prefix_probe", False),
+        "prefix_tokenized_messages": (metadata or {}).get("prefix_tokenized_messages", 0),
     }
 
 
@@ -184,7 +194,7 @@ def run(output: Path, quick: bool = False):
             "actual_estimated_tokens": approx_tokens(messages),
             "characters": sum(len(m["content"]) for m in messages),
             "input_messages": len(messages),
-            "fits": [describe_fit(policy, messages) for policy in ("rolling", "checkpoint")],
+            "fits": [describe_fit(policy, messages) for policy in ("rolling", "checkpoint", "checkpoint_early")],
         }
         # Keep one large snapshot experiment (10m), or 1m in quick mode.
         if label == ("1m" if quick else "10m"):
@@ -211,6 +221,7 @@ def run(output: Path, quick: bool = False):
             "Synthetic hash-scanning counter, not the llama-server count_chat_tokens method.",
             "Python JSON/SQLite snapshot surrogate, not real FastAPI and WebView timing.",
             "Runner wall times are evidence, not stable pass/fail performance budgets.",
+            "Early checkpoint is opt-in and assumes the chosen chat template is approximately prefix-monotonic.",
         ],
     }
     output.parent.mkdir(parents=True, exist_ok=True)
