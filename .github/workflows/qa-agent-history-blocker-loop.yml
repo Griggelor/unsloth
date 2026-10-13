@@ -15,6 +15,14 @@ on:
       - 'studio/frontend/package-lock.json'
       - 'tests/studio/playwright_agent_history_scroll.py'
       - 'tests/studio/playwright_chat_ui.py'
+      # Every local action and apt-lock helper called by this filtered workflow
+      # must retrigger its consumer when changed.
+      - '.github/scripts/retry-with-apt-lock.sh'
+      - '.github/actions/install-unsloth-local/**'
+      - '.github/actions/frontend-dist-restore/**'
+      - '.github/actions/frontend-dist-save/**'
+      - '.github/actions/uv-cache-restore/**'
+      - '.github/actions/uv-cache-save/**'
 
 permissions:
   contents: read
@@ -47,6 +55,7 @@ jobs:
         env:
           RETRY_ATTEMPTS: '2'
           RETRY_ATTEMPT_TIMEOUT: '120'
+          APT_ACQUIRE_RETRIES: '0'
         run: |
           bash .github/scripts/retry-with-apt-lock.sh sudo sh -c \
             'apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev jq || { apt-get update && apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev jq; }'
@@ -60,6 +69,7 @@ jobs:
         env:
           RETRY_ATTEMPTS: '2'
           RETRY_ATTEMPT_TIMEOUT: '120'
+          APT_ACQUIRE_RETRIES: '0'
         run: |
           python -m pip install 'playwright>=1.45,<2'
           bash .github/scripts/retry-with-apt-lock.sh python -m playwright install chromium
@@ -168,17 +178,38 @@ jobs:
           bash .github/scripts/hf-download-with-retry.sh "$GGUF_REPO" "$GGUF_FILE"
           bash .github/scripts/hf-download-with-retry.sh ggml-org/models tinyllamas/stories260K.gguf
       - uses: ./.github/actions/uv-cache-restore
+        id: uv-cache
       - uses: ./.github/actions/frontend-dist-restore
+        id: fe-dist
       - name: Install disposable Windows Studio with supported installer
         shell: pwsh
         env:
           GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
-          HF_TOKEN: ''
         run: |
           New-Item -ItemType Directory -Force -Path logs | Out-Null
           $child = '$ErrorActionPreference = ''Stop''; $ProgressPreference = ''SilentlyContinue''; & ./install.ps1 --local --no-torch; exit $LASTEXITCODE'
-          pwsh -NoProfile -ExecutionPolicy Bypass -Command $child 2>&1 | Tee-Object -FilePath logs/qa-windows-install.log
+          # The saved installer log keeps its original text for cache reuse
+          # assertions; only step output is prefixed with elapsed seconds.
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          pwsh -NoProfile -ExecutionPolicy Bypass -Command $child 2>&1 |
+            Tee-Object -FilePath logs/qa-windows-install.log |
+            ForEach-Object { '[{0,4:N0}s] {1}' -f $sw.Elapsed.TotalSeconds, $_ }
           if ($LASTEXITCODE -ne 0) { throw "Windows installer exited with $LASTEXITCODE" }
+      # Pull-request consumer only: validate exact restored frontend reuse,
+      # never upload PR-scoped cache entries that could evict main's cache.
+      - name: Validate frontend cache reuse (read-only)
+        uses: ./.github/actions/frontend-dist-save
+        with:
+          cache-hit: '${{ steps.fe-dist.outputs.cache-hit }}'
+          key: '${{ steps.fe-dist.outputs.key }}'
+          install-log: logs/qa-windows-install.log
+          save: 'false'
+      - name: Keep uv download cache read-only
+        uses: ./.github/actions/uv-cache-save
+        with:
+          cache-hit: '${{ steps.uv-cache.outputs.cache-hit }}'
+          key: '${{ steps.uv-cache.outputs.key }}'
+          save: 'false'
       - name: Use installed shim and Playwright
         run: |
           SHIM_DIR=~/.unsloth/studio/bin
