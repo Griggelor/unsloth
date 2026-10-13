@@ -82,6 +82,7 @@ on:
       - '.github/scripts/retry-with-apt-lock.sh'
       # Both Core jobs `uses:` this action, so a change to it must run them.
       - '.github/actions/core-cpu-setup/**'
+      - '.github/patches/unsloth-zoo-checkpointing-tests.patch'
       # Both Core jobs `uses:` this action, so a change to it must run them.
   push:
     branches: [main]
@@ -117,6 +118,7 @@ on:
       - '.github/scripts/retry-with-apt-lock.sh'
       # Both Core jobs `uses:` this action, so a change to it must run them.
       - '.github/actions/core-cpu-setup/**'
+      - '.github/patches/unsloth-zoo-checkpointing-tests.patch'
       # Both Core jobs `uses:` this action, so a change to it must run them.
   workflow_dispatch:
     inputs:
@@ -2388,6 +2390,25 @@ jobs:
           transformers-spec: ${{ matrix.combo.transformers_spec }}
           trl-spec: ${{ matrix.combo.trl_spec }}
           unsloth-zoo-ref: ${{ env.UNSLOTH_ZOO_REF }}
+
+      - name: Verify & correct pinned upstream Zoo checkpointing test assumptions
+        # ONLY an external test file changes. The upstream SHA and source blob are
+        # fail-closed inputs. No xfail/skip, no runtime or package source patches.
+        # Remove this step when upstream fixes its own fixture assumptions.
+        shell: bash
+        run: |
+          set -euxo pipefail
+          zoo="$RUNNER_TEMP/unsloth-zoo"
+          test "$(git -C "$zoo" rev-parse HEAD)" = "$UNSLOTH_ZOO_REF"
+          test -z "$(git -C "$zoo" status --porcelain --untracked-files=no)"
+          # Verified upstream blob: tests/test_block_checkpointing.py at zoo
+          # 899813281db437c3496b6f77252fc5ec6d454907.
+          test "$(git -C "$zoo" hash-object tests/test_block_checkpointing.py)" = "addf5702f55e0cc0bf56fe34d3ec1018331cfa04"
+          git -C "$zoo" apply --check "$GITHUB_WORKSPACE/.github/patches/unsloth-zoo-checkpointing-tests.patch"
+          git -C "$zoo" apply "$GITHUB_WORKSPACE/.github/patches/unsloth-zoo-checkpointing-tests.patch"
+          git -C "$zoo" diff --check
+          test "$(git -C "$zoo" diff --name-only)" = "tests/test_block_checkpointing.py"
+          git -C "$zoo" diff -- tests/test_block_checkpointing.py
 
       - name: unsloth_zoo @ ${{ env.UNSLOTH_ZOO_REF }} — full pytest (CPU)
         # 106 of 111 test_* in unsloth_zoo are CPU-only. The two CUDA-skip

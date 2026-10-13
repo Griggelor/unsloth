@@ -379,3 +379,25 @@ def test_llama_smoke_accepts_the_same_pinned_zoo_sha_as_core() -> None:
     assert 'fetch -q --depth=1 origin "$UNSLOTH_ZOO_REF"' in script
     assert 'git -C "$RUNNER_TEMP/unsloth-zoo" checkout -q FETCH_HEAD' in script
     assert "git clone --depth=1 --branch=" not in script
+
+
+def test_zoo_checkpointing_compatibility_patch_is_strictly_test_only() -> None:
+    """Upstream fixture correction stays fail-closed and is never a deselection."""
+    steps = _job("consolidated-zoo")["steps"]
+    matches = [step for step in steps if step.get("name", "").startswith("Verify & correct pinned upstream Zoo")]
+    assert len(matches) == 1
+    run = matches[0]["run"]
+    assert 'rev-parse HEAD)" = "$UNSLOTH_ZOO_REF"' in run
+    assert 'hash-object tests/test_block_checkpointing.py)' in run
+    assert "addf5702f55e0cc0bf56fe34d3ec1018331cfa04" in run
+    assert "git -C \"$zoo\" apply --check" in run
+    assert 'diff --name-only)" = "tests/test_block_checkpointing.py"' in run
+    patch = (
+        WORKFLOW.parents[1] / "patches" / "unsloth-zoo-checkpointing-tests.patch"
+    ).read_text(encoding = "utf-8")
+    assert patch.count("diff --git ") == 1
+    assert "a/tests/test_block_checkpointing.py b/tests/test_block_checkpointing.py" in patch
+    assert "monkeypatch.delattr(torch.utils.checkpoint" in patch
+    assert '@pytest.mark.parametrize("peft_enabled", [False, True])' in patch
+    assert "--deselect tests/test_block_checkpointing.py" not in WORKFLOW.read_text(encoding = "utf-8")
+
