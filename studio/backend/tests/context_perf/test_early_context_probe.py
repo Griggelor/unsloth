@@ -140,7 +140,10 @@ class ExperimentalBoundedPrefix(unittest.TestCase):
         calls = []
         def broken_then_full(rows):
             calls.append(len(rows))
-            if len(rows) < len(messages):
+            # A PREFIX ending on an older turn may be invalid for a model
+            # template. The separately selected new active prompt remains
+            # valid and still must get an exact count.
+            if len(rows) < len(messages) and rows[-1] is not messages[-1]:
                 raise ValueError("prefix not valid for this chat template")
             return sum(len(m.get("content", "")) // 4 for m in rows)
         fit(messages, broken_then_full, enabled=True)
