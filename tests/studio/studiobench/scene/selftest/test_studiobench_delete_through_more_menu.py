@@ -237,9 +237,8 @@ def test_every_control_the_scene_asks_for_is_still_rendered():
     message's action bar renders in thread.tsx."""
     tsx = _assistant_bar_source(THREAD_TSX.read_text(encoding = "utf-8"))
     buttons, items = _names_the_scene_asks_for()
-    assert (
-        {"More", "Copy", "Delete"} <= buttons
-    ), "parsed fewer control names than the scene uses; this check would pass on nothing"
+    expected_buttons = {"More", "Copy", "Delete"}
+    assert expected_buttons <= buttons, "scene control parser found too few buttons"
     tooltips = set(re.findall(r"tooltip=\"([^\"]+)\"", tsx))
     # An item's label is its last line of text before the closing tag. Its attributes can hold
     # arrow functions, so the opening tag cannot be skipped with a `[^>]*` match.
