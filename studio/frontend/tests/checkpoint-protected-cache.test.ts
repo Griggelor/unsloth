@@ -61,6 +61,12 @@ function harness() {
           write<T>(_threadId: string, run: () => Promise<T>): Promise<T> {
             return run();
           }
+          settleCurrent(_threadId: string): Promise<void> {
+            return Promise.resolve();
+          }
+          hasPending(_threadId: string): boolean {
+            return false;
+          }
         },
       },
       "../stores/fork-boundary-store": { setForkBoundary: () => {} },
