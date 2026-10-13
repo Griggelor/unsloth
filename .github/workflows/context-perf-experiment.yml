@@ -19,6 +19,7 @@ on:
       - 'studio/frontend/src/features/chat/utils/checkpoint-delta.ts'
       - 'studio/frontend/src/features/chat/utils/delete-thread-message.ts'
       - 'studio/frontend/tests/checkpoint-delta.test.ts'
+      - 'studio/frontend/tests/bench-checkpoint-delta.ts'
       - 'docs/performance/context-perf-ci-plan.md'
       - '.github/workflows/context-perf-experiment.yml'
   workflow_dispatch:
@@ -165,6 +166,16 @@ jobs:
           node-version: '24'
       - name: Run real delta planner, edit, retry and large-history tests
         run: node --experimental-strip-types --test studio/frontend/tests/checkpoint-delta.test.ts
+      - name: Measure 200k/1m/10m synthetic checkpoint payloads and digest overhead
+        run: node --experimental-strip-types studio/frontend/tests/bench-checkpoint-delta.ts --out context-perf-evidence/frontend-delta.json
+      - name: Upload frontend delta evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-delta-${{ github.sha }}
+          path: context-perf-evidence/frontend-delta.json
+          if-no-files-found: warn
+          retention-days: 30
 
   frontend-delta-typecheck:
     name: Incremental checkpoint frontend typecheck
