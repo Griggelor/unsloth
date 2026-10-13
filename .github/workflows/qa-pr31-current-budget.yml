@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Independent read-only build check of exactly the current PR30 DRAFT HEAD.
+name: QA PR31 Current Startup Budget
+
+on:
+  push:
+    branches: ['qa/agent-history-pr31-fast-gates']
+    paths:
+      - '.github/workflows/qa-pr31-current-budget.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  startup:
+    name: PR30 actual typecheck, build and bounded startup bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Resolve DRAFT PR30 HEAD
+        id: target
+        env:
+          GH_TOKEN: '${{ github.token }}'
+        run: |
+          set -euo pipefail
+          META="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/30" --jq '[.head.sha, .head.ref, .head.repo.full_name, .state, (.draft|tostring)] | join("|")')"
+          IFS='|' read -r SHA BRANCH REPO STATE DRAFT <<< "$META"
+          test "$REPO" = "$GITHUB_REPOSITORY"
+          test "$BRANCH" = "qa/agent-history-main-sync-20261012"
+          test "$STATE" = "open"
+          test "$DRAFT" = "true"
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]]
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Exact PR30 source: $SHA" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '${{ steps.target.outputs.sha }}'
+          persist-credentials: false
+      - name: Assert source identity
+        run: test "$(git rev-parse HEAD)" = "${{ steps.target.outputs.sha }}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Install exact frontend dependencies
+        run: |
+          set -euo pipefail
+          npm install -g npm@^11 --no-fund --no-audit
+          python3 scripts/lockfile_supply_chain_audit.py
+          cd studio/frontend
+          npm ci --strict-allow-scripts --no-fund --no-audit
+      - name: Typecheck, build and verify unchanged gate with measured rebaseline
+        working-directory: studio/frontend
+        run: |
+          set -euo pipefail
+          npm run typecheck
+          npm run build
+          npm run bundle:check
+          echo "Exact PR30 ${{ steps.target.outputs.sha }}: typecheck/build/budget PASS" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# PR31: tiny, independently re-runnable contract gate. No PR30 writes.
+name: QA PR31 Fast Contracts
+on:
+  push:
+    branches: ['qa/agent-history-pr31-fast-gates']
+    paths: ['.github/workflows/qa-pr31-fast-contracts.yml']
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  contracts:
+    name: Fast policy/scroll intent/DOM and lazy import regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - name: Resolve exact current PR30 SHA
+        id: target
+        shell: bash
+        env:
+          GH_TOKEN: '${{ github.token }}'
+        run: |
+          set -euo pipefail
+          META="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/30" --jq '[.head.sha, .head.ref, .head.repo.full_name, .state, (.draft|tostring)] | join("|")')"
+          IFS='|' read -r SHA BRANCH REPO STATE DRAFT <<< "$META"
+          test "$REPO" = "$GITHUB_REPOSITORY"
+          test "$BRANCH" = "qa/agent-history-main-sync-20261012"
+          test "$STATE" = "open"
+          test "$DRAFT" = "true"
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]]
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "PR30 target exact SHA: $SHA" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '${{ steps.target.outputs.sha }}'
+          persist-credentials: false
+      - name: Assert exact PR30 checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ steps.target.outputs.sha }}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Targeted pure regression contracts
+        working-directory: studio/frontend
+        run: |
+          node --experimental-strip-types --test \
+            tests/agent-history-navigation.test.ts \
+            tests/agent-history-scroll-intent-gate.test.ts \
+            tests/agent-history-dom-budget.test.ts \
+            tests/agent-history-dom-preference.test.ts \
+            tests/agent-history-scroll-window.test.ts \
+            tests/agent-history-search.test.ts \
+            tests/agent-history-preference-policy.test.ts \
+            tests/agent-history-lazy-tool-bundle.test.ts
+      - name: Pinned Ruff 0.6.9 browser fixture format
+        run: |
+          python -m pip install 'ruff==0.6.9'
+          python scripts/run_ruff_format.py tests/studio/playwright_agent_history_scroll.py
+          git diff --exit-code -- tests/studio/playwright_agent_history_scroll.py
