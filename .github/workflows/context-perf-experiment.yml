@@ -94,3 +94,56 @@ jobs:
           path: context-perf-evidence/*.json
           if-no-files-found: warn
           retention-days: 30
+
+  production-sqlite:
+    name: Production SQLite 200k/1m/10m
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install smallest production storage import dependency
+        run: python -m pip install 'structlog>=24.1.0'
+      - name: Run real production SQLite sync / readback / counts
+        run: |
+          mkdir -p context-perf-evidence
+          python studio/backend/tests/context_perf/bench_production_storage.py --out context-perf-evidence/production-sqlite.json --tokens 200000 1000000 10000000
+      - name: Upload real DB measurements
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-sqlite-${{ github.sha }}
+          path: context-perf-evidence/production-sqlite.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  production-asgi:
+    name: Production FastAPI/SQLite 200k/1m (in-process ASGI)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install HTTP endpoint import and runtime dependencies (CPU-only)
+        run: |
+          python -m pip install 'fastapi==0.141.1' 'pydantic==2.13.4' 'httpx>=0.27' structlog python-multipart pyjwt sqlalchemy cryptography psutil pyyaml packaging requests jinja2 aiofiles
+      - name: Run real FastAPI route + SQLite integration characterization
+        run: |
+          mkdir -p context-perf-evidence
+          python studio/backend/tests/context_perf/bench_production_http.py --out context-perf-evidence/production-asgi.json --tokens 200000 1000000
+      - name: Upload FastAPI/SQLite measurements
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-asgi-${{ github.sha }}
+          path: context-perf-evidence/production-asgi.json
+          if-no-files-found: warn
+          retention-days: 30
