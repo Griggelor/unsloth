@@ -8,6 +8,7 @@ dependencies. This is a targeted deterministic test, not a Windows replay.
 from __future__ import annotations
 
 import ast
+import random
 from pathlib import Path
 import unittest
 
@@ -92,6 +93,30 @@ class ArchiveOccurrenceScaling(unittest.TestCase):
         for group in groups:
             self.assertEqual(
                 occurrences(positions, group, position_index = index),
+                occurrences(positions, group),
+            )
+
+    def test_randomized_equivalence_for_mixed_and_partial_turns(self):
+        occurrences, index_positions = matcher_functions()
+        rng = random.Random(20261013)
+        vocab = ["", "same", "hello", "tool arg", "function args extra", "other", "x"]
+        for _ in range(500):
+            positions = [
+                [rng.choice(vocab) for _ in range(rng.randint(1, 5))]
+                for _ in range(rng.randint(1, 15))
+            ]
+            # Keep legitimate partial final messages in the random population.
+            if rng.random() < 0.25:
+                positions[-1] = positions[-1][:1]
+            group = [
+                {
+                    "content": rng.choice(vocab),
+                    **({"tool_calls": [{"id": "tool-1"}]} if rng.random() < 0.35 else {}),
+                }
+                for _ in range(rng.randint(1, 5))
+            ]
+            self.assertEqual(
+                occurrences(positions, group, position_index = index_positions(positions)),
                 occurrences(positions, group),
             )
 
