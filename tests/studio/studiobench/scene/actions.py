@@ -709,11 +709,9 @@ OWN_TURN_TEXT = "one more"
 
 #: Remove the throwaway turn: assistant first, then the user turn, because deleting the user
 #: message can take the reply with it and leave the count ambiguous. Reports rather than asserts.
-#: The cleanup reaches Delete through the reply's More menu (#12735), so it first waits for that
-#: menu to mount. A paint or two in practice; the bound matters only when the menu is slow or never
-#: comes. `stop_generation` passes what is left of its slot after the settle, clamped to these, so a
-#: slow menu cannot carry the turn into the next action's window. The floor is a few paints, so a
-#: slot already spent still tries once rather than leaving the turn in the thread.
+#: Allow a brief wait for the inline Delete control to mount after a run.
+#: The old menu-specific constant names remain stable for existing callers.
+#: A slow or absent action bar must not carry a throwaway turn into the next slot.
 CLEANUP_MENU_MAX_MS = 1000
 CLEANUP_MENU_MIN_MS = 100
 #: What the slot still owes after the menu opens: the 200 ms settle and the delete itself.
@@ -730,15 +728,9 @@ async (opts) => {
     const target = D.lastAssistantMessage();
     if (!target) return false;
     target.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
-    // Delete is the More menu's last item since #12735; see DELETE_JS.
-    const trigger = D.actionButton("More");
-    if (!trigger) return false;
-    const button = (await D.openMenuAndFind(trigger, "Delete", opts.menuWaitMs)).item;
-    if (!button) {
-      document.dispatchEvent(new KeyboardEvent("keydown",
-        { key: "Escape", bubbles: true, cancelable: true }));
-      return false;
-    }
+    // Current upstream exposes Delete directly on the assistant action bar.
+    const button = (await D.waitForActionButton("Delete", opts.menuWaitMs)).el;
+    if (!button) return false;
     const started = performance.now();
     button.click();
     while (performance.now() - started < timeoutMs) {
@@ -2382,39 +2374,23 @@ async (opts) => {
   // action still reported NOT RUN on the first sample rather than waiting for the running message
   // to stop running. Same wait, same bound and same reporting as `message_menu`.
   //
-  // Delete is the last item of the reply's More menu since #12735, not a button on the bar, so
-  // the wait is for the More trigger and the menu is opened BEFORE the clock starts: what this
-  // action times is the delete, and `message_menu` already times the menu.
-  const found = await D.waitForActionButton("More", opts.waitForButtonMs);
+  // The current app exposes Delete as an inline button, not a More-menu item.
+  // Wait before starting the measured deletion, so slow action-bar mounting
+  // remains visible in waitedMs but does not inflate delete_ms.
+  const found = await D.waitForActionButton("Delete", opts.waitForButtonMs);
   const waitedMs = found.waitedMs;
   if (!found.el) {
     return {
-      ran: false,
-      waitedMs,
-      running: found.running,
-      reason:
-        "no More button after waiting " + waitedMs + "ms" +
-        (found.running ? ": the thread was still generating, which unmounts the action bar" : ""),
+      ran: false, waitedMs, running: found.running,
+      reason: "no Delete button after waiting " + waitedMs + "ms" +
+        (found.running ? ": thread still generating" : ""),
     };
   }
-  const menu = await D.openMenuAndFind(found.el, "Delete", opts.waitForButtonMs);
-  const button = menu.item;
-  if (!button) {
-    document.dispatchEvent(new KeyboardEvent("keydown",
-      { key: "Escape", bubbles: true, cancelable: true }));
-    return {
-      ran: false,
-      waitedMs,
-      reason:
-        "no Delete item in the More menu (opened=" + menu.opened + ", items=" + menu.items +
-        ", after " + menu.openMs + "ms)",
-    };
-  }
+  const button = found.el;
   const target = D.lastAssistantMessage();
   const before = D.threadTotal();
   const mountedBefore = D.messageCount();
   const started = performance.now();
-  // A Radix menu item selects on click, unlike its trigger.
   button.click();
   let ms = null;
   // isConnected on the captured node is O(1). Re-counting [data-role] every frame would put an
@@ -2434,7 +2410,7 @@ async (opts) => {
   // alongside rather than replacing it: on a windowed mount `messageCount()` is the size of the
   // window and a recycled node would read as a delete. `waitedMs` is how long the bar was waited
   // for, which the row reports so a slot that opened too early is visible.
-  return { ran: true, waitedMs, menuOpenMs: menu.openMs,
+  return { ran: true, waitedMs, menuOpenMs: null,
            ms: ms === null ? null : Math.round(ms * 10) / 10,
            before, after: D.threadTotal(),
            mountedBefore, mountedAfter: D.messageCount() };

@@ -2534,10 +2534,12 @@ jobs:
     # builds the LLAMA_CPP_TARGETS list; the result is independent of the
     # HF stack version. Run once, gate the PR.
     name: llama.cpp build + smoke
+    # Depend on the same resolved revision as all Core matrix jobs.
+    needs: resolve-zoo-ref
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      UNSLOTH_ZOO_REF: ${{ inputs.unsloth_zoo_ref || 'main' }}
+      UNSLOTH_ZOO_REF: ${{ needs.resolve-zoo-ref.outputs.sha }}
       # Same env contract the matrix cells use: protobuf python parser
       # (transformers' bundled *_pb2.py needs it), studio on PYTHONPATH,
       # compile-disable + UNSLOTH_IS_PRESENT so unsloth_zoo's __init__
@@ -2603,9 +2605,11 @@ jobs:
           # single upstream blip does not fail CI.
           for attempt in 1 2 3; do
             rm -rf "$RUNNER_TEMP/unsloth-zoo"
-            if git clone --depth=1 --branch="$UNSLOTH_ZOO_REF" \
-                https://github.com/unslothai/unsloth-zoo \
-                "$RUNNER_TEMP/unsloth-zoo"; then
+            if git init -q "$RUNNER_TEMP/unsloth-zoo" \
+                && git -C "$RUNNER_TEMP/unsloth-zoo" remote add origin \
+                  https://github.com/unslothai/unsloth-zoo \
+                && git -C "$RUNNER_TEMP/unsloth-zoo" fetch -q --depth=1 origin "$UNSLOTH_ZOO_REF" \
+                && git -C "$RUNNER_TEMP/unsloth-zoo" checkout -q FETCH_HEAD; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then
