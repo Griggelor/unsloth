@@ -384,7 +384,10 @@ def test_llama_smoke_accepts_the_same_pinned_zoo_sha_as_core() -> None:
 def test_zoo_checkpointing_compatibility_patch_is_strictly_test_only() -> None:
     """Upstream fixture correction stays fail-closed and is never a deselection."""
     steps = _job("consolidated-zoo")["steps"]
-    matches = [step for step in steps if step.get("name", "").startswith("Verify & correct pinned upstream Zoo")]
+    matches = []
+    for step in steps:
+        if step.get("name", "").startswith("Verify & correct pinned upstream Zoo"):
+            matches.append(step)
     assert len(matches) == 1
     run = matches[0]["run"]
     assert 'rev-parse HEAD)" = "$UNSLOTH_ZOO_REF"' in run
@@ -399,5 +402,6 @@ def test_zoo_checkpointing_compatibility_patch_is_strictly_test_only() -> None:
     assert "a/tests/test_block_checkpointing.py b/tests/test_block_checkpointing.py" in patch
     assert "monkeypatch.delattr(torch.utils.checkpoint" in patch
     assert '@pytest.mark.parametrize("peft_enabled", [False, True])' in patch
-    assert "--deselect tests/test_block_checkpointing.py" not in WORKFLOW.read_text(encoding = "utf-8")
+    source = WORKFLOW.read_text(encoding = "utf-8")
+    assert "--deselect tests/test_block_checkpointing.py" not in source
 
