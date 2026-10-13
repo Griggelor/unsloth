@@ -133,15 +133,16 @@ test("memory budget never allows an incomplete snapshot to count as saved", () =
   assert.equal(planCheckpointDelta("t1", rows, r.next).kind, "full");
 });
 
-test("10-million synthetic estimated tokens do not need a second wire snapshot", () => {
-  const rows = [record("u1", null, "x".repeat(10_000_000 * 4))];
-  const original = baseline(rows);
-  const next = [record("u1", null, "x".repeat(10_000_000 * 4 - 1) + "y")];
-  const r = planCheckpointDelta("t1", next, original);
-  assert.equal(r.kind, "single");
-  assert.equal(r.message.id, "u1");
-  // Both in-memory signatures are bounded; the chosen wire payload is only
-  // the changed message, so do not claim this case proves a *small* request.
-  // Real checkpoint benchmarks must use one short changing assistant record.
-  assert.ok(r.next.estimatedRetainedBytes < 128 * 1024 * 1024);
+test("10-million historic estimated tokens and one changed small assistant update", () => {
+  const old = [
+    record("history", null, "x".repeat(10_000_000 * 4)),
+    record("latest", "history", "Working"),
+  ];
+  const previous = baseline(old);
+  const now = [old[0], record("latest", "history", "Working, part 2")];
+  const plan = planCheckpointDelta("t1", now, previous);
+  assert.equal(plan.kind, "single");
+  assert.equal(plan.message.id, "latest");
+  assert.ok(JSON.stringify(plan.message).length < 500);
+  assert.ok(plan.next.estimatedRetainedBytes < 128 * 1024 * 1024);
 });
