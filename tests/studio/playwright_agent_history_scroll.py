@@ -432,10 +432,14 @@ def check_chat_header_menu(page, messages: int) -> None:
         return
 
     def choose(level: str) -> None:
-        # Radix may keep the parent menu open after choosing a nested radio
-        # item. Clicking its trigger unconditionally would CLOSE that menu.
+        # A deterministic fresh keyboard gesture avoids toggling the trigger
+        # while Radix is still processing the previous radio selection.
+        if trigger.get_attribute("aria-expanded") == "true":
+            page.keyboard.press("Escape")
+        trigger.focus()
+        trigger.press("Enter")
         if trigger.get_attribute("aria-expanded") != "true":
-            trigger.click()
+            raise AssertionError(f"Chat header menu failed to open for {level}")
         submenu = page.locator('[data-test-id="agent-dom-level-trigger"]')
         try:
             submenu.wait_for(state = "visible", timeout = 30_000)
@@ -477,8 +481,9 @@ def check_chat_header_menu(page, messages: int) -> None:
         )
         census(page, messages, f"dom-budget-{level}")
 
-        if level.startswith("dynamic-"):
-            check_dynamic_thumb_under_heavy_dom(page, level)
+        # The 15k-descendant native-scrollbar drag is covered by
+        # check_isolated_dynamic_thumb_modes in a separate real-browser job.
+        # Keep this test focused on all menu modes and transcript behavior.
 
     choose("off")
     page.wait_for_function(
