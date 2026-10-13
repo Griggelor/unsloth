@@ -578,7 +578,20 @@ def fit_checkpoint_context(
             dropped = replayed
 
     projected, block = _project(fitted)
-    current_tokens = count_tokens(projected)
+    # Without a replayed eviction or a carried block, _project commonly makes
+    # only a new list and a byte-identical copy of the system dict. Its exact
+    # rendered prompt is then the one just counted as initial_tokens. Counting
+    # it AGAIN can send a second entire 10M-token conversation through
+    # llama-server before the reset even begins. Compare content equality, not
+    # just object identity: _without_block deliberately copies the system row.
+    #
+    # If the system text was changed (e.g. whitespace stripped or an existing
+    # block removed), the equality fails and the real tokenizer still runs.
+    # No heuristic token estimate can declare a prompt to fit.
+    if dropped == 0 and not block and projected == messages:
+        current_tokens = initial_tokens
+    else:
+        current_tokens = count_tokens(projected)
     # What `current_tokens` prices, tracked separately because `projected` is rebound below on a path that does not
     # re-count. The refusal reports the pair together.
     measured = projected
