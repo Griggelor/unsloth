@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Exact PR32 commit, synthetic chat fixture only. No release/merge.
+name: QA PR32 Browser Regression
+on:
+  push:
+    branches: ['qa/agent-history-live-tail-modes-20261013']
+    paths: ['.github/workflows/qa-pr32-browser.yml']
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  browser-regressions:
+    name: Linux Chromium tail, menu and native thumb
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Assert exact QA branch checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Minimal Linux dependencies
+        timeout-minutes: 7
+        env:
+          RETRY_ATTEMPTS: '2'
+          RETRY_ATTEMPT_TIMEOUT: '120'
+        run: |
+          bash .github/scripts/retry-with-apt-lock.sh sudo sh -c \
+            'apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev jq || { apt-get update && apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev jq; }'
+      - name: Install local Studio without model
+        uses: ./.github/actions/install-unsloth-local
+        with:
+          gh-token: '${{ secrets.GITHUB_TOKEN }}'
+          hf-token: ''
+      - name: Chromium + Playwright
+        timeout-minutes: 7
+        env:
+          RETRY_ATTEMPTS: '2'
+          RETRY_ATTEMPT_TIMEOUT: '120'
+          APT_ACQUIRE_RETRIES: '0'
+        run: |
+          python -m pip install 'playwright>=1.45,<2'
+          bash .github/scripts/retry-with-apt-lock.sh python -m playwright install chromium
+          if ! python -c 'from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()'; then
+            bash .github/scripts/retry-with-apt-lock.sh python -m playwright install-deps chromium
+            python -c 'from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()'
+          fi
+      - name: Boot disposable Studio and mask password
+        run: |
+          bash .github/scripts/boot-studio-api-only.sh --port 18899 \
+            --log logs/qa-critical-scrollbar-server.log --pid-var QA_SCROLL_PID
+          bash .github/scripts/wait-for-health.sh --port 18899 \
+            --log logs/qa-critical-scrollbar-server.log --tmp /tmp/qa-scroll-health.json
+          PW="$(cat ~/.unsloth/studio/auth/.bootstrap_password)"
+          echo "::add-mask::$PW"
+          echo "QA_SCROLL_PW=$PW" >> "$GITHUB_ENV"
+      - name: Real modal menu, legacy windows, streaming tail, and native thumb
+        timeout-minutes: 22
+        run: |
+          python tests/studio/playwright_agent_history_scroll.py \
+            --url http://127.0.0.1:18899 --username unsloth \
+            --password "$QA_SCROLL_PW" --messages 400
+          python tests/studio/playwright_agent_history_scroll.py \
+            --url http://127.0.0.1:18899 --username unsloth \
+            --password "$QA_SCROLL_PW" --messages 400 --critical-scrollbar-only
+      - name: Retain failure evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qa-critical-native-scrollbar
+          path: |
+            logs/qa-critical-scrollbar-server.log
+            logs/agent-history/
+          if-no-files-found: warn
+          retention-days: 7
+
