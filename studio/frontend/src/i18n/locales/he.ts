@@ -2566,6 +2566,8 @@ export const he = {
       },
     },
     chat: {
+      agentHistoryBufferDynamic: "דינמי",
+      agentHistoryBufferFixed: "קבוע",
       agentHistoryBufferDynamicLow: "מאגר דינמי נמוך (עד 5 הודעות)",
       agentHistoryBufferDynamicHigh: "מאגר דינמי גבוה (עד 32 הודעות)",
       agentHistoryBufferFixedLow: "מאגר קבוע נמוך (5 הודעות)",

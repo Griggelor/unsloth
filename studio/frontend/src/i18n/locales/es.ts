@@ -2501,6 +2501,8 @@ export const es = {
       },
     },
     chat: {
+      agentHistoryBufferDynamic: "Dinámico",
+      agentHistoryBufferFixed: "Fijo",
       agentHistoryBufferDynamicLow: "Búfer dinámico bajo (máx. 5 mensajes)",
       agentHistoryBufferDynamicHigh: "Búfer dinámico alto (máx. 32 mensajes)",
       agentHistoryBufferFixedLow: "Búfer fijo bajo (5 mensajes)",

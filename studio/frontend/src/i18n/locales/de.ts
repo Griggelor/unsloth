@@ -2510,6 +2510,8 @@ export const de = {
       },
     },
     chat: {
+      agentHistoryBufferDynamic: "Dynamisch",
+      agentHistoryBufferFixed: "Fix",
       agentHistoryBufferDynamicLow: "Dynamisch Low (max. 5)",
       agentHistoryBufferDynamicHigh: "Dynamisch High (max. 32)",
       agentHistoryBufferFixedLow: "Fix Low (5)",
@@ -2521,7 +2523,7 @@ export const de = {
       agentHistoryInherit: "Global übernehmen",
       agentHistoryLegacy: "Bisherige Einstellung",
       agentHistoryGlobal: "Chatverlauf virtualisieren",
-      agentHistoryGlobalDescription: "Dynamisch begrenzt DOM-Elemente (Low 5.000 / High 12.000) und Nachrichten (max. 5 / 32). Fix begrenzt nur die Nachrichtenzahl. Der gesamte Verlauf bleibt erhalten.",
+      agentHistoryGlobalDescription: "Dynamisch passt das Nachrichtenfenster an die DOM-Komplexität an. Fix zeigt 32 Nachrichten. Aus deaktiviert die Virtualisierung. Der gesamte Verlauf bleibt erhalten.",
       agentHistoryRows: "Sichtbare Nachrichten pro Chat",
       agentHistoryRowsDescription: "Standardgröße des virtuellen Fensters (5 empfohlen). Individuelle Chat-Einstellungen haben Vorrang.",
       groups: {

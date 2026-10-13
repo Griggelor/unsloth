@@ -2478,6 +2478,8 @@ export const hi = {
       },
     },
     chat: {
+      agentHistoryBufferDynamic: "डायनैमिक",
+      agentHistoryBufferFixed: "फ़िक्स्ड",
       agentHistoryBufferDynamicLow: "डायनैमिक बफ़र Low (अधिकतम 5 संदेश)",
       agentHistoryBufferDynamicHigh: "डायनैमिक बफ़र High (अधिकतम 32 संदेश)",
       agentHistoryBufferFixedLow: "फ़िक्स्ड बफ़र Low (5 संदेश)",

@@ -2507,6 +2507,8 @@ export const fr = {
       },
     },
     chat: {
+      agentHistoryBufferDynamic: "Dynamique",
+      agentHistoryBufferFixed: "Fixe",
       agentHistoryBufferDynamicLow: "Tampon dynamique bas (5 messages max.)",
       agentHistoryBufferDynamicHigh: "Tampon dynamique haut (32 messages max.)",
       agentHistoryBufferFixedLow: "Tampon fixe bas (5 messages)",
