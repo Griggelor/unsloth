@@ -147,7 +147,10 @@ class ExperimentalBoundedPrefix(unittest.TestCase):
                 raise ValueError("prefix not valid for this chat template")
             return sum(len(m.get("content", "")) // 4 for m in rows)
         fit(messages, broken_then_full, enabled=True)
-        self.assertEqual(calls[-1], len(messages))
+        # After falling back to the full count, the production fitter is
+        # still required to count the *reduced active prompt* exactly.
+        self.assertIn(len(messages), calls)
+        self.assertEqual(calls[-1], 2)
 
     def test_incomplete_tool_batch_disqualifies_probe(self):
         messages = long_chat()
