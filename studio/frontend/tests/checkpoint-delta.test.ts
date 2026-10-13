@@ -2,6 +2,7 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   persistCheckpointMessages,
@@ -166,4 +167,23 @@ test("changes in content, attachments, links and role all invalidate fingerprint
     const plan = await planCheckpointDelta([change], snap);
     assert.equal(plan.mode, "delta");
   }
+});
+
+test("checkpoint wiring treats protected messages as an error, not a successful delta", async () => {
+  const runtime = readFileSync(
+    new URL("../src/features/chat/runtime-provider.tsx", import.meta.url), "utf8",
+  );
+  const storage = readFileSync(
+    new URL("../src/features/chat/utils/chat-history-storage.ts", import.meta.url), "utf8",
+  );
+  assert.match(runtime, /saveStoredChatMessage\(record, \{ strictProtected: true \}\)/);
+  assert.match(storage, /if \(options\.strictProtected\) throw error/);
+  const baselineSnapshot = await baseline([row("u0")]);
+  await assert.rejects(
+    persistCheckpointMessages([row("u0"), row("a0", "u0")], baselineSnapshot, {
+      full: async () => { throw new Error("unexpected full"); },
+      message: async () => { throw new Error("server-managed message conflict 409"); },
+    }),
+    /409/,
+  );
 });
