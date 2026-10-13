@@ -78,13 +78,13 @@ export const BUDGET = {
   // PR30 (Agent History): the upstream-integrated build at c3cb23edc06e was
   // measured twice, independently, on GitHub Actions Linux and frontend CI:
   // 6,588.7 KiB raw / 1,987.7 KiB transferred (110 eager chunks). That is
-  // 13.8 KiB raw / 11.6 KiB transferred above the previous budget. Typecheck
+  // 12.5 KiB raw / 11.6 KiB transferred above the previous budget. Typecheck
   // and build both passed; the budget was the only failure in either job.
   // The 691-line virtual history renderer remains React.lazy and OUT of the
   // initial entry graph. Eager preferences and their per-chat menu controls are
   // intentionally needed before the first chat view. Rather than disguising
   // this measured startup cost or splitting a visible control into a loading
-  // state, the budget is adjusted by the observed delta plus ~2-4 KiB for
+  // state, the budget is adjusted by the observed delta plus ~2-5 KiB for
   // build variation. Keep tracking subsequent growth with this gate.
   transferBytes: 2_038_000,
   rawBytes: 6_752_000,
