@@ -19,6 +19,8 @@ type MinimalMessage = {
   id: string;
   threadId: string;
   parentId?: string | null;
+  role?: string;
+  createdAt?: number;
   metadata?: Record<string, unknown>;
 };
 
@@ -49,7 +51,8 @@ function serverManaged(message: MinimalMessage): boolean {
     typeof meta?.researchRunId === "string" ||
     typeof meta?.generationRunId === "string" ||
     typeof meta?.researchId === "string" ||
-    typeof meta?.researchTurnId === "string"
+    typeof meta?.researchTurnId === "string" ||
+    typeof meta?.serverRevision === "number"
   );
 }
 
@@ -136,6 +139,12 @@ export function planCheckpointDelta<T extends MinimalMessage>(
     return { kind: "full", reason: "unknown-message", next };
   }
   const previous = JSON.parse(oldJson) as MinimalMessage;
+  if (serverManaged(previous)) {
+    return { kind: "full", reason: "previously-server-managed", next };
+  }
+  if (previous.role !== message.role || previous.createdAt !== message.createdAt) {
+    return { kind: "full", reason: "identity-fields-changed", next };
+  }
   if ((previous.parentId ?? null) !== (message.parentId ?? null)) {
     return { kind: "full", reason: "reparented-message", next };
   }
