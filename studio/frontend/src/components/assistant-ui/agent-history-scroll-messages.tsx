@@ -4,6 +4,7 @@ import { AuiProvider, useAui, useAuiState } from "@assistant-ui/react";
 import { MessageByIndexProvider } from "./stale-safe-scopes";
 import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRowNotificationGate } from "./row-notification-gate";
+import { shouldRepairAgentLiveTail } from "./agent-history-live-tail";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
 import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
@@ -40,6 +41,7 @@ export const AgentHistoryScrollMessages: FC<{
   renderMessage, resetKey, viewportRef, windowRows = AGENT_DEFAULT_ROWS, domLevel, fixedRowsStrict = false,
 }) {
   const count = useAuiState(({ thread }) => thread.messages.length);
+  const isRunning = useAuiState(({ thread }) => thread.isRunning);
   const aui = useAui();
   const gate = useMemo(() => createRowNotificationGate(aui), [aui]);
   const heights = useMemo(() => new AgentHeightIndex(count), [resetKey]);
@@ -508,6 +510,66 @@ export const AgentHistoryScrollMessages: FC<{
       pendingScrollEpoch.current = null;
     };
   }, [viewportRef, heights, seek]);
+  // Streamed tool rows can change size while the virtual window is contracted.
+  // If the user is still following AND the physical viewport is at the bottom,
+  // a window/scroll ownership race must not leave a blank transcript waiting
+  // for the next wheel gesture. Repair the tail, never a detached reader.
+  const liveTailFrame = useRef<number | null>(null);
+  const lastLiveTailRepair = useRef(Number.NEGATIVE_INFINITY);
+  const scheduleLiveTailCheck = useCallback(() => {
+    if (!isRunning || liveTailFrame.current !== null) return;
+    liveTailFrame.current = requestAnimationFrame(() => {
+      liveTailFrame.current = null;
+      const viewport = viewportRef.current;
+      if (!viewport || !isRunning || !following.current || staged.current !== null) return;
+      if (!allowsPassiveAgentScroll(navigation.current)) return;
+      const total = countRef.current;
+      if (total < 1) return;
+      const view = viewport.getBoundingClientRect();
+      const wrappers = [...viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")];
+      const visible = wrappers.some(row => {
+        const rect = row.getBoundingClientRect();
+        return rect.height > 0 && rect.bottom > view.top + 8 &&
+          rect.top < view.bottom - 8;
+      });
+      const atPhysicalBottom =
+        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 24;
+      const now = performance.now();
+      if (!shouldRepairAgentLiveTail({
+        isRunning, following: following.current,
+        readerNavigation: !allowsPassiveAgentScroll(navigation.current),
+        recentGesture: now - lastReaderGestureAt.current < 1_000,
+        atPhysicalBottom, mountedRows: wrappers.length,
+        visibleRows: visible, tailMounted: rangeRef.current.end === total,
+      }) || now - lastLiveTailRepair.current < 750) return;
+      lastLiveTailRepair.current = now;
+      // Keep the canonical viewport owner responsible for scrollTop. A
+      // detached reader/search is never re-attached from a passive DOM signal.
+      const latest = budget !== null
+        ? agentBudgetWindow(total, total - 1, costs, budget, domLevel === "low" ? 5 : 32)
+        : latestAgentWindow(total, windowRows);
+      if (rangeRef.current.start !== latest.start || rangeRef.current.end !== latest.end) {
+        staged.current = null;
+        rangeRef.current = latest;
+        jump.current = "bottom";
+        setState(old => ({ ...old, range: latest }));
+      } else {
+        jumpBottom("auto");
+      }
+      // Expose only a counter, not transcript content, for supervised QA.
+      viewport.dataset.agentHistoryTailRecoveries = String(
+        Number(viewport.dataset.agentHistoryTailRecoveries ?? 0) + 1,
+      );
+    });
+  }, [isRunning, viewportRef, budget, costs, domLevel, windowRows, jumpBottom]);
+  useLayoutEffect(() => {
+    scheduleLiveTailCheck();
+  }, [range.start, range.end, count, heightRevision, scheduleLiveTailCheck]);
+  useEffect(() => () => {
+    if (liveTailFrame.current !== null) cancelAnimationFrame(liveTailFrame.current);
+    liveTailFrame.current = null;
+  }, []);
+
   // Measure the committed window and settle towards the known DOM budget.
   // Never supersede an in-progress staged seek or an active search epoch.
   const budgetFrame = useRef<number | null>(null);
@@ -578,13 +640,16 @@ export const AgentHistoryScrollMessages: FC<{
     if (budget === null || typeof MutationObserver === "undefined") return;
     const viewport = viewportRef.current;
     if (!viewport) return;
-    const observer = new MutationObserver(() => scheduleBudgetProbe());
+    const observer = new MutationObserver(() => {
+      scheduleBudgetProbe();
+      scheduleLiveTailCheck();
+    });
     for (const wrapper of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
       const content = wrapper.querySelector<HTMLElement>("[data-role]");
-      if (content) observer.observe(content, { childList: true, subtree: true });
+      if (content) observer.observe(content, { childList: true, characterData: true, subtree: true });
     }
     return () => observer.disconnect();
-  }, [budget, range.start, range.end, viewportRef, scheduleBudgetProbe]);
+  }, [budget, range.start, range.end, viewportRef, scheduleBudgetProbe, scheduleLiveTailCheck]);
 
   useLayoutEffect(() => {
     if (budget === null || staged.current !== null) return;
@@ -619,6 +684,7 @@ export const AgentHistoryScrollMessages: FC<{
         }
       }
       if (changed) requestHeightRevision();
+      if (isRunning) scheduleLiveTailCheck();
     });
     for (const wrapper of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
       const row = wrapper.querySelector<HTMLElement>("[data-role]");
@@ -630,7 +696,7 @@ export const AgentHistoryScrollMessages: FC<{
       observer.observe(row);
     }
     return () => observer.disconnect();
-  }, [range.start, range.end, count, viewportRef, heights, requestHeightRevision, budget, scheduleBudgetProbe]);
+  }, [range.start, range.end, count, viewportRef, heights, requestHeightRevision, budget, scheduleBudgetProbe, isRunning, scheduleLiveTailCheck]);
 
   // A ResizeObserver measurement must update both spacers, not merely the ledger.
   void heightRevision;
