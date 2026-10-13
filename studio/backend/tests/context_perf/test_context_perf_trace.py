@@ -36,6 +36,8 @@ class ContextPerfTraceTests(unittest.TestCase):
         output = "\n".join(capture.output)
         self.assertNotIn(secret, output)
         self.assertIn("phase=count", output)
+        self.assertIn("status=begin", output)
+        self.assertIn("phase=archive status=begin", output)
         self.assertIn("phase=matched calls=1", output)
 
     def test_exception_propagates_without_logging_exception_message(self):
