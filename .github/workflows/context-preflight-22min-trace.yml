@@ -31,3 +31,4 @@ jobs:
         run: |
           python -m unittest discover -s studio/backend/tests/context_perf -p 'test_context_perf_trace.py' -v
           python -m unittest discover -s studio/backend/tests/context_perf -p 'test_checkpoint_exact_count_reuse.py' -v
+          python -m unittest discover -s studio/backend/tests/context_perf -p 'test_archive_occurrence_scaling.py' -v
