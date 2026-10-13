@@ -2482,6 +2482,8 @@ export const hi = {
       agentHistoryBufferDynamicHigh: "डायनैमिक बफ़र High (अधिकतम 32 संदेश)",
       agentHistoryBufferFixedLow: "फ़िक्स्ड बफ़र Low (5 संदेश)",
       agentHistoryBufferFixedHigh: "फ़िक्स्ड बफ़र High (32 संदेश)",
+      agentHistoryBufferDynamic: "डायनेमिक",
+      agentHistoryBufferFixed: "निश्चित",
       agentHistoryModeOff: "बंद",
       agentHistoryModeLow: "कम",
       agentHistoryModeHigh: "अधिक",

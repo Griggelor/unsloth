@@ -2489,6 +2489,8 @@ export const ru = {
       agentHistoryBufferDynamicHigh: "Динамический буфер High (до 32 сообщений)",
       agentHistoryBufferFixedLow: "Фиксированный буфер Low (5 сообщений)",
       agentHistoryBufferFixedHigh: "Фиксированный буфер High (32 сообщения)",
+      agentHistoryBufferDynamic: "Динамический",
+      agentHistoryBufferFixed: "Фиксированный",
       agentHistoryModeOff: "Выкл.",
       agentHistoryModeLow: "Низкий",
       agentHistoryModeHigh: "Высокий",

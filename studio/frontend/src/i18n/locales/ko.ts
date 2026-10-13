@@ -2471,6 +2471,8 @@ export const ko = {
       agentHistoryBufferDynamicHigh: "동적 버퍼 High (최대 32개 메시지)",
       agentHistoryBufferFixedLow: "고정 버퍼 Low (5개 메시지)",
       agentHistoryBufferFixedHigh: "고정 버퍼 High (32개 메시지)",
+      agentHistoryBufferDynamic: "동적",
+      agentHistoryBufferFixed: "고정",
       agentHistoryModeOff: "끔",
       agentHistoryModeLow: "낮음",
       agentHistoryModeHigh: "높음",

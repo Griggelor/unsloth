@@ -2476,6 +2476,8 @@ export const ar = {
       agentHistoryBufferDynamicHigh: "مخزن ديناميكي مرتفع (حتى 32 رسالة)",
       agentHistoryBufferFixedLow: "مخزن ثابت منخفض (5 رسائل)",
       agentHistoryBufferFixedHigh: "مخزن ثابت مرتفع (32 رسالة)",
+      agentHistoryBufferDynamic: "ديناميكي",
+      agentHistoryBufferFixed: "ثابت",
       agentHistoryModeOff: "إيقاف",
       agentHistoryModeLow: "منخفض",
       agentHistoryModeHigh: "مرتفع",

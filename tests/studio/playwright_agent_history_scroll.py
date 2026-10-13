@@ -379,7 +379,6 @@ def check_dynamic_thumb_under_heavy_dom(page, level: str) -> None:
     check_adaptive_thumb_drag(page, level)
 
 
-
 def check_dynamic_streaming_tail_visibility(page, level: str, messages: int) -> None:
     """During tail-follow, repeated streaming-style DOM mutations must not blank the viewport.
 
@@ -495,7 +494,7 @@ def check_isolated_dynamic_thumb_modes(page, thread_id: str, messages: int) -> N
 
 
 def check_chat_header_menu(page, messages: int) -> None:
-    """Verify real per-chat Low/High/Off/Inherited settings, then restore v1."""
+    """Verify one menu with Dynamic/Fixed/Off/Inherited; legacy modes remain readable."""
     trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
     trigger.wait_for(state = "visible", timeout = 30_000)
     if messages != 400:
@@ -534,10 +533,8 @@ def check_chat_header_menu(page, messages: int) -> None:
         option.press("Enter")
 
     for level, dom_policy, cap in (
-        ("dynamic-high", "high", 32),
-        ("dynamic-low", "low", 5),
-        ("fixed-high", "legacy", 32),
-        ("fixed-low", "legacy", 5),
+        ("dynamic", "low", 5),
+        ("fixed", "legacy", 5),
     ):
         choose(level)
         page.wait_for_function(
@@ -577,123 +574,64 @@ def check_chat_header_menu(page, messages: int) -> None:
         """() => JSON.parse(localStorage.getItem(
           'unsloth_agent_chat_history_v1') || '{}').state?.domLevelByThreadId || {}"""
     )
-    if any(
-        value in ("off", "low", "high", "fixed-low", "fixed-high", "dynamic-low", "dynamic-high")
-        for value in overrides.values()
-    ):
+    if overrides:
         raise AssertionError("Per-chat DOM mode override remained after inheritance")
 
 
 def check_runtime_window_size(page, thread_id: str, messages: int) -> None:
-    """Change row limits through the real menu, verify DOM and persisted per-chat scope."""
-    trigger = page.locator('[data-test-id="chat-header-more-menu-trigger"]')
+    """Verify old 2/5/8/16/32 numeric v1 preferences still hydrate after UI consolidation.
 
+    The new user-facing menu deliberately has no separate legacy row-size
+    control. Seed only the disposable synthetic test profile, reload through
+    the actual production hydration path, and assert the exact mounted rows.
+    """
     def choose(size: int) -> None:
-        before_click = trigger.get_attribute("aria-expanded")
-        trigger.focus()
-        trigger.press("Enter")
-        after_click = trigger.get_attribute("aria-expanded")
-        submenu = page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
-            has_text = "Agentenfenster:"
-        )
-        try:
-            # Use keyboard navigation instead of a pointer hover across a portal.
-            submenu.wait_for(state = "visible", timeout = 10_000)
-            submenu.focus()
-            submenu.press("ArrowRight")
-            page.locator(f'[data-test-id="agent-window-size-{size}"]').wait_for(
-                state = "visible", timeout = 10_000
-            )
-        except Exception as exc:
-            # Do not retry/skip a disappearing menu: capture its real state.
-            # This instance and its settings contain only synthetic fixture data.
-            try:
-                diagnostic = page.evaluate("""() => ({
-                  triggerExpanded: document.querySelector(
-                    '[data-test-id="chat-header-more-menu-trigger"]'
-                  )?.getAttribute('aria-expanded') ?? null,
-                  menuItems: [...document.querySelectorAll('[role="menuitem"]')]
-                    .map(el => (el.textContent ?? '').trim()),
-                  activeMenus: [...document.querySelectorAll('[role="menu"]')]
-                    .map(el => (el.textContent ?? '').slice(0, 1000)),
-                  mountedRows: document.querySelectorAll('[data-agent-history-row]').length,
-                  agentHistoryPreference: JSON.parse(
-                    localStorage.getItem('unsloth_agent_chat_history_v1') || '{}'
-                  ).state ?? null
-                })""")
-            except Exception as snapshot_error:
-                diagnostic = {"snapshotError": str(snapshot_error)}
-            diagnostic["triggerBeforeClick"] = before_click
-            diagnostic["triggerAfterClick"] = after_click
-            evidence_dir = Path("logs/agent-history")
-            evidence_dir.mkdir(parents = True, exist_ok = True)
-            (evidence_dir / "menu-submenu-failure.json").write_text(
-                json.dumps(diagnostic, indent = 2), encoding = "utf-8"
-            )
-            try:
-                page.screenshot(path = str(evidence_dir / "menu-submenu-failure.png"))
-            except Exception:
-                pass
-            raise AssertionError(f"Agent window submenu interaction failed: {diagnostic}") from exc
-        radio = page.locator(f'[data-test-id="agent-window-size-{size}"]')
-        radio.focus()
-        radio.press("Enter")
-        page.wait_for_function(
-            """size => {
-              const rows = document.querySelectorAll('[data-agent-history-row]');
-              return rows.length === size;
+        page.evaluate(
+            """([threadId, rows]) => {
+              const key = 'unsloth_agent_chat_history_v1';
+              const stored = JSON.parse(localStorage.getItem(key) || '{}');
+              const state = stored.state || {};
+              state.enabledThreads = { ...(state.enabledThreads || {}), [threadId]: true };
+              state.domLevelByThreadId = { ...(state.domLevelByThreadId || {}) };
+              delete state.domLevelByThreadId[threadId];
+              state.windowRowsByThreadId = {
+                ...(state.windowRowsByThreadId || {})
+              };
+              if (rows === (state.globalWindowRows || 5)) {
+                delete state.windowRowsByThreadId[threadId];
+              } else {
+                state.windowRowsByThreadId[threadId] = rows;
+              }
+              localStorage.setItem(key, JSON.stringify({ ...stored, state }));
             }""",
-            arg = size,
-            timeout = 30_000,
+            [thread_id, size],
         )
-        state = census(page, messages, f"window-{size}")
+        page.reload(wait_until = "domcontentloaded", timeout = 120_000)
+        page.wait_for_function(
+            """([expected, rows]) => {
+              const list = document.querySelector('[data-agent-history-scroll-list="true"]');
+              const mounted = [...document.querySelectorAll('[data-agent-history-row]')];
+              return list?.getAttribute('data-agent-history-dom-level') === 'legacy' &&
+                mounted.length === rows &&
+                mounted.every(row => row.getAttribute('aria-setsize') === String(expected));
+            }""",
+            arg = [messages, size],
+            timeout = 60_000,
+        )
+        state = census(page, messages, f"legacy-window-{size}")
         if state["mounted"] != size:
-            raise AssertionError(f"window-{size}: expected exactly {size} mounted rows: {state}")
+            raise AssertionError(f"Legacy window {size} not honored: {state}")
 
+    for size in (5, 2, 8, 16, 32):
+        choose(size)
     choose(5)
-    stored = page.evaluate(
-        """threadId => JSON.parse(localStorage.getItem(
-          'unsloth_agent_chat_history_v1'
-        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? 5""",
-        thread_id,
-    )
-    if stored != 5:
-        raise AssertionError(f"Small window preference not persisted: {stored}")
-
-    # Preserve the bounded navigation contract at the recommended small setting.
     scroll_to(page, 0, messages, "five-top")
     scroll_to(page, 1, messages, "five-bottom")
-
-    page.reload(wait_until = "domcontentloaded")
-    page.locator(LIST).wait_for(state = "attached", timeout = 60_000)
+    page.reload(wait_until = "domcontentloaded", timeout = 120_000)
     page.wait_for_function(
         """() => document.querySelectorAll('[data-agent-history-row]').length === 5""",
         timeout = 60_000,
     )
-    census(page, messages, "five-after-reload")
-    choose(2)
-    choose(8)
-    choose(16)
-    # Explicit legacy mode is retained as a per-thread override.
-    choose(32)
-    legacy = page.evaluate(
-        """threadId => JSON.parse(localStorage.getItem(
-          'unsloth_agent_chat_history_v1'
-        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? 5""",
-        thread_id,
-    )
-    if legacy != 32:
-        raise AssertionError(f"Explicit legacy 32 preference not persisted: {legacy}")
-    # Choosing the new default must remove the override without disabling the mode.
-    choose(5)
-    stored = page.evaluate(
-        """threadId => JSON.parse(localStorage.getItem(
-          'unsloth_agent_chat_history_v1'
-        ) || '{}').state?.windowRowsByThreadId?.[threadId] ?? null""",
-        thread_id,
-    )
-    if stored is not None:
-        raise AssertionError(f"Default window should not store an override: {stored}")
     census(page, messages, "window-default-restored")
 
 

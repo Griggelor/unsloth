@@ -2511,6 +2511,8 @@ export const fr = {
       agentHistoryBufferDynamicHigh: "Tampon dynamique haut (32 messages max.)",
       agentHistoryBufferFixedLow: "Tampon fixe bas (5 messages)",
       agentHistoryBufferFixedHigh: "Tampon fixe haut (32 messages)",
+      agentHistoryBufferDynamic: "Dynamique",
+      agentHistoryBufferFixed: "Fixe",
       agentHistoryModeOff: "Désactivé",
       agentHistoryModeLow: "Faible",
       agentHistoryModeHigh: "Élevé",

@@ -2570,6 +2570,8 @@ export const he = {
       agentHistoryBufferDynamicHigh: "מאגר דינמי גבוה (עד 32 הודעות)",
       agentHistoryBufferFixedLow: "מאגר קבוע נמוך (5 הודעות)",
       agentHistoryBufferFixedHigh: "מאגר קבוע גבוה (32 הודעות)",
+      agentHistoryBufferDynamic: "דינמי",
+      agentHistoryBufferFixed: "קבוע",
       agentHistoryModeOff: "כבוי",
       agentHistoryModeLow: "נמוך",
       agentHistoryModeHigh: "גבוה",

@@ -2505,6 +2505,8 @@ export const es = {
       agentHistoryBufferDynamicHigh: "Búfer dinámico alto (máx. 32 mensajes)",
       agentHistoryBufferFixedLow: "Búfer fijo bajo (5 mensajes)",
       agentHistoryBufferFixedHigh: "Búfer fijo alto (32 mensajes)",
+      agentHistoryBufferDynamic: "Dinámico",
+      agentHistoryBufferFixed: "Fijo",
       agentHistoryModeOff: "Desactivado",
       agentHistoryModeLow: "Bajo",
       agentHistoryModeHigh: "Alto",

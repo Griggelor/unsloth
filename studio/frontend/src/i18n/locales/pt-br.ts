@@ -2493,6 +2493,8 @@ export const ptBR = {
       agentHistoryBufferDynamicHigh: "Buffer dinâmico alto (até 32 mensagens)",
       agentHistoryBufferFixedLow: "Buffer fixo baixo (5 mensagens)",
       agentHistoryBufferFixedHigh: "Buffer fixo alto (32 mensagens)",
+      agentHistoryBufferDynamic: "Dinâmico",
+      agentHistoryBufferFixed: "Fixo",
       agentHistoryModeOff: "Desativado",
       agentHistoryModeLow: "Baixo",
       agentHistoryModeHigh: "Alto",

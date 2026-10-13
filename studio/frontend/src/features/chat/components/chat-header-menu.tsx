@@ -22,12 +22,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useChatFavoritesStore } from "@/features/library/chats/favorites-store";
 import { useAgentHistoryModeStore } from "../stores/agent-history-mode-store";
-import { agentHistoryLevelFor, agentHistoryWindowFor } from "../stores/agent-history-preference-policy";
-import { isAgentBufferMode } from "@/components/assistant-ui/agent-history-dom-budget";
-import {
-  AGENT_WINDOW_SIZES,
-  isAgentWindowSize,
-} from "@/components/assistant-ui/agent-history-scroll-window";
+import { agentHistoryLevelFor, agentHistoryStorageModeForUi, agentHistoryUiModeFor } from "../stores/agent-history-preference-policy";
 import { useChatRuntimeStore } from "../stores/chat-runtime-store";
 import { useShortcutLabel } from "@/features/settings";
 import type { ShortcutId } from "@/features/settings";
@@ -166,13 +161,11 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
       state.runningByThreadId[menu.item.id] === true ||
       state.runningByThreadId.__default === true,
   );
-  const globalDomLevel = useAgentHistoryModeStore((state) => state.globalDomLevel);
   const agentHistoryLevel = useAgentHistoryModeStore(
     (state) => agentHistoryLevelFor(state, menu.item.id),
   );
-  const agentHistoryEnabled = agentHistoryLevel !== "off";
-  const agentWindowRows = useAgentHistoryModeStore(
-    (state) => agentHistoryWindowFor(state, menu.item.id),
+  const explicitAgentHistoryLevel = useAgentHistoryModeStore(
+    (state) => state.domLevelByThreadId?.[menu.item.id],
   );
   const favorite = useChatFavoritesStore((state) =>
     state.chatIds.includes(menu.item.id),
@@ -239,37 +232,33 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
         <DropdownMenuSubTrigger data-test-id="agent-dom-level-trigger" disabled={running} className="gap-2.5">
           <HugeiconsIcon icon={LayerIcon} strokeWidth={1.75} className={ICON} />
           {t("settings.chat.agentHistoryChatMode")}: {
-            agentHistoryLevel === "dynamic-low" || agentHistoryLevel === "low"
-              ? t("settings.chat.agentHistoryBufferDynamicLow")
-              : agentHistoryLevel === "dynamic-high" || agentHistoryLevel === "high"
-                ? t("settings.chat.agentHistoryBufferDynamicHigh")
-                : agentHistoryLevel === "fixed-high" ||
-                  (agentHistoryLevel === "legacy" && agentWindowRows === 32)
-                  ? t("settings.chat.agentHistoryBufferFixedHigh")
-                  : agentHistoryLevel === "off"
-                    ? t("settings.chat.agentHistoryModeOff")
-                    : t("settings.chat.agentHistoryBufferFixedLow")}
+            t(agentHistoryUiModeFor(agentHistoryLevel) === "dynamic"
+              ? "settings.chat.agentHistoryBufferDynamic"
+              : agentHistoryUiModeFor(agentHistoryLevel) === "fixed"
+                ? "settings.chat.agentHistoryBufferFixed"
+                : "settings.chat.agentHistoryModeOff")
+          }
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className={cn(MENU, "w-60")}>
           <DropdownMenuLabel className={LABEL}>{t("settings.chat.agentHistoryChatMode")}</DropdownMenuLabel>
           <DropdownMenuRadioGroup
-            value={useAgentHistoryModeStore.getState().domLevelByThreadId?.[menu.item.id] ?? "inherit"}
+            value={explicitAgentHistoryLevel === undefined
+              ? "inherit" : agentHistoryUiModeFor(explicitAgentHistoryLevel)}
             onValueChange={value => {
-              if (value === "inherit" || value === "off" ||
-                  isAgentBufferMode(value)) {
+              if (value === "inherit") {
+                useAgentHistoryModeStore.getState().setThreadDomLevel(menu.item.id, null);
+              } else if (value === "off" || value === "dynamic" || value === "fixed") {
                 useAgentHistoryModeStore.getState().setThreadDomLevel(
-                  menu.item.id, value === "inherit" ? null : value,
+                  menu.item.id, agentHistoryStorageModeForUi(value),
                 );
               }
             }}
           >
             {([
               ["inherit", t("settings.chat.agentHistoryInherit")],
+              ["dynamic", t("settings.chat.agentHistoryBufferDynamic")],
+              ["fixed", t("settings.chat.agentHistoryBufferFixed")],
               ["off", t("settings.chat.agentHistoryModeOff")],
-              ["dynamic-low", t("settings.chat.agentHistoryBufferDynamicLow")],
-              ["dynamic-high", t("settings.chat.agentHistoryBufferDynamicHigh")],
-              ["fixed-low", t("settings.chat.agentHistoryBufferFixedLow")],
-              ["fixed-high", t("settings.chat.agentHistoryBufferFixedHigh")],
             ] as const).map(([value, label]) => (
               <DropdownMenuRadioItem key={value} value={value}
                 data-test-id={`agent-dom-level-${value}`}>
@@ -279,49 +268,6 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
           </DropdownMenuRadioGroup>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
-      {!isAgentBufferMode(globalDomLevel) && <Item
-        icon={agentHistoryEnabled ? ViewIcon : ViewOffSlashIcon}
-        disabled={running}
-        onSelect={() =>
-          useAgentHistoryModeStore.getState().setEnabled(menu.item.id, !agentHistoryEnabled)
-        }
-      >
-        {agentHistoryEnabled
-          ? "Agenten-Chatverlauf deaktivieren"
-          : "Agenten-Chatverlauf aktivieren"}
-      </Item>}
-      {agentHistoryLevel === "legacy" && (
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger disabled={running} className="gap-2.5">
-            <HugeiconsIcon icon={LayerIcon} strokeWidth={1.75} className={ICON} />
-            Agentenfenster: {agentWindowRows} Nachrichten
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className={cn(MENU, "w-56")}>
-            <DropdownMenuLabel className={LABEL}>
-              Sichtbare Nachrichten (pro Chat)
-            </DropdownMenuLabel>
-            <DropdownMenuRadioGroup
-              value={String(agentWindowRows)}
-              onValueChange={(value) => {
-                const rows = Number(value);
-                if (isAgentWindowSize(rows)) {
-                  useAgentHistoryModeStore.getState().setWindowRows(menu.item.id, rows);
-                }
-              }}
-            >
-              {AGENT_WINDOW_SIZES.map((rows) => (
-                <DropdownMenuRadioItem
-                  key={rows}
-                  value={String(rows)}
-                  data-test-id={`agent-window-size-${rows}`}
-                >
-                  {rows} Nachrichten{rows === 2 ? " (experimentell)" : ""}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-      )}
       <Item
         glyph={<HugeiconsIcon icon={ForkIcon} strokeWidth={1.75} className={ICON} />}
         onSelect={menu.fork}

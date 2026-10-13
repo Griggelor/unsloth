@@ -92,19 +92,39 @@ INSTALL_INPUT_PROBE = """() => {
 
 
 def select_rows(page, rows: int) -> None:
-    if rows != 32 or page.evaluate(
-        "() => document.querySelectorAll('[data-agent-history-row]').length !== 32"
-    ):
-        page.locator('[data-test-id="chat-header-more-menu-trigger"]').click()
-        page.locator('[data-slot="dropdown-menu-sub-trigger"]').filter(
-            has_text = "Agentenfenster:"
-        ).hover()
-        page.locator(f'[data-test-id="agent-window-size-{rows}"]').click()
+    """Load a legacy numeric preference through persisted production hydration.
+
+    UI has only three modes; old row windows remain supported for backwards
+    compatibility and are exercised without resurrecting duplicate controls.
+    """
+    if page.evaluate(
+        "() => document.querySelectorAll('[data-agent-history-row]').length"
+    ) != rows:
+        page.evaluate(
+            """rows => {
+              const key = 'unsloth_agent_chat_history_v1';
+              const stored = JSON.parse(localStorage.getItem(key) || '{}');
+              const state = stored.state || {};
+              const threadId = new URL(location.href).searchParams.get('thread');
+              if (!threadId) throw Error('No synthetic fixture thread');
+              state.enabledThreads = { ...(state.enabledThreads || {}), [threadId]: true };
+              state.domLevelByThreadId = { ...(state.domLevelByThreadId || {}) };
+              delete state.domLevelByThreadId[threadId];
+              state.windowRowsByThreadId = {
+                ...(state.windowRowsByThreadId || {}), [threadId]: rows
+              };
+              localStorage.setItem(key, JSON.stringify({ ...stored, state }));
+            }""",
+            rows,
+        )
+        page.reload(wait_until = "domcontentloaded", timeout = 120_000)
     page.wait_for_function(
         """rows => document.querySelectorAll('[data-agent-history-row]').length === rows""",
         arg = rows,
         timeout = 30_000,
     )
+    if page.locator(LIST).get_attribute("data-agent-history-dom-level") != "legacy":
+        raise AssertionError("Numeric compatibility profile did not hydrate legacy mode")
 
 
 def condition(page, cdp, rows: int, cards_per_row: int, keys: int) -> dict:
@@ -183,20 +203,20 @@ def run(
             browser = pw.chromium.launch(headless = True)
             try:
                 context = browser.new_context(viewport = {"width": 1440, "height": 960})
+                context.add_init_script(seed_init_script(auth, []))
+                history_state = {
+                    "state": {
+                        "enabledThreads": {thread_id: True},
+                        "windowRowsByThreadId": {thread_id: 32},
+                    },
+                    "version": 0,
+                }
                 context.add_init_script(
-                    seed_init_script(
-                        auth,
-                        [],
-                        {
-                            "unsloth_agent_chat_history_v1": {
-                                "state": {
-                                    "enabledThreads": {thread_id: True},
-                                    "windowRowsByThreadId": {thread_id: 32},
-                                },
-                                "version": 0,
-                            },
-                        },
-                    )
+                    "(() => { const key = 'unsloth_agent_chat_history_v1';"
+                    " if (localStorage.getItem(key) !== null) return;"
+                    " localStorage.setItem(key, "
+                    + json.dumps(json.dumps(history_state))
+                    + "); })();"
                 )
                 page = context.new_page()
                 errors = []

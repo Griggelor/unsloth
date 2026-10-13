@@ -2648,6 +2648,8 @@ export const sv = {
       agentHistoryBufferDynamicHigh: "Dynamisk buffert hög (högst 32 meddelanden)",
       agentHistoryBufferFixedLow: "Fast buffert låg (5 meddelanden)",
       agentHistoryBufferFixedHigh: "Fast buffert hög (32 meddelanden)",
+      agentHistoryBufferDynamic: "Dynamiskt",
+      agentHistoryBufferFixed: "Fast",
       agentHistoryModeOff: "Av",
       agentHistoryModeLow: "Låg",
       agentHistoryModeHigh: "Hög",

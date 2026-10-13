@@ -74,3 +74,18 @@ export function agentHistoryLevelFor(
     (state.globalEnabled || state.enabledThreads[threadId] === true)
     ? "legacy" : "off";
 }
+
+
+/** Public UI has three choices; old High/Low values stay readable on disk. */
+export type AgentHistoryUiMode = "off" | "dynamic" | "fixed";
+export function agentHistoryUiModeFor(level: AgentDomLevel | "legacy"): AgentHistoryUiMode {
+  if (level === "off") return "off";
+  if (level === "low" || level === "high" ||
+      level === "dynamic-low" || level === "dynamic-high") return "dynamic";
+  return "fixed";
+}
+export function agentHistoryStorageModeForUi(mode: AgentHistoryUiMode): AgentDomLevel {
+  if (mode === "dynamic") return "dynamic-low";
+  if (mode === "fixed") return "fixed-low";
+  return "off";
+}

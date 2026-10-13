@@ -2514,6 +2514,8 @@ export const en = {
       agentHistoryBufferDynamicHigh: "Dynamic High (max 32)",
       agentHistoryBufferFixedLow: "Fixed Low (5)",
       agentHistoryBufferFixedHigh: "Fixed High (32)",
+      agentHistoryBufferDynamic: "Dynamic",
+      agentHistoryBufferFixed: "Fixed",
       agentHistoryModeOff: "Off",
       agentHistoryModeLow: "Low",
       agentHistoryModeHigh: "High",
@@ -2521,7 +2523,7 @@ export const en = {
       agentHistoryInherit: "Use global setting",
       agentHistoryLegacy: "Previous setting",
       agentHistoryGlobal: "Virtualize chat history",
-      agentHistoryGlobalDescription: "Dynamic modes cap DOM nodes (Low 5,000 / High 12,000) and visible messages (max 5 / 32). Fixed modes cap only the message count. The complete history remains accessible.",
+      agentHistoryGlobalDescription: "Dynamic adapts the rendered window to DOM complexity. Fixed keeps a small fixed message window. The complete transcript remains available.",
       agentHistoryRows: "Visible messages per chat",
       agentHistoryRowsDescription: "Default number of mounted messages in virtualized chats (5 recommended). Per-chat overrides take precedence.",
       groups: {

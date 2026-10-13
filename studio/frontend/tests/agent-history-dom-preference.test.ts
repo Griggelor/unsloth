@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readSrc } from "./helpers/kit.ts";
-import { agentHistoryLevelFor, agentHistoryWindowFor } from "../src/features/chat/stores/agent-history-preference-policy.ts";
+import { agentHistoryLevelFor, agentHistoryStorageModeForUi, agentHistoryUiModeFor, agentHistoryWindowFor } from "../src/features/chat/stores/agent-history-preference-policy.ts";
 import type { AgentHistoryPreferenceSnapshot } from "../src/features/chat/stores/agent-history-preference-policy.ts";
 
 const legacy: AgentHistoryPreferenceSnapshot = {
@@ -78,12 +78,27 @@ test("old numeric per-chat preferences remain readable until explicitly changed"
     domLevelByThreadId: { olderChat: "fixed-low" as const } }, "olderChat"), 5);
 });
 
-test("settings dropdown exposes exactly the four named modes, with Off as a switch", () => {
-  const source = readSrc("features/settings/tabs/chat-tab.tsx");
-  const section = source.split('\n          label={t("settings.chat.agentHistoryGlobal")}')[1]
+test("UI collapses legacy High/Low into three modes without changing persisted semantics", () => {
+  for (const mode of ["low", "high", "dynamic-low", "dynamic-high"] as const) {
+    assert.equal(agentHistoryUiModeFor(mode), "dynamic");
+  }
+  for (const mode of ["legacy", "fixed-low", "fixed-high"] as const) {
+    assert.equal(agentHistoryUiModeFor(mode), "fixed");
+  }
+  assert.equal(agentHistoryUiModeFor("off"), "off");
+  assert.equal(agentHistoryStorageModeForUi("dynamic"), "dynamic-low");
+  assert.equal(agentHistoryStorageModeForUi("fixed"), "fixed-low");
+  assert.equal(agentHistoryStorageModeForUi("off"), "off");
+
+  const global = readSrc("features/settings/tabs/chat-tab.tsx");
+  const section = global.split('\n          label={t("settings.chat.agentHistoryGlobal")}')[1]
     ?.split('\n          label={t("settings.chat.webSearch.images")}')[0] ?? "";
   const options = [...section.matchAll(/<SelectItem value="([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(options, ["dynamic-low", "dynamic-high", "fixed-low", "fixed-high"]);
-  assert.match(section, /<Switch/);
-  assert.doesNotMatch(section, /value="off"|value="legacy"|agentHistoryLegacy/);
+  assert.deepEqual(options, ["dynamic", "fixed", "off"]);
+  assert.doesNotMatch(section, /<Switch/);
+  const menu = readSrc("features/chat/components/chat-header-menu.tsx");
+  const submenu = menu.split('data-test-id="agent-dom-level-trigger"')[1]
+    ?.split('<Item\n        glyph={<HugeiconsIcon icon={ForkIcon}')[0] ?? "";
+  assert.match(submenu, /agent-dom-level-\$\{value\}/);
+  assert.doesNotMatch(submenu, /agent-window-size-|setEnabled\(/);
 });

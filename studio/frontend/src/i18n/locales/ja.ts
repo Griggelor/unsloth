@@ -2462,6 +2462,8 @@ export const ja = {
       agentHistoryBufferDynamicHigh: "動的バッファ High（最大32件）",
       agentHistoryBufferFixedLow: "固定バッファ Low（5件）",
       agentHistoryBufferFixedHigh: "固定バッファ High（32件）",
+      agentHistoryBufferDynamic: "動的",
+      agentHistoryBufferFixed: "固定",
       agentHistoryModeOff: "オフ",
       agentHistoryModeLow: "低",
       agentHistoryModeHigh: "高",
