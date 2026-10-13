@@ -4073,7 +4073,7 @@ function ThreadBackendAutosave({
       try {
         const snapshot = await persistCheckpointMessages(records, previous, {
           full: () => syncExportedRepositoryToBackend(remoteId, exported),
-          message: (record) => saveStoredChatMessage(record),
+          message: (record) => saveStoredChatMessage(record, { strictProtected: true }),
         });
         const snapshots = checkpointSnapshotsRef.current;
         snapshots.delete(remoteId);
