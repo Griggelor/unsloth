@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# PR32: exact HEAD QA on draft stacked changes; no release or merge.
+name: QA PR32 Tail and Modes
+on:
+  push:
+    branches: ['qa/agent-history-live-tail-modes-20261013']
+    paths: ['.github/workflows/qa-pr32-tail-modes.yml']
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  contracts:
+    name: Dynamic/Fixed UI + live tail focused contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Assert exact QA branch checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Targeted pure regression contracts
+        working-directory: studio/frontend
+        run: |
+          node --experimental-strip-types --test \
+            tests/agent-history-live-tail.test.ts \
+            tests/agent-history-navigation.test.ts \
+            tests/agent-history-scroll-intent-gate.test.ts \
+            tests/agent-history-dom-budget.test.ts \
+            tests/agent-history-dom-preference.test.ts \
+            tests/agent-history-scroll-window.test.ts \
+            tests/agent-history-search.test.ts \
+            tests/agent-history-preference-policy.test.ts \
+            tests/agent-history-lazy-tool-bundle.test.ts
+      - name: Pinned Ruff 0.6.9 browser fixture format
+        run: |
+          python -m pip install 'ruff==0.6.9'
+          python scripts/run_ruff_format.py tests/studio/playwright_agent_history_scroll.py
+          git diff --exit-code -- tests/studio/playwright_agent_history_scroll.py
+
+  frontend:
+    name: Frontend typecheck + strict i18n + build/budget
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Assert exact QA branch checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Install npm 11
+        run: npm install -g npm@^11 --no-fund --no-audit
+      - name: Lockfile supply chain check
+        run: python3 scripts/lockfile_supply_chain_audit.py
+      - name: Install exact frontend dependencies
+        working-directory: studio/frontend
+        run: npm ci --strict-allow-scripts --no-fund --no-audit
+      - name: Typecheck + strict translations + production budget
+        working-directory: studio/frontend
+        run: |
+          npm run typecheck
+          npm run i18n:check:strict
+          npm run build
+          npm run bundle:check
