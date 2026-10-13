@@ -8462,7 +8462,19 @@ sys.exit(2 if conflict else (0 if version else 1))
         # ...and every remaining escape, shared with the offline rule below.
         Invoke-FastPathEscapes
     } elseif ($InstalledVer -and $LatestVer) {
-        substep "$_PkgName $InstalledVer -> $LatestVer available, updating..."
+        # A successful PyPI version probe does not make uv's explicitly offline
+        # dependency install safe. Invoke-RestMethod can bypass HTTPS_PROXY and
+        # report a newer release while the payload indices remain unreachable.
+        # Keep a verified install intact until the next online update; damaged
+        # or incomplete environments still take the normal repair path.
+        if ((Test-UvOfflineRequested) -and (Test-StudioInstallVerified)) {
+            substep "$_PkgName $InstalledVer -> $LatestVer available, but UV_OFFLINE is set -- keeping the verified install"
+            $SkipPythonDeps = $true
+            $script:OfflineFastPath = $true
+            Invoke-FastPathEscapes
+        } else {
+            substep "$_PkgName $InstalledVer -> $LatestVer available, updating..."
+        }
     } elseif (-not $LatestVer) {
         # PyPI unreachable: updating to be safe stays the default, since it is usually a blip.
         # UV_OFFLINE is not a blip, so a verified tree is kept instead, on the incomplete-install

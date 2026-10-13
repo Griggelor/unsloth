@@ -90,7 +90,14 @@ const more = node(["button"], {
   "aria-label": "More",
   on: (ev) => { if (ev && ev.type === "pointerdown") paintsUntilMenu = 3; },
 });
-const bar = node([".aui-assistant-action-bar-root"], {}, [more]);
+const deletion = menuNames.includes("Delete") ? node(["button"], {
+  "aria-label": "Delete",
+  click: () => {
+    assistant.isConnected = false;
+    messages = messages.filter((m) => m !== assistant);
+  },
+}) : null;
+const bar = node([".aui-assistant-action-bar-root"], {}, deletion ? [more, deletion] : [more]);
 const assistant = node(['[data-role]', '[data-role="assistant"]'], {}, [bar]);
 messages.push(assistant);
 
@@ -170,23 +177,21 @@ def _run(menu_names: list[str]) -> dict:
     return json.loads(done.stdout.strip().splitlines()[-1])
 
 
-def test_delete_opens_the_more_menu_and_selects_its_delete_item():
+def test_delete_uses_the_inline_assistant_action_and_removes_the_message():
     out = _run(["Edit response", "Fork in new chat", "Delete"])
     assert out["ran"] is True, out
     assert out["ms"] is not None, "the reply never left the document after Delete was selected"
     assert (out["before"], out["after"]) == (2, 1), out
-    # The menu mounts three paints late. The document-wide lookup for it runs on the first look
-    # and when body's children change, not once per paint while waiting.
-    assert out["menuLookups"] <= 2, out
+    # The delete path must not waste a menu traversal when Delete is inline.
+    assert out["menuLookups"] == 0, out
 
 
-def test_a_menu_without_delete_is_reported_and_closed():
+def test_missing_inline_delete_is_reported_without_opening_a_menu():
     out = _run(["Edit response", "Fork in new chat"])
     assert out["ran"] is False
-    assert "no Delete item in the More menu" in out["reason"], out["reason"]
-    assert (
-        out["menuOpenAfter"] is False and out["escapes"] == 1
-    ), "a menu the action opened and could not use must be closed, or it covers the next action"
+    assert "no Delete button after waiting" in out["reason"], out["reason"]
+    assert out["menuOpenAfter"] is False and out["escapes"] == 0
+    assert out["menuLookups"] == 0
 
 
 def _names_the_scene_asks_for() -> tuple[set[str], set[str]]:
@@ -232,9 +237,8 @@ def test_every_control_the_scene_asks_for_is_still_rendered():
     message's action bar renders in thread.tsx."""
     tsx = _assistant_bar_source(THREAD_TSX.read_text(encoding = "utf-8"))
     buttons, items = _names_the_scene_asks_for()
-    assert (
-        {"More", "Copy"} <= buttons and "Delete" in items
-    ), "parsed fewer control names than the scene uses; this check would pass on nothing"
+    expected_buttons = {"More", "Copy", "Delete"}
+    assert expected_buttons <= buttons, "scene control parser found too few buttons"
     tooltips = set(re.findall(r"tooltip=\"([^\"]+)\"", tsx))
     # An item's label is its last line of text before the closing tag. Its attributes can hold
     # arrow functions, so the opening tag cannot be skipped with a `[^>]*` match.

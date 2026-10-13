@@ -307,8 +307,8 @@
       const menu = D.openMenu();
       return menu ? qa(".aui-action-bar-more-item", menu).length : 0;
     },
-    // An item of the open More menu, by its text. Delete lives here, last and in red, since #12735
-    // took it off the reply's action bar; a prompt's More menu carries it too.
+    // An item of the open More menu, by its text. Current Delete is instead
+    // an inline assistant action-bar button; other menu items use this path.
     menuItem(name) {
       const menu = D.openMenu();
       return menu ? byName(".aui-action-bar-more-item", name, menu) : null;

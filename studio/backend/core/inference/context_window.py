@@ -153,9 +153,31 @@ def truncate_oldest_messages(
     if len(groups) <= 1:
         return messages, 0
 
-    estimates = {id(message): estimate_message(message) for message in messages}
-    current_estimate = sum(estimates.values())
-    target_estimate = int(current_estimate * max(0.0, keep_ratio))
+    # A keep_ratio of zero with one of the production strictly-positive
+    # estimators evicts EVERY unprotected complete turn. The final group is
+    # always protected, so the remaining estimated cost stays > 0 and the
+    # loop never stops on its cost condition. Computing JSON-based estimates
+    # for ten million historical tokens buys nothing: skip that scan.
+    #
+    # Custom estimators and min_dropped callers use the original algorithm,
+    # because they may return zero or have their own side effects.
+    full_reset = (
+        keep_ratio <= 0.0
+        and min_dropped <= 0
+        and estimate_message
+        in (
+            estimate_message_tokens,
+            estimate_message_tokens_without_unpriced_media,
+        )
+    )
+    if full_reset:
+        estimates = {}
+        current_estimate = 0
+        target_estimate = 0
+    else:
+        estimates = {id(message): estimate_message(message) for message in messages}
+        current_estimate = sum(estimates.values())
+        target_estimate = int(current_estimate * max(0.0, keep_ratio))
     dropped = 0
     protected_ids = protected_message_ids or set()
     latest_user_group = next(
@@ -197,13 +219,14 @@ def truncate_oldest_messages(
 
     dropped_groups: set[int] = set()
     for unit in eviction_units:
-        if current_estimate <= target_estimate and dropped >= min_dropped:
+        if not full_reset and current_estimate <= target_estimate and dropped >= min_dropped:
             break
         dropped_groups.update(unit)
         for group_index in unit:
             group = groups[group_index]
             dropped += len(group)
-            current_estimate -= sum(estimates[id(message)] for message in group)
+            if not full_reset:
+                current_estimate -= sum(estimates[id(message)] for message in group)
 
     if dropped == 0:
         return messages, 0

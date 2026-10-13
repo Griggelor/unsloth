@@ -1,0 +1,211 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Experimental long-chat performance, production integration and regression checks.
+name: Context performance experiment
+
+on:
+  push:
+    branches:
+      - experiment/context-perf-ci-20261013
+      - integration/agent-history-context-perf-20261013
+    paths:
+      - 'studio/backend/tests/context_perf/**'
+      - 'studio/backend/core/inference/context_window.py'
+      - 'studio/backend/core/inference/checkpoint.py'
+      - 'studio/backend/core/inference/early_context_probe.py'
+      - 'studio/backend/storage/studio_db.py'
+      - 'studio/backend/routes/chat_history.py'
+      - 'studio/backend/routes/inference.py'
+      - 'studio/backend/core/inference/llama_cpp.py'
+      - 'studio/frontend/src/features/chat/api/chat-api.ts'
+      - 'studio/frontend/src/features/chat/runtime-provider.tsx'
+      - 'studio/frontend/src/features/chat/utils/checkpoint-delta.ts'
+      - 'studio/frontend/src/features/chat/utils/chat-history-storage.ts'
+      - 'studio/frontend/src/features/chat/utils/delete-thread-message.ts'
+      - 'studio/frontend/tests/checkpoint-delta.test.ts'
+      - 'studio/frontend/tests/checkpoint-protected-cache.test.ts'
+      - 'studio/frontend/tests/bench-checkpoint-delta.ts'
+      - 'docs/performance/context-perf-ci-plan.md'
+      - 'tests/studio/**'  # combined QA harness edits also invalidate context test evidence
+      - '.github/workflows/context-perf-experiment.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: context-perf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  correctness:
+    name: Production context invariants (Python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run production-fit regression and negative cases
+        run: python -m unittest discover -s studio/backend/tests/context_perf -p 'test_*.py' -v
+
+  scale-characterization:
+    name: Synthetic history 1k to 10m (CPU-only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Run production context-fit functions at 5 synthetic scales
+        run: |
+          mkdir -p context-perf-evidence
+          python studio/backend/tests/context_perf/bench_context_perf.py --out context-perf-evidence/context-perf-baseline.json
+      - name: Summarize measurements (diagnostic, no invented latency budget)
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path("context-perf-evidence/context-perf-baseline.json")
+          if not p.exists():
+              print("No evidence JSON: benchmark did not complete.")
+              raise SystemExit(0)
+          data = json.loads(p.read_text())
+          lines = ["## Context performance baseline", "",
+                   "CPU-only synthetic data; no llama-server and no true model tokenizer.",
+                   "",
+                   "| Target estimated tokens | Policy | Wall ms | Count calls | Counter MB scanned |",
+                   "|---:|---|---:|---:|---:|"]
+          for case in data["cases"]:
+              for fit in case["fits"]:
+                  lines.append(f'| {case["case"]} | {fit["policy"]} | {fit["wall_ms"]} | '
+                               f'{fit["token_count_invocations"]} | {fit["counter_bytes_scanned"]/1e6:.1f} |')
+          lines += ["", "Timings are characterization, **not** a pass/fail performance budget.",
+                    "Download the JSON artifact for metadata and limitations."]
+          print("\n".join(lines))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf8") as output:
+              output.write("\n".join(lines) + "\n")
+          PY
+      - name: Upload structured measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: context-perf-baseline-${{ github.sha }}
+          path: context-perf-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  production-sqlite:
+    name: Production SQLite 200k/1m/10m
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install smallest production storage import dependency
+        run: python -m pip install 'structlog>=24.1.0'
+      - name: Run real production SQLite sync / readback / counts
+        run: |
+          mkdir -p context-perf-evidence
+          python studio/backend/tests/context_perf/bench_production_storage.py --out context-perf-evidence/production-sqlite.json --tokens 200000 1000000 10000000
+      - name: Upload real DB measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: production-sqlite-${{ github.sha }}
+          path: context-perf-evidence/production-sqlite.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  production-asgi:
+    name: Production FastAPI/SQLite 200k/1m (in-process ASGI)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install HTTP endpoint import and runtime dependencies (CPU-only)
+        run: |
+          python -m pip install 'fastapi==0.141.1' 'pydantic==2.13.4' 'httpx>=0.27' structlog python-multipart pyjwt sqlalchemy cryptography psutil pyyaml packaging requests jinja2 aiofiles
+      - name: Run real FastAPI route + SQLite integration characterization
+        run: |
+          mkdir -p context-perf-evidence
+          python studio/backend/tests/context_perf/bench_production_http.py --out context-perf-evidence/production-asgi.json --tokens 200000 1000000
+      - name: Upload FastAPI/SQLite measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: production-asgi-${{ github.sha }}
+          path: context-perf-evidence/production-asgi.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  frontend-delta-invariants:
+    name: Incremental checkpoint regression (Node 24)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Install frontend deps for source-imported tests
+        working-directory: studio/frontend
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run real delta planner, edit, retry and large-history tests
+        run: |
+          node --experimental-strip-types --test \
+            studio/frontend/tests/checkpoint-delta.test.ts \
+            studio/frontend/tests/checkpoint-protected-cache.test.ts
+      - name: Measure 200k/1m/10m synthetic checkpoint payloads and digest overhead
+        run: node --experimental-strip-types studio/frontend/tests/bench-checkpoint-delta.ts --out context-perf-evidence/frontend-delta.json
+      - name: Upload frontend delta evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-delta-${{ github.sha }}
+          path: context-perf-evidence/frontend-delta.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  frontend-delta-typecheck:
+    name: Incremental checkpoint frontend typecheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: studio/frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Audit dependency lockfile before installation
+        working-directory: .
+        run: python3 scripts/lockfile_supply_chain_audit.py
+      - name: Install checked-in dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Typecheck production and test TypeScript
+        run: npm run typecheck

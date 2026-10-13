@@ -3709,7 +3709,18 @@ sys.exit(2 if conflict else (0 if version else 1))
         # ...and every remaining escape, shared with the offline rule below.
         _fast_path_escapes
     elif [ -n "$INSTALLED_VER" ] && [ -n "$LATEST_VER" ]; then
-        substep "$_PKG_NAME $INSTALLED_VER -> $LATEST_VER available, updating..."
+        # The version service can be reachable while UV_OFFLINE forbids the
+        # dependency downloads. A verified installation must not be modified
+        # just because a newer release is visible from the version probe.
+        # Incomplete installations still enter the normal repair path.
+        if _uv_offline_requested && _setup_install_is_verified; then
+            substep "$_PKG_NAME $INSTALLED_VER -> $LATEST_VER available, but UV_OFFLINE is set -- keeping the verified install"
+            _SKIP_PYTHON_DEPS=true
+            _OFFLINE_FAST_PATH=true
+            _fast_path_escapes
+        else
+            substep "$_PKG_NAME $INSTALLED_VER -> $LATEST_VER available, updating..."
+        fi
     elif [ -z "$LATEST_VER" ]; then
         # PyPI unreachable: updating to be safe stays the default, since it is usually a blip.
         # UV_OFFLINE is not a blip, so a verified tree is kept instead, on the incomplete-install
