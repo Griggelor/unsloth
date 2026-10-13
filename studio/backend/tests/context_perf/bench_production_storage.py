@@ -120,7 +120,7 @@ def bench_case(target_tokens: int, *, concurrent_counts: bool = True) -> dict:
         assert last_saved["content"] == last["content"]
         assert studio_db.get_chat_message(thread_id, msgs[0]["id"])["content"] == msgs[0]["content"]
 
-        concurrent = {}
+        concurrency_timings = {}
         if concurrent_counts:
             # True concurrent access to production sqlite helpers. The writer
             # updates one existing message; the reader repeatedly counts the
@@ -145,7 +145,7 @@ def bench_case(target_tokens: int, *, concurrent_counts: bool = True) -> dict:
                 f_read = pool.submit(reader)
                 writer_ms = f_write.result(timeout=45)
                 readers_ms = f_read.result(timeout=45)
-            concurrent = {
+            concurrency_timings = {
                 "single_writes_total_ms": round(writer_ms, 3),
                 "count_latencies_ms": readers_ms,
                 "count_max_ms": max(readers_ms),
@@ -171,7 +171,7 @@ def bench_case(target_tokens: int, *, concurrent_counts: bool = True) -> dict:
             "counts_ms": counts_ms,
             "single_message_upsert_ms": single_ms,
             "response_json_encode_ms": jsonify_ms,
-            "concurrent": concurrent,
+            "concurrent": concurrency_timings,
             "db_bytes": sum(p.stat().st_size for p in Path(temp).rglob("*.db*") if p.is_file()),
             "correctness": "full-and-repeat-snapshots-and-branch-counts-verified",
         }
