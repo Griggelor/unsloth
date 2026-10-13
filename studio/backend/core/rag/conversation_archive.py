@@ -28,6 +28,7 @@ from storage import rag_db
 from . import config, embeddings, retrieval, store, tool
 from .chunking import chunk_pages
 from .parsers import Page
+from core.inference.context_perf_trace import StageBook
 
 logger = logging.getLogger(__name__)
 
@@ -385,6 +386,7 @@ def archive_turns(
     # The evictor's own grouper, so an archived unit is exactly the unit the window drops. Imported lazily because the
     # inference layer imports this module.
     from core.inference.context_window import group_turns
+    profile = StageBook("conversation_archive.archive_turns", evicted_messages = len(evicted))
 
     # Each entry is the archivable messages AND the span of the turn they came from. The two differ whenever
     # `_archivable` drops something: an assistant batch that called `search_conversation` alongside an ordinary tool
@@ -402,7 +404,7 @@ def archive_turns(
     model = config.effective_embedding_model()
     scope = store.conversation_archive_scope(thread_id)
     # Conversation order from the persisted thread, not arrival order (`_transcript_positions`).
-    positions = _transcript_positions(thread_id, branch or live)
+    positions = profile.call("load_branch_positions", _transcript_positions, thread_id, branch or live)
     live_positions = _live_positions(live)
     written = 0
     conn = None
@@ -421,8 +423,8 @@ def archive_turns(
             if not text:
                 continue
             digest = hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
-            seats = _occurrences(positions, group)
-            budget = _write_budget(positions, seats, live_positions, group)
+            seats = profile.call("match_evicted_turn", _occurrences, positions, group)
+            budget = profile.call("match_live_turn", _write_budget, positions, seats, live_positions, group)
             if _archived_under(conn, scope, digest, expected_identity, occurrences = budget):
                 # Commit here: this path holds no transaction of its own and can return before reaching the write
                 # lock, the ordinary case on a re-compacted thread, so it is the only chance an upgraded archive has
@@ -441,7 +443,8 @@ def archive_turns(
                 )
                 _widen_span(conn, scope, digest, span)
                 continue
-            chunks = chunk_pages(
+            chunks = profile.call(
+                "chunk_turn", chunk_pages,
                 [Page(text = text, page_number = None, char_count = len(text))],
                 max_tokens = config.CHUNK_TOKENS,
                 overlap = config.CHUNK_OVERLAP,
@@ -454,7 +457,8 @@ def archive_turns(
 
         # Identity from the encode that produced these vectors: a concurrent embedder swap would otherwise label them
         # with a space they were never in.
-        vectors, identity = embeddings.encode_with_identity(
+        vectors, identity = profile.call(
+            "embedding_encode", embeddings.encode_with_identity,
             [chunk.text for entry in pending for chunk in entry[3]],
             model_name = model,
             normalize = True,
@@ -597,6 +601,7 @@ def archive_turns(
         globals()["_INGEST_FAILED"] = True
         logger.warning("conversation_archive.ingest_failed thread_id=%s", thread_id, exc_info = True)
     finally:
+        profile.report(archived_messages = written, evicted_turns = len(groups))
         if conn is not None:
             try:
                 conn.close()

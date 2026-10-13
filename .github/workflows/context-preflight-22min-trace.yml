@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: Context 22min isolated trace smoke
+on:
+  push:
+    branches:
+      - experiment/context-preflight-22min-trace-20261013
+    paths:
+      - 'studio/backend/core/inference/checkpoint.py'
+      - 'studio/backend/core/inference/context_perf_trace.py'
+      - 'studio/backend/core/rag/conversation_archive.py'
+      - 'studio/backend/tests/context_perf/**'
+      - '.github/workflows/context-preflight-22min-trace.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  trace-pure-python:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.2.2
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Syntax-check instrumented production files
+        run: python -m py_compile studio/backend/core/inference/checkpoint.py studio/backend/core/inference/context_perf_trace.py studio/backend/core/rag/conversation_archive.py
+      - name: Run real checkpoint semantics + trace privacy
+        run: |
+          python -m unittest discover -s studio/backend/tests/context_perf -p 'test_context_perf_trace.py' -v
+          python -m unittest discover -s studio/backend/tests/context_perf -p 'test_checkpoint_exact_count_reuse.py' -v

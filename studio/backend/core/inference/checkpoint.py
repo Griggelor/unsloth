@@ -39,6 +39,7 @@ from core.inference.context_window import (
     truncate_oldest_messages,
 )
 from core.inference.instruction_pin import is_substantive
+from core.inference.context_perf_trace import trace_call
 from utils.current_date_prompt_settings import strip_current_date_update_note
 
 # "checkpoint" resets the epoch; "rolling" is the pre-existing window, byte for byte, and is both the A/B arm and the
@@ -528,7 +529,11 @@ def fit_checkpoint_context(
         )
         if candidate is not None and _resolved(can_reset):
             prefix_probe = candidate
-    initial_tokens = prefix_probe[0] if prefix_probe else count_tokens(list(messages))
+    initial_tokens = (
+        prefix_probe[0]
+        if prefix_probe
+        else trace_call("checkpoint.original_exact_count", count_tokens, list(messages), messages = len(messages))
+    )
     if initial_tokens <= prompt_target and sticky_dropped <= 0 and not force_reset:
         return messages, None
 
@@ -606,7 +611,7 @@ def fit_checkpoint_context(
     if dropped == 0 and not block and projected == messages:
         current_tokens = initial_tokens
     else:
-        current_tokens = count_tokens(projected)
+        current_tokens = trace_call("checkpoint.replay_exact_count", count_tokens, projected, messages = len(projected))
     # What `current_tokens` prices, tracked separately because `projected` is rebound below on a path that does not
     # re-count. The refusal reports the pair together.
     measured = projected
@@ -625,7 +630,7 @@ def fit_checkpoint_context(
             dropped = reset_dropped
             is_new_epoch = True
             projected, block = _project(fitted)
-            current_tokens = count_tokens(projected)
+            current_tokens = trace_call("checkpoint.reset_exact_count", count_tokens, projected, messages = len(projected))
             measured = projected
 
     if dropped == 0 and current_tokens <= prompt_target:
@@ -641,7 +646,7 @@ def fit_checkpoint_context(
         if block:
             projected = _without_block(fitted)
             block = ""
-            current_tokens = count_tokens(projected)
+            current_tokens = trace_call("checkpoint.no_carry_exact_count", count_tokens, projected, messages = len(projected))
             measured = projected
     if current_tokens > prompt_target:
         # let the rolling fit retry from the originals; any projection made here would be discarded by `_fit_context`
