@@ -115,7 +115,7 @@ test("duplicate IDs and cyclic parents cannot use a delta", async () => {
 test("large rewrites fall back to one atomic bulk write", async () => {
   const old = Array.from({length: 40}, (_, i) => row(`u${i}`));
   const snap = await baseline(old);
-  const changed = old.map(m => ({...m, content: [{type:"text", text:"revised"}]}));
+  const changed: MessageRecord[] = old.map(m => ({...m, content: [{type:"text" as const, text:"revised"}]}));
   assert.equal((await planCheckpointDelta(changed, snap)).mode, "full");
 });
 
