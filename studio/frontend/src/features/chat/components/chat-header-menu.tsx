@@ -23,7 +23,6 @@ import {
 import { useChatFavoritesStore } from "@/features/library/chats/favorites-store";
 import { useAgentHistoryModeStore } from "../stores/agent-history-mode-store";
 import { agentHistoryLevelFor, agentHistoryStorageModeForUi, agentHistoryUiModeFor } from "../stores/agent-history-preference-policy";
-import { useChatRuntimeStore } from "../stores/chat-runtime-store";
 import { useShortcutLabel } from "@/features/settings";
 import type { ShortcutId } from "@/features/settings";
 import { useT } from "@/i18n";
