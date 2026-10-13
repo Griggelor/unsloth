@@ -1,0 +1,64 @@
+# One-shot QA-only formatter on isolated helper branch; never pushes to main or PR33.
+name: QA isolated format integration
+on:
+  push:
+    branches:
+      - qa/format-integration-20261013
+    paths:
+      - '.github/workflows/qa-format-integration-20261013.yml'
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.repository == 'Griggelor/unsloth' && github.ref == 'refs/heads/qa/format-integration-20261013'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: qa/format-integration-20261013
+          persist-credentials: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Pinned Ruff 0.6.9 fixed-point formatting
+        run: |
+          python -m pip install 'ruff==0.6.9'
+          python scripts/run_ruff_format.py \
+            studio/backend/core/inference/checkpoint.py \
+            studio/backend/core/inference/context_window.py \
+            studio/backend/core/inference/early_context_probe.py \
+            studio/backend/tests/context_perf/bench_context_perf.py \
+            studio/backend/tests/context_perf/bench_production_http.py \
+            studio/backend/tests/context_perf/bench_production_storage.py \
+            studio/backend/tests/context_perf/test_checkpoint_exact_count_reuse.py \
+            studio/backend/tests/context_perf/test_context_perf_baseline.py \
+            studio/backend/tests/context_perf/test_early_context_probe.py \
+            studio/backend/tests/context_perf/test_full_reset_fastpath.py \
+            tests/studio/test_deep_research_frontend_contract.py
+          git diff --check
+          git status --short
+      - name: Commit only explicitly selected formatting changes to helper branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- \
+            studio/backend/core/inference/checkpoint.py \
+            studio/backend/core/inference/context_window.py \
+            studio/backend/core/inference/early_context_probe.py \
+            studio/backend/tests/context_perf/bench_context_perf.py \
+            studio/backend/tests/context_perf/bench_production_http.py \
+            studio/backend/tests/context_perf/bench_production_storage.py \
+            studio/backend/tests/context_perf/test_checkpoint_exact_count_reuse.py \
+            studio/backend/tests/context_perf/test_context_perf_baseline.py \
+            studio/backend/tests/context_perf/test_early_context_probe.py \
+            studio/backend/tests/context_perf/test_full_reset_fastpath.py \
+            tests/studio/test_deep_research_frontend_contract.py
+          if git diff --cached --quiet; then
+            echo "No changes: already formatted"
+            exit 0
+          fi
+          git config user.name 'Unsloth fork QA formatter'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "style: apply pinned project Ruff formatter to integrated Python changes"
+          git push origin HEAD:refs/heads/qa/format-integration-20261013
