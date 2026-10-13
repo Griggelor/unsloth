@@ -2485,6 +2485,8 @@ export const ru = {
       },
     },
     chat: {
+      agentHistoryBufferDynamic: "Динамический",
+      agentHistoryBufferFixed: "Фиксированный",
       agentHistoryBufferDynamicLow: "Динамический буфер Low (до 5 сообщений)",
       agentHistoryBufferDynamicHigh: "Динамический буфер High (до 32 сообщений)",
       agentHistoryBufferFixedLow: "Фиксированный буфер Low (5 сообщений)",

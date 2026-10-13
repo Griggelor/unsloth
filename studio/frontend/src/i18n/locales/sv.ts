@@ -2644,6 +2644,8 @@ export const sv = {
       },
     },
     chat: {
+      agentHistoryBufferDynamic: "Dynamisk",
+      agentHistoryBufferFixed: "Fast",
       agentHistoryBufferDynamicLow: "Dynamisk buffert låg (högst 5 meddelanden)",
       agentHistoryBufferDynamicHigh: "Dynamisk buffert hög (högst 32 meddelanden)",
       agentHistoryBufferFixedLow: "Fast buffert låg (5 meddelanden)",

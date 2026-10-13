@@ -2458,6 +2458,8 @@ export const ja = {
       },
     },
     chat: {
+      agentHistoryBufferDynamic: "動的",
+      agentHistoryBufferFixed: "固定",
       agentHistoryBufferDynamicLow: "動的バッファ Low（最大5件）",
       agentHistoryBufferDynamicHigh: "動的バッファ High（最大32件）",
       agentHistoryBufferFixedLow: "固定バッファ Low（5件）",

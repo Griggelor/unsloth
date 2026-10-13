@@ -2489,6 +2489,8 @@ export const ptBR = {
       },
     },
     chat: {
+      agentHistoryBufferDynamic: "Dinâmico",
+      agentHistoryBufferFixed: "Fixo",
       agentHistoryBufferDynamicLow: "Buffer dinâmico baixo (até 5 mensagens)",
       agentHistoryBufferDynamicHigh: "Buffer dinâmico alto (até 32 mensagens)",
       agentHistoryBufferFixedLow: "Buffer fixo baixo (5 mensagens)",
