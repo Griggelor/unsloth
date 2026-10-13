@@ -85,5 +85,5 @@ test("settings dropdown exposes Dynamic, Fixed, Off without a duplicate toggle",
   const options = [...section.matchAll(/<SelectItem value="([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(options, ["off", "dynamic-low", "fixed-high"]);
   assert.doesNotMatch(section, /<Switch/);
-  assert.doesNotMatch(section, /value="off"|value="legacy"|agentHistoryLegacy/);
+  assert.doesNotMatch(section, /value="legacy"|agentHistoryLegacy/);
 });
