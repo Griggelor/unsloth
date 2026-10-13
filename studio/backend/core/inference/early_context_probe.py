@@ -81,7 +81,10 @@ def bounded_exact_prefix_probe(
 
     size = 0
     candidate_end = None
-    target_chars = prompt_target * 7
+    # The new user at the cut is excluded; leave enough extra raw-text room
+    # that a prefix of several completed turns can independently exceed the
+    # conservative exact-count margin, even when each turn is large.
+    target_chars = prompt_target * 10
     max_chars = context_length * 16
     for i, message in enumerate(messages):
         size += _cheap_text_size(message)
