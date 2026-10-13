@@ -6,17 +6,17 @@ import {
   type CheckpointSnapshot,
 } from "../src/features/chat/utils/checkpoint-delta-plan.ts";
 
-type Record = {
+type ChatRecord = {
   id: string;
   threadId: string;
   role: "user" | "assistant";
   parentId: string | null;
   content: Array<{ type: string; text: string }>;
-  metadata?: globalThis.Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   createdAt: number;
 };
 
-const record = (id: string, parentId: string | null = null, text = "text"): Record => ({
+const record = (id: string, parentId: string | null = null, text = "text"): ChatRecord => ({
   id,
   threadId: "t1",
   parentId,
@@ -25,7 +25,7 @@ const record = (id: string, parentId: string | null = null, text = "text"): Reco
   createdAt: 1,
 });
 
-function baseline(rows: readonly Record[]): CheckpointSnapshot {
+function baseline(rows: readonly ChatRecord[]): CheckpointSnapshot {
   const result = planCheckpointDelta("t1", rows, null);
   assert.equal(result.kind, "full");
   assert.ok(result.next);
