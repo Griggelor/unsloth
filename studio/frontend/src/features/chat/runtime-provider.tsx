@@ -53,6 +53,8 @@ import {
 } from "./api/chat-adapter";
 import {
   CHAT_HISTORY_UPDATED_EVENT,
+  saveChatMessage,
+  ChatMessageProtectedError,
   streamChatCompletions,
   uploadChatAttachmentOriginal,
 } from "./api/chat-api";
@@ -244,7 +246,14 @@ import {
   titleCheckpoint,
   titleFromStream,
 } from "./utils/chat-title";
-import { syncExportedRepositoryToBackend } from "./utils/delete-thread-message";
+import {
+  exportedItemToRecord,
+  syncExportedRepositoryToBackend,
+} from "./utils/delete-thread-message";
+import {
+  planCheckpointDelta,
+  type CheckpointSnapshot,
+} from "./utils/checkpoint-delta-plan";
 import { getImageInputUnavailableReason } from "./utils/image-input-support";
 import {
   attachmentContentText,
@@ -4025,6 +4034,10 @@ function ThreadBackendAutosave({
   const aui = useAui();
   const saveChainRef = useRef(Promise.resolve());
   const pendingFirstSavesRef = useRef(new Map<string, Promise<void>>());
+  // Experimental opt-in only: never infer stored state from a renderer reload.
+  // Account changes invalidate snapshots even if a thread id is reused.
+  const checkpointDeltaRef = useRef(new Map<string, CheckpointSnapshot>());
+  const checkpointDeltaEpochRef = useRef(getAuthSessionEpoch());
   // A ref, not a saveThread dependency: the save may be queued while visible and resolve after
   // Compare hides the pane, so this must read at PUBLISH time.
   const backgroundedRef = useRef(backgrounded);
@@ -4054,8 +4067,52 @@ function ThreadBackendAutosave({
         await deleteStoredChatThreads([remoteId]);
         return;
       }
-      await ensureStoredChatThread(remoteId);
-      await syncExportedRepositoryToBackend(remoteId, exported);
+      // The default path stays byte-for-byte equivalent to the released Studio.
+      // Opt-in compares exact serialized records against the LAST SUCCESSFUL
+      // checkpoint: no network request when unchanged, and one PUT for exactly
+      // one safe existing assistant/user edit. Everything else retains the
+      // original atomic full-sync transaction. If the write fails, discard the
+      // baseline rather than ever acknowledging unsaved changes.
+      if (import.meta.env.VITE_UNSLOTH_EXPERIMENTAL_CHECKPOINT_DELTA === "1") {
+        const epoch = getAuthSessionEpoch();
+        if (checkpointDeltaEpochRef.current !== epoch) {
+          checkpointDeltaEpochRef.current = epoch;
+          checkpointDeltaRef.current.clear();
+        }
+        const records = exported.messages.map(({ message, parentId }) =>
+          exportedItemToRecord(remoteId, parentId, message),
+        );
+        const plan = planCheckpointDelta(
+          remoteId,
+          records,
+          checkpointDeltaRef.current.get(remoteId) ?? null,
+        );
+        try {
+          if (plan.kind === "full") {
+            await ensureStoredChatThread(remoteId);
+            await syncExportedRepositoryToBackend(remoteId, exported);
+          } else if (plan.kind === "single") {
+            // Unlike saveStoredChatMessage (streaming chunks), a protected
+            // 409 must be visible here; it means this delta was NOT written.
+            await saveChatMessage(plan.message, { coalesce: true });
+          }
+          if (plan.next) checkpointDeltaRef.current.set(remoteId, plan.next);
+          else checkpointDeltaRef.current.delete(remoteId);
+        } catch (error) {
+          checkpointDeltaRef.current.delete(remoteId);
+          if (error instanceof ChatMessageProtectedError) {
+            // No partial delta was committed. Let the production full-sync
+            // reconcile server-owned metadata and restore a trusted baseline.
+            await ensureStoredChatThread(remoteId);
+            await syncExportedRepositoryToBackend(remoteId, exported);
+          } else {
+            throw error;
+          }
+        }
+      } else {
+        await ensureStoredChatThread(remoteId);
+        await syncExportedRepositoryToBackend(remoteId, exported);
+      }
       if (isChatThreadDeleted(remoteId)) {
         await deleteStoredChatThreads([remoteId]);
         return;
