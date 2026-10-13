@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Experimental, CPU-only long-chat performance evidence. No production changes.
+# Experimental long-chat performance, production integration and regression checks.
 name: Context performance experiment
 
 on:
@@ -10,6 +10,7 @@ on:
       - 'studio/backend/tests/context_perf/**'
       - 'studio/backend/core/inference/context_window.py'
       - 'studio/backend/core/inference/checkpoint.py'
+      - 'studio/backend/core/inference/early_context_probe.py'
       - 'studio/backend/storage/studio_db.py'
       - 'studio/backend/routes/chat_history.py'
       - 'studio/backend/routes/inference.py'
@@ -17,6 +18,7 @@ on:
       - 'studio/frontend/src/features/chat/api/chat-api.ts'
       - 'studio/frontend/src/features/chat/runtime-provider.tsx'
       - 'studio/frontend/src/features/chat/utils/checkpoint-delta.ts'
+      - 'studio/frontend/src/features/chat/utils/chat-history-storage.ts'
       - 'studio/frontend/src/features/chat/utils/delete-thread-message.ts'
       - 'studio/frontend/tests/checkpoint-delta.test.ts'
       - 'studio/frontend/tests/bench-checkpoint-delta.ts'
