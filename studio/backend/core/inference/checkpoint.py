@@ -513,7 +513,22 @@ def fit_checkpoint_context(
         return messages, None
 
     prompt_target = prompt_budget(context_length, max_tokens)
-    initial_tokens = count_tokens(list(messages))
+    # Experimental huge-history admission: count an earlier complete prefix
+    # first. Only if its exact count far exceeds the budget AND archive reset
+    # is available do we avoid the initial 10M-token count. The prefix count is
+    # NOT an exact total; metadata below marks it unambiguously.
+    prefix_probe = None
+    if os.environ.get("UNSLOTH_CONTEXT_EARLY_PROBE") == "1" and not force_reset:
+        from core.inference.early_context_probe import bounded_exact_prefix_probe
+        candidate = bounded_exact_prefix_probe(
+            messages,
+            context_length = context_length,
+            prompt_target = prompt_target,
+            count_tokens = count_tokens,
+        )
+        if candidate is not None and _resolved(can_reset):
+            prefix_probe = candidate
+    initial_tokens = prefix_probe[0] if prefix_probe else count_tokens(list(messages))
     if initial_tokens <= prompt_target and sticky_dropped <= 0 and not force_reset:
         return messages, None
 
@@ -578,7 +593,20 @@ def fit_checkpoint_context(
             dropped = replayed
 
     projected, block = _project(fitted)
-    current_tokens = count_tokens(projected)
+    # Without a replayed eviction or a carried block, _project commonly makes
+    # only a new list and a byte-identical copy of the system dict. Its exact
+    # rendered prompt is then the one just counted as initial_tokens. Counting
+    # it AGAIN can send a second entire 10M-token conversation through
+    # llama-server before the reset even begins. Compare content equality, not
+    # just object identity: _without_block deliberately copies the system row.
+    #
+    # If the system text was changed (e.g. whitespace stripped or an existing
+    # block removed), the equality fails and the real tokenizer still runs.
+    # No heuristic token estimate can declare a prompt to fit.
+    if dropped == 0 and not block and projected == messages:
+        current_tokens = initial_tokens
+    else:
+        current_tokens = count_tokens(projected)
     # What `current_tokens` prices, tracked separately because `projected` is rebound below on a path that does not
     # re-count. The refusal reports the pair together.
     measured = projected
@@ -622,6 +650,8 @@ def fit_checkpoint_context(
             "fits": False,
             "dropped_messages": 0,
             "prompt_tokens_before": initial_tokens,
+            **({"prompt_tokens_before_is_prefix_probe": True,
+                "prefix_tokenized_messages": prefix_probe[1]} if prefix_probe else {}),
             "prompt_tokens_after": initial_tokens,
             "irreducible_tokens": current_tokens,
             **turn_diagnosis(
@@ -634,6 +664,8 @@ def fit_checkpoint_context(
     return projected, {
         "dropped_messages": dropped,
         "prompt_tokens_before": initial_tokens,
+            **({"prompt_tokens_before_is_prefix_probe": True,
+                "prefix_tokenized_messages": prefix_probe[1]} if prefix_probe else {}),
         "prompt_tokens_after": current_tokens,
         "context_length": context_length,
         "fits": True,
