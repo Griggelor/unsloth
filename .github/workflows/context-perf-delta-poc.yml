@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Experimental feature: does not run on main or PR30 and cannot release itself.
+name: Context performance delta candidate
+
+on:
+  push:
+    branches:
+      - experiment/context-perf-delta-poc-20261013
+    paths:
+      - 'studio/frontend/src/features/chat/utils/checkpoint-delta-plan.ts'
+      - 'studio/frontend/src/features/chat/runtime-provider.tsx'
+      - 'studio/frontend/tests/checkpoint-delta*.test.ts'
+      - '.github/workflows/context-perf-delta-poc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: context-perf-delta-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-behavior:
+    name: Delta planner + integration contract (Node 22)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Production no-import pure test suite
+        working-directory: studio/frontend
+        run: |
+          node --experimental-strip-types --test tests/checkpoint-delta-plan.test.ts tests/checkpoint-delta-integration-contract.test.ts
+
+  types:
+    name: Full frontend typecheck (feature still disabled)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Lockfile supply-chain audit before dependency install
+        run: |
+          python3 scripts/lockfile_supply_chain_audit.py
+          python3 scripts/sync_allow_scripts_pins.py --check
+      - name: Enable npm strict allowScripts
+        run: npm install -g npm@^11 --no-fund --no-audit
+      - name: Install pinned dependencies, run no unknown lifecycle scripts
+        run: npm ci --strict-allow-scripts --no-fund --no-audit
+      - name: Compile-check all TS files and standalone frontend tests
+        run: npm run typecheck
