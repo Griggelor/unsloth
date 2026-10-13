@@ -650,8 +650,14 @@ def fit_checkpoint_context(
             "fits": False,
             "dropped_messages": 0,
             "prompt_tokens_before": initial_tokens,
-            **({"prompt_tokens_before_is_prefix_probe": True,
-                "prefix_tokenized_messages": prefix_probe[1]} if prefix_probe else {}),
+            **(
+                {
+                    "prompt_tokens_before_is_prefix_probe": True,
+                    "prefix_tokenized_messages": prefix_probe[1],
+                }
+                if prefix_probe
+                else {}
+            ),
             "prompt_tokens_after": initial_tokens,
             "irreducible_tokens": current_tokens,
             **turn_diagnosis(
@@ -664,8 +670,14 @@ def fit_checkpoint_context(
     return projected, {
         "dropped_messages": dropped,
         "prompt_tokens_before": initial_tokens,
-            **({"prompt_tokens_before_is_prefix_probe": True,
-                "prefix_tokenized_messages": prefix_probe[1]} if prefix_probe else {}),
+        **(
+            {
+                "prompt_tokens_before_is_prefix_probe": True,
+                "prefix_tokenized_messages": prefix_probe[1],
+            }
+            if prefix_probe
+            else {}
+        ),
         "prompt_tokens_after": current_tokens,
         "context_length": context_length,
         "fits": True,

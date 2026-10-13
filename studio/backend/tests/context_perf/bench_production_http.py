@@ -5,6 +5,7 @@ TestClient exercises request validation, dependency resolution, serialization,
 actual chat-history routes and actual studio_db storage. It does *not* exercise
 Windows networking, a real TCP socket or the frontend, and no model is loaded.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,33 +39,43 @@ from bench_production_storage import messages_for, synthetic_tokens  # noqa: E40
 
 
 def bench_http(target_tokens: int) -> dict:
-    with tempfile.TemporaryDirectory(prefix="unsloth-production-http-perf-") as home:
+    with tempfile.TemporaryDirectory(prefix = "unsloth-production-http-perf-") as home:
         os.environ["UNSLOTH_STUDIO_HOME"] = home
         os.environ["UNSLOTH_STUDIO_PROJECTS_HOME"] = str(Path(home) / "Projects")
         studio_db.reset_schema_state_for_tests()
 
         thread_id = f"synthetic-http-{target_tokens}"
-        studio_db.upsert_chat_thread({
-            "id": thread_id, "title": "Synthetic HTTP only",
-            "modelType": "base", "modelId": "not-loaded",
-            "pairId": None, "archived": False, "createdAt": 1_700_000_000_000,
-        })
+        studio_db.upsert_chat_thread(
+            {
+                "id": thread_id,
+                "title": "Synthetic HTTP only",
+                "modelType": "base",
+                "modelId": "not-loaded",
+                "pairId": None,
+                "archived": False,
+                "createdAt": 1_700_000_000_000,
+            }
+        )
         app = FastAPI()
-        app.include_router(chat_history.router, prefix="/api/chat")
+        app.include_router(chat_history.router, prefix = "/api/chat")
         app.dependency_overrides[chat_history.get_current_subject] = lambda: "synthetic-test-user"
 
         url = f"/api/chat/threads/{thread_id}/messages"
         messages = messages_for(thread_id, target_tokens)
-        body = json.dumps({
-            "messages": messages, "pruneMissing": False, "deletedMessageIds": []
-        }, separators=(",", ":"))
+        body = json.dumps(
+            {"messages": messages, "pruneMissing": False, "deletedMessageIds": []},
+            separators = (",", ":"),
+        )
         size_bytes = len(body.encode("utf-8"))
 
-        with TestClient(app, raise_server_exceptions=True) as client:
+        with TestClient(app, raise_server_exceptions = True) as client:
+
             def do_sync():
                 t0 = time.perf_counter()
                 response = client.put(
-                    url, content=body, headers={"content-type": "application/json"},
+                    url,
+                    content = body,
+                    headers = {"content-type": "application/json"},
                 )
                 elapsed_ms = round(1000 * (time.perf_counter() - t0), 3)
                 if response.status_code != 200:
@@ -83,7 +94,7 @@ def bench_http(target_tokens: int) -> dict:
             assert second_response_bytes == response_bytes, "unstable unchanged response size"
 
             t = time.perf_counter()
-            response = client.post("/api/chat/messages:counts", json={"threadIds": [thread_id]})
+            response = client.post("/api/chat/messages:counts", json = {"threadIds": [thread_id]})
             counts_ms = round((time.perf_counter() - t) * 1000, 3)
             assert response.status_code == 200
             assert response.json()["countsByThreadId"][thread_id] == len(messages)
@@ -95,12 +106,15 @@ def bench_http(target_tokens: int) -> dict:
             t = time.perf_counter()
             response = client.put(
                 f"{url}/{changed['id']}",
-                json=changed,
+                json = changed,
             )
             single_ms = round((time.perf_counter() - t) * 1000, 3)
             assert response.status_code == 200, f"single message PUT HTTP {response.status_code}"
             assert response.json()["content"] == changed["content"]
-            assert studio_db.get_chat_message(thread_id, messages[0]["id"])["content"] == messages[0]["content"]
+            assert (
+                studio_db.get_chat_message(thread_id, messages[0]["id"])["content"]
+                == messages[0]["content"]
+            )
 
         return {
             "execution": "real_chat_history_router_fastapi_testclient_actual_sqlite_inprocess_asgi",
@@ -119,8 +133,8 @@ def bench_http(target_tokens: int) -> dict:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tokens", type=int, nargs="+", default=[200000, 1000000])
-    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--tokens", type = int, nargs = "+", default = [200000, 1000000])
+    parser.add_argument("--out", type = Path, required = True)
     opts = parser.parse_args()
 
     rows = []
@@ -132,21 +146,27 @@ def main():
             f"{case['response_json_bytes']/1e6:.2f} MB reply; "
             f"PUT={case['full_put_ms']} ms; repeat={case['repeat_unchanged_full_put_ms']} ms; "
             f"count={case['counts_post_ms']} ms; single={case['single_message_put_ms']} ms",
-            flush=True,
+            flush = True,
         )
-    opts.out.parent.mkdir(parents=True, exist_ok=True)
-    opts.out.write_text(json.dumps({
-        "schema_version": 1,
-        "run_type": "real_fastapi_route_in_process_asgi_plus_real_sqlite",
-        "sha": os.environ.get("GITHUB_SHA", "local"),
-        "limitations": [
-            "FastAPI TestClient, not a TCP socket/Windows browser or production reverse proxy.",
-            "Counts are approximate chars/4, not actual llama-server tokenizer tokens.",
-            "No llama-server and no generation pathway exercised.",
-            "Do not compare wall times across dissimilar GitHub-hosted runners as a hard gate.",
-        ],
-        "cases": rows,
-    }, indent=2), encoding="utf-8")
+    opts.out.parent.mkdir(parents = True, exist_ok = True)
+    opts.out.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "run_type": "real_fastapi_route_in_process_asgi_plus_real_sqlite",
+                "sha": os.environ.get("GITHUB_SHA", "local"),
+                "limitations": [
+                    "FastAPI TestClient, not a TCP socket/Windows browser or production reverse proxy.",
+                    "Counts are approximate chars/4, not actual llama-server tokenizer tokens.",
+                    "No llama-server and no generation pathway exercised.",
+                    "Do not compare wall times across dissimilar GitHub-hosted runners as a hard gate.",
+                ],
+                "cases": rows,
+            },
+            indent = 2,
+        ),
+        encoding = "utf-8",
+    )
 
 
 if __name__ == "__main__":
