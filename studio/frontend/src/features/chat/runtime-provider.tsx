@@ -244,7 +244,11 @@ import {
   titleCheckpoint,
   titleFromStream,
 } from "./utils/chat-title";
-import { syncExportedRepositoryToBackend } from "./utils/delete-thread-message";
+import { exportedItemToRecord, syncExportedRepositoryToBackend } from "./utils/delete-thread-message";
+import {
+  persistCheckpointMessages,
+  type CheckpointSnapshot,
+} from "./utils/checkpoint-delta";
 import { getImageInputUnavailableReason } from "./utils/image-input-support";
 import {
   attachmentContentText,
@@ -4025,6 +4029,10 @@ function ThreadBackendAutosave({
   const aui = useAui();
   const saveChainRef = useRef(Promise.resolve());
   const pendingFirstSavesRef = useRef(new Map<string, Promise<void>>());
+  // Per-mounted-runtime only: failed writes invalidate the entry, and the next
+  // checkpoint repairs through the previous complete sync path. Keep a small
+  // LRU so a long session cycling through chats does not retain every digest.
+  const checkpointSnapshotsRef = useRef(new Map<string, CheckpointSnapshot>());
   // A ref, not a saveThread dependency: the save may be queued while visible and resolve after
   // Compare hides the pane, so this must read at PUBLISH time.
   const backgroundedRef = useRef(backgrounded);
@@ -4054,8 +4062,34 @@ function ThreadBackendAutosave({
         await deleteStoredChatThreads([remoteId]);
         return;
       }
-      await ensureStoredChatThread(remoteId);
-      await syncExportedRepositoryToBackend(remoteId, exported);
+      // Full first checkpoint, then only new/modified messages. No skip is
+      // trusted unless the previous full/delta save acknowledged successfully.
+      // The planner hashes complete records, so edits to earlier branches,
+      // metadata and attachments cannot hide behind "last message" heuristics.
+      const previous = checkpointSnapshotsRef.current.get(remoteId) ?? null;
+      const records = exported.messages.map(({ message, parentId }) =>
+        exportedItemToRecord(remoteId, parentId, message),
+      );
+      try {
+        const snapshot = await persistCheckpointMessages(records, previous, {
+          full: () => syncExportedRepositoryToBackend(remoteId, exported),
+          message: (record) => saveStoredChatMessage(record),
+        });
+        const snapshots = checkpointSnapshotsRef.current;
+        snapshots.delete(remoteId);
+        if (snapshot) {
+          snapshots.set(remoteId, snapshot);
+          if (snapshots.size > 16) {
+            const oldest = snapshots.keys().next().value;
+            if (oldest !== undefined) snapshots.delete(oldest);
+          }
+        }
+      } catch (error) {
+        // A partial delta may have committed on the server. Force a complete
+        // corrective write next time; never accept a partly applied baseline.
+        checkpointSnapshotsRef.current.delete(remoteId);
+        throw error;
+      }
       if (isChatThreadDeleted(remoteId)) {
         await deleteStoredChatThreads([remoteId]);
         return;
