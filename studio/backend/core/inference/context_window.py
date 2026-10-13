@@ -162,9 +162,12 @@ def truncate_oldest_messages(
     # Custom estimators and min_dropped callers use the original algorithm,
     # because they may return zero or have their own side effects.
     full_reset = (
-        keep_ratio <= 0.0 and min_dropped <= 0
-        and estimate_message in (
-            estimate_message_tokens, estimate_message_tokens_without_unpriced_media,
+        keep_ratio <= 0.0
+        and min_dropped <= 0
+        and estimate_message
+        in (
+            estimate_message_tokens,
+            estimate_message_tokens_without_unpriced_media,
         )
     )
     if full_reset:

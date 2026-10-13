@@ -5,6 +5,7 @@ The production storage.studio_db functions are invoked unchanged, with a fresh
 temporary Studio home per case. The "tokens" parameter approximates bytes/4
 and is never reported as a tokenizer's real input token count.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,7 +23,11 @@ sys.path.insert(0, str(ROOT / "studio" / "backend"))
 from storage import studio_db  # noqa: E402
 
 
-def messages_for(thread_id: str, target_tokens: int, max_messages: int = 2048) -> list[dict]:
+def messages_for(
+    thread_id: str,
+    target_tokens: int,
+    max_messages: int = 2048,
+) -> list[dict]:
     rows = max(4, min(max_messages, target_tokens // 256))
     if rows % 2:
         rows += 1
@@ -32,16 +37,18 @@ def messages_for(thread_id: str, target_tokens: int, max_messages: int = 2048) -
     pad = "Synthetic agent history. " + "Q" * max(0, payload_chars - 30)
     rows_out = []
     for i in range(rows):
-        rows_out.append({
-            "id": f"msg-{i:06d}",
-            "threadId": thread_id,
-            "parentId": f"msg-{i-1:06d}" if i else None,
-            "role": "user" if i % 2 == 0 else "assistant",
-            "content": [{"type": "text", "text": f"TURN:{i:06d}\n" + pad}],
-            "attachments": None,
-            "metadata": None,
-            "createdAt": 1_700_000_000_000 + i,
-        })
+        rows_out.append(
+            {
+                "id": f"msg-{i:06d}",
+                "threadId": thread_id,
+                "parentId": f"msg-{i-1:06d}" if i else None,
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": [{"type": "text", "text": f"TURN:{i:06d}\n" + pad}],
+                "attachments": None,
+                "metadata": None,
+                "createdAt": 1_700_000_000_000 + i,
+            }
+        )
     return rows_out
 
 
@@ -66,7 +73,7 @@ def timed(callable_, *args, **kwargs):
 
 
 def bench_case(target_tokens: int, *, concurrent_counts: bool = True) -> dict:
-    with tempfile.TemporaryDirectory(prefix="unsloth-production-db-perf-") as temp:
+    with tempfile.TemporaryDirectory(prefix = "unsloth-production-db-perf-") as temp:
         os.environ["UNSLOTH_STUDIO_HOME"] = temp
         os.environ["UNSLOTH_STUDIO_PROJECTS_HOME"] = str(Path(temp) / "Projects")
         # The production module caches schema readiness by db path. A fresh
@@ -74,9 +81,13 @@ def bench_case(target_tokens: int, *, concurrent_counts: bool = True) -> dict:
         studio_db.reset_schema_state_for_tests()
         thread_id = f"synthetic-{target_tokens}"
         thread = {
-            "id": thread_id, "title": "Synthetic performance",
-            "modelType": "base", "modelId": "not-loaded",
-            "pairId": None, "archived": False, "createdAt": 1_700_000_000_000,
+            "id": thread_id,
+            "title": "Synthetic performance",
+            "modelType": "base",
+            "modelId": "not-loaded",
+            "pairId": None,
+            "archived": False,
+            "createdAt": 1_700_000_000_000,
         }
         studio_db.upsert_chat_thread(thread)
         msgs = messages_for(thread_id, target_tokens)
@@ -86,10 +97,12 @@ def bench_case(target_tokens: int, *, concurrent_counts: bool = True) -> dict:
         # No SQL or app behavior is changed, only a duration wrapper.
         readback_timings = []
         original_read = studio_db.list_chat_messages
+
         def measured_read(*args, **kwargs):
             result, elapsed = timed(original_read, *args, **kwargs)
             readback_timings.append(elapsed)
             return result
+
         studio_db.list_chat_messages = measured_read
 
         try:
@@ -128,11 +141,14 @@ def bench_case(target_tokens: int, *, concurrent_counts: bool = True) -> dict:
             def writer():
                 start = time.perf_counter()
                 for i in range(3):
-                    studio_db.upsert_chat_message({
-                        **last,
-                        "content": [{"type": "text", "text": f"Concurrent edit {i}"}],
-                    })
+                    studio_db.upsert_chat_message(
+                        {
+                            **last,
+                            "content": [{"type": "text", "text": f"Concurrent edit {i}"}],
+                        }
+                    )
                 return 1000 * (time.perf_counter() - start)
+
             def reader():
                 values = []
                 for _ in range(5):
@@ -140,11 +156,12 @@ def bench_case(target_tokens: int, *, concurrent_counts: bool = True) -> dict:
                     assert c[thread_id] == len(msgs)
                     values.append(ms)
                 return values
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers = 2) as pool:
                 f_write = pool.submit(writer)
                 f_read = pool.submit(reader)
-                writer_ms = f_write.result(timeout=45)
-                readers_ms = f_read.result(timeout=45)
+                writer_ms = f_write.result(timeout = 45)
+                readers_ms = f_read.result(timeout = 45)
             concurrency_timings = {
                 "single_writes_total_ms": round(writer_ms, 3),
                 "count_latencies_ms": readers_ms,
@@ -153,8 +170,10 @@ def bench_case(target_tokens: int, *, concurrent_counts: bool = True) -> dict:
 
         # Recreate the response body produced by ChatMessageListResponse at
         # wire level; do not call this an HTTP timing or Pydantic benchmark.
-        _, jsonify_ms = timed(json.dumps, {"messages": saved}, ensure_ascii=False)
-        response_estimate_bytes = len(json.dumps({"messages": saved}, ensure_ascii=False).encode("utf-8"))
+        _, jsonify_ms = timed(json.dumps, {"messages": saved}, ensure_ascii = False)
+        response_estimate_bytes = len(
+            json.dumps({"messages": saved}, ensure_ascii = False).encode("utf-8")
+        )
         total_ms = first_ms + repeat_ms
         return {
             "execution": "actual_production_storage_studio_db_no_http_no_llama",
@@ -179,13 +198,13 @@ def bench_case(target_tokens: int, *, concurrent_counts: bool = True) -> dict:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tokens", type=int, nargs="+", default=[200000, 1000000, 10000000])
-    parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--no-concurrency", action="store_true")
+    parser.add_argument("--tokens", type = int, nargs = "+", default = [200000, 1000000, 10000000])
+    parser.add_argument("--out", type = Path, required = True)
+    parser.add_argument("--no-concurrency", action = "store_true")
     args = parser.parse_args()
     rows = []
     for tokens in args.tokens:
-        result = bench_case(tokens, concurrent_counts=not args.no_concurrency)
+        result = bench_case(tokens, concurrent_counts = not args.no_concurrency)
         rows.append(result)
         print(
             f"production-sqlite {tokens}: {result['message_count']} msgs, "
@@ -193,23 +212,29 @@ def main():
             f"repeat={result['repeat_unchanged_full_sync_ms']} ms, "
             f"readback={result['first_full_readback_ms']} ms, "
             f"count={result['counts_ms']} ms, delta={result['single_message_upsert_ms']} ms",
-            flush=True,
+            flush = True,
         )
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps({
-        "schema_version": 1,
-        "run_type": "production_db_not_http",
-        "commit_sha": os.environ.get("GITHUB_SHA", "local"),
-        "python": sys.version.split()[0],
-        "platform": sys.platform,
-        "limitations": [
-            "Not a model tokenizer, estimated tokens are roughly bytes / four.",
-            "No HTTP transfer, WebView, Pydantic model validation or llama-server.",
-            "GitHub-hosted Linux runner, not representative of Windows disk/CPU latency.",
-            "No performance success claim from runner timings; compare same-hardware repeated runs.",
-        ],
-        "cases": rows,
-    }, indent=2), encoding="utf-8")
+    args.out.parent.mkdir(parents = True, exist_ok = True)
+    args.out.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "run_type": "production_db_not_http",
+                "commit_sha": os.environ.get("GITHUB_SHA", "local"),
+                "python": sys.version.split()[0],
+                "platform": sys.platform,
+                "limitations": [
+                    "Not a model tokenizer, estimated tokens are roughly bytes / four.",
+                    "No HTTP transfer, WebView, Pydantic model validation or llama-server.",
+                    "GitHub-hosted Linux runner, not representative of Windows disk/CPU latency.",
+                    "No performance success claim from runner timings; compare same-hardware repeated runs.",
+                ],
+                "cases": rows,
+            },
+            indent = 2,
+        ),
+        encoding = "utf-8",
+    )
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ synthetic, CPU-scanning counter. No llama-server, tokenizer, GPU or HTTP service
 is invoked. SQLite and JSON measurements are clearly labeled *surrogates*;
 they are NOT presented as numbers from the production FastAPI endpoint.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,6 +28,7 @@ from core.inference import checkpoint  # noqa: E402
 
 class ScanningTokenCount:
     """Models per-call byte traversal; not a model tokenizer or an exact token count."""
+
     def __init__(self):
         self.calls = 0
         self.scanned_bytes = 0
@@ -39,9 +41,9 @@ class ScanningTokenCount:
         for message in messages:
             value = message.get("content", "")
             if not isinstance(value, str):
-                value = json.dumps(value, ensure_ascii=False)
+                value = json.dumps(value, ensure_ascii = False)
             encoded = value.encode("utf-8")
-            hashlib.blake2b(encoded, digest_size=16).digest()
+            hashlib.blake2b(encoded, digest_size = 16).digest()
             self.scanned_bytes += len(encoded)
             count += 4 + (len(encoded) + 3) // 4
         self.cpu_seconds += time.process_time() - started
@@ -57,10 +59,12 @@ def synthetic_history(estimated_tokens: int, max_messages: int = 2048):
     payload = "SYNTHETIC-NO-USER-DATA " + "x" * max(0, chars - 23)
     messages = [{"role": "system", "content": "Keep the latest user request."}]
     for i in range(count):
-        messages.append({
-            "role": "user" if i % 2 == 0 else "assistant",
-            "content": payload,
-        })
+        messages.append(
+            {
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": payload,
+            }
+        )
     messages.append({"role": "user", "content": "Continue the most recent task."})
     return messages
 
@@ -69,14 +73,18 @@ def approx_tokens(messages):
     return sum(4 + (len(str(m.get("content", "")).encode("utf-8")) + 3) // 4 for m in messages)
 
 
-def describe_fit(policy, original, context_size: int = 262144):
+def describe_fit(
+    policy,
+    original,
+    context_size: int = 262144,
+):
     counter = ScanningTokenCount()
     started_wall = time.perf_counter()
     started_cpu = time.process_time()
     kwargs = dict(
-        context_length=context_size,
-        max_tokens=8192,
-        count_tokens=counter,
+        context_length = context_size,
+        max_tokens = 8192,
+        count_tokens = counter,
     )
     if policy == "rolling":
         fitted, metadata = rolling.fit_rolling_context(original, **kwargs)
@@ -85,7 +93,7 @@ def describe_fit(policy, original, context_size: int = 262144):
         os.environ["UNSLOTH_CONTEXT_EARLY_PROBE"] = "1" if policy == "checkpoint_early" else "0"
         try:
             fitted, metadata = checkpoint.fit_checkpoint_context(
-                original, can_reset=True, searchable=False, **kwargs
+                original, can_reset = True, searchable = False, **kwargs
             )
         finally:
             if prior is None:
@@ -104,11 +112,15 @@ def describe_fit(policy, original, context_size: int = 262144):
         "counter_bytes_scanned": counter.scanned_bytes,
         "input_messages": len(original),
         "output_messages": len(fitted),
-        "fitted_sha256": hashlib.sha256(json.dumps(fitted, sort_keys=True, ensure_ascii=False).encode("utf8")).hexdigest(),
+        "fitted_sha256": hashlib.sha256(
+            json.dumps(fitted, sort_keys = True, ensure_ascii = False).encode("utf8")
+        ).hexdigest(),
         "output_estimated_tokens": approx_tokens(fitted),
         "dropped_messages": (metadata or {}).get("dropped_messages", 0),
         "fits": (metadata or {}).get("fits", True),
-        "prefix_exact_probe_used": (metadata or {}).get("prompt_tokens_before_is_prefix_probe", False),
+        "prefix_exact_probe_used": (metadata or {}).get(
+            "prompt_tokens_before_is_prefix_probe", False
+        ),
         "prefix_tokenized_messages": (metadata or {}).get("prefix_tokenized_messages", 0),
     }
 
@@ -116,7 +128,7 @@ def describe_fit(policy, original, context_size: int = 262144):
 def snapshot_surrogate(messages, run_sqlite: bool):
     """Measure Python JSON and SQLite operations, NOT the production FastAPI route."""
     started = time.perf_counter()
-    req = json.dumps({"messages": messages}, separators=(",", ":"))
+    req = json.dumps({"messages": messages}, separators = (",", ":"))
     serialize_ms = 1000 * (time.perf_counter() - started)
     started = time.perf_counter()
     parsed = json.loads(req)["messages"]
@@ -128,10 +140,12 @@ def snapshot_surrogate(messages, run_sqlite: bool):
         "parse_ms": round(parse_ms, 3),
     }
     if run_sqlite:
-        with tempfile.TemporaryDirectory(prefix="unsloth-context-perf-") as temp:
+        with tempfile.TemporaryDirectory(prefix = "unsloth-context-perf-") as temp:
             connection = sqlite3.connect(str(Path(temp) / "perf.db"))
             connection.execute("PRAGMA journal_mode=WAL")
-            connection.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, role TEXT, content TEXT)")
+            connection.execute(
+                "CREATE TABLE messages (id INTEGER PRIMARY KEY, role TEXT, content TEXT)"
+            )
             started = time.perf_counter()
             connection.execute("BEGIN IMMEDIATE")
             connection.executemany(
@@ -142,15 +156,19 @@ def snapshot_surrogate(messages, run_sqlite: bool):
             connection.commit()
             upsert_ms = 1000 * (time.perf_counter() - started)
             started = time.perf_counter()
-            all_rows = connection.execute("SELECT role,content FROM messages ORDER BY id").fetchall()
+            all_rows = connection.execute(
+                "SELECT role,content FROM messages ORDER BY id"
+            ).fetchall()
             fetched_bytes = len(json.dumps(all_rows).encode("utf-8"))
             readback_ms = 1000 * (time.perf_counter() - started)
-            result.update({
-                "sqlite_kind": "sqlite_upsert_and_full_readback_surrogate_not_studio_db",
-                "sqlite_upsert_ms": round(upsert_ms, 3),
-                "sqlite_full_readback_ms": round(readback_ms, 3),
-                "sqlite_return_bytes": fetched_bytes,
-            })
+            result.update(
+                {
+                    "sqlite_kind": "sqlite_upsert_and_full_readback_surrogate_not_studio_db",
+                    "sqlite_upsert_ms": round(upsert_ms, 3),
+                    "sqlite_full_readback_ms": round(readback_ms, 3),
+                    "sqlite_return_bytes": fetched_bytes,
+                }
+            )
             connection.close()
     return result
 
@@ -166,24 +184,28 @@ def static_production_path_observations():
         "llama_cpp": ROOT / "studio/backend/core/inference/llama_cpp.py",
         "inference_route": ROOT / "studio/backend/routes/inference.py",
     }
-    src = {k: p.read_text(encoding="utf-8") for k, p in files.items()}
+    src = {k: p.read_text(encoding = "utf-8") for k, p in files.items()}
     return {
         "kind": "source_observation_not_execution",
-        "full_snapshot_frontend_put": "body: JSON.stringify({" in src["chat_api"] and "pruneMissing:" in src["chat_api"],
-        "backend_sync_returns_full_history": "return list_chat_messages(thread_id)" in src["studio_db"],
-        "backend_sync_uses_sqlite_batch_upsert": 'conn.executemany(' in src["studio_db"],
+        "full_snapshot_frontend_put": "body: JSON.stringify({" in src["chat_api"]
+        and "pruneMissing:" in src["chat_api"],
+        "backend_sync_returns_full_history": "return list_chat_messages(thread_id)"
+        in src["studio_db"],
+        "backend_sync_uses_sqlite_batch_upsert": "conn.executemany(" in src["studio_db"],
         "messages_count_endpoint": '"/messages:counts"' in src["chat_history_route"],
-        "rolling_initial_exact_count": "initial_tokens = count_tokens(fitted)" in src["context_window"],
-        "checkpoint_initial_exact_count": "initial_tokens = count_tokens(list(messages))" in src["checkpoint"],
+        "rolling_initial_exact_count": "initial_tokens = count_tokens(fitted)"
+        in src["context_window"],
+        "checkpoint_initial_exact_count": "initial_tokens = count_tokens(list(messages))"
+        in src["checkpoint"],
         "llama_token_count_via_template": 'f"{self.base_url}/apply-template"' in src["llama_cpp"],
         "llama_token_count_via_tokenize": 'f"{self.base_url}/tokenize"' in src["llama_cpp"],
-        "admission_count_on_python_thread": "asyncio.to_thread(" in src["inference_route"] and "_count_gguf_admission_prompt" in src["inference_route"],
+        "admission_count_on_python_thread": "asyncio.to_thread(" in src["inference_route"]
+        and "_count_gguf_admission_prompt" in src["inference_route"],
     }
 
 
 def run(output: Path, quick: bool = False):
-    cases = [(1024, "1k"), (32768, "32k"), (200000, "200k"),
-             (1000000, "1m")]
+    cases = [(1024, "1k"), (32768, "32k"), (200000, "200k"), (1000000, "1m")]
     if not quick:
         cases.append((10000000, "10m"))
     findings = []
@@ -195,7 +217,10 @@ def run(output: Path, quick: bool = False):
             "actual_estimated_tokens": approx_tokens(messages),
             "characters": sum(len(m["content"]) for m in messages),
             "input_messages": len(messages),
-            "fits": [describe_fit(policy, messages) for policy in ("rolling", "checkpoint", "checkpoint_early")],
+            "fits": [
+                describe_fit(policy, messages)
+                for policy in ("rolling", "checkpoint", "checkpoint_early")
+            ],
         }
         # The experimental optimization is allowed to change HOW we obtain the
         # overflow witness, not WHICH conversation is presented to the model.
@@ -210,14 +235,18 @@ def run(output: Path, quick: bool = False):
         row["exact_fit_parity"] = "verified"
         # Keep one large snapshot experiment (10m), or 1m in quick mode.
         if label == ("1m" if quick else "10m"):
-            row["snapshot"] = snapshot_surrogate(messages, run_sqlite=True)
+            row["snapshot"] = snapshot_surrogate(messages, run_sqlite = True)
         findings.append(row)
-        print(f"{label}: " + " | ".join(
-            f"{m['policy']}: {m['wall_ms']:.1f}ms; "
-            f"{m['token_count_invocations']} counts; "
-            f"{m['counter_bytes_scanned']/1e6:.1f} MB scanned"
-            for m in row["fits"]
-        ), flush=True)
+        print(
+            f"{label}: "
+            + " | ".join(
+                f"{m['policy']}: {m['wall_ms']:.1f}ms; "
+                f"{m['token_count_invocations']} counts; "
+                f"{m['counter_bytes_scanned']/1e6:.1f} MB scanned"
+                for m in row["fits"]
+            ),
+            flush = True,
+        )
     result = {
         "schema_version": 1,
         "commit_sha": os.getenv("GITHUB_SHA", "local"),
@@ -236,14 +265,14 @@ def run(output: Path, quick: bool = False):
             "Early checkpoint is opt-in and assumes the chosen chat template is approximately prefix-monotonic.",
         ],
     }
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    output.parent.mkdir(parents = True, exist_ok = True)
+    output.write_text(json.dumps(result, indent = 2), encoding = "utf-8")
     print(f"Evidence written: {output}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--quick", action="store_true")
+    parser.add_argument("--out", type = Path, required = True)
+    parser.add_argument("--quick", action = "store_true")
     opts = parser.parse_args()
-    run(opts.out, quick=opts.quick)
+    run(opts.out, quick = opts.quick)

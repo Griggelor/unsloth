@@ -192,9 +192,9 @@ def test_research_presentation_is_integrated() -> None:
     assert re.search(
         r"hidden:\s*Boolean\(\s*researchRunId\s*\|\|\s*ownsResearchMessage\s*\)", delete_hook
     )
-    delete_item = thread.split("const DeleteMessageButton: FC = () => {", 1)[1].split(
-        "\n};\n", 1
-    )[0]
+    delete_item = thread.split("const DeleteMessageButton: FC = () => {", 1)[1].split("\n};\n", 1)[
+        0
+    ]
     assert re.search(r"if\s*\(\s*hidden\s*\)\s*\{?\s*return null", delete_item)
     assert "ResearchMessageRunIdContext = createContext<string | null>(null)" in thread
     assert "researchReplyOwnsRun(boundResearchAssistantMessageId, messageId)" in thread

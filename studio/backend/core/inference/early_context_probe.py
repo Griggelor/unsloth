@@ -7,14 +7,22 @@ This feature is intentionally disabled unless UNSLOTH_CONTEXT_EARLY_PROBE=1.
 Only a large margin and complete turn prefixes can activate the shortcut.
 No original records are mutated or deleted.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any, Optional
 
-_MEDIA_PARTS = frozenset((
-    "image_url", "input_image", "input_audio", "audio", "video_url", "input_video",
-))
+_MEDIA_PARTS = frozenset(
+    (
+        "image_url",
+        "input_image",
+        "input_audio",
+        "audio",
+        "video_url",
+        "input_video",
+    )
+)
 _ROLES = frozenset(("system", "developer", "user", "assistant", "tool"))
 
 
@@ -25,8 +33,10 @@ def _cheap_text_size(message: dict) -> int:
         return len(content)
     if isinstance(content, list):
         return sum(
-            len(part.get("text", "")) if isinstance(part, dict) and isinstance(part.get("text"), str)
-            else 0 for part in content
+            len(part.get("text", ""))
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+            else 0
+            for part in content
         )
     return 0
 
