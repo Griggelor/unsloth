@@ -379,6 +379,77 @@ def check_dynamic_thumb_under_heavy_dom(page, level: str) -> None:
     check_adaptive_thumb_drag(page, level)
 
 
+
+def check_dynamic_streaming_tail_visibility(page, level: str, messages: int) -> None:
+    """During tail-follow, repeated streaming-style DOM mutations must not blank the viewport.
+
+    Synthetic tool markup is added only to the currently mounted row in an
+    isolated browser. The persisted fixture and assistant-ui message state are
+    unchanged. Read the painted layout on successive frames, not just the
+    mounted count, and do not use a wheel/scroll event to rescue a blank view.
+    """
+    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
+    page.wait_for_timeout(120)
+    last_row = page.locator(f'[data-agent-history-row="{messages - 1}"]')
+    last_row.wait_for(state = "attached", timeout = 15_000)
+    # Clicking a visible message must not turn subsequent auto-follow layout
+    # changes into reader navigation; no wheel or scrollbar drag follows.
+    last_row.click(position = {"x": 20, "y": 20})
+    observations = page.evaluate(
+        """async expected => {
+          const viewport = document.querySelector('.aui-thread-viewport');
+          const last = viewport?.querySelector(
+            '[data-agent-history-row="' + (expected - 1) + '"]'
+          );
+          const owner = last?.querySelector('[data-role]');
+          if (!viewport || !last || !owner) {
+            throw Error('stream-tail: last row or viewport missing');
+          }
+          const fixture = document.createElement('div');
+          fixture.dataset.qaStreamingTail = 'true';
+          fixture.style.cssText = 'overflow:hidden;contain:layout;height:120px';
+          owner.appendChild(fixture);
+          const twoFrames = () => new Promise(resolve =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const samples = [];
+          try {
+            for (let i = 0; i < 44; i++) {
+              fixture.style.height = (120 + (i % 7) * 185) + 'px';
+              fixture.innerHTML = '<span>synthetic tool output</span>'.repeat(
+                i % 2 ? 700 : 100
+              );
+              await twoFrames();
+              const view = viewport.getBoundingClientRect();
+              const rows = [...viewport.querySelectorAll('[data-agent-history-row]')];
+              const tail = rows.find(row =>
+                Number(row.dataset.agentHistoryRow) === expected - 1);
+              const rect = tail?.getBoundingClientRect();
+              const visible = !!rect && rect.width > 0 && rect.height > 0 &&
+                rect.bottom > view.top + 8 && rect.top < view.bottom - 8;
+              samples.push({
+                step: i, mounted: rows.length,
+                first: Number(rows[0]?.dataset.agentHistoryRow ?? -1),
+                last: Number(rows.at(-1)?.dataset.agentHistoryRow ?? -1),
+                visible, scrollTop: Math.round(viewport.scrollTop),
+                scrollHeight: Math.round(viewport.scrollHeight)
+              });
+              if (!visible) break;
+            }
+          } finally {
+            fixture.remove();
+          }
+          return samples;
+        }""",
+        messages,
+    )
+    bad = next((sample for sample in observations if not sample["visible"]), None)
+    if bad is not None or len(observations) != 44:
+        raise AssertionError(
+            f"{level}: streaming tail became invisible without reader scroll: "
+            f"{json.dumps({'failure': bad, 'samples': len(observations)}, sort_keys = True)}"
+        )
+
+
 def check_isolated_dynamic_thumb_modes(page, thread_id: str, messages: int) -> None:
     """Test the native drag independently of Radix menu focus and mode selection.
 
@@ -419,6 +490,7 @@ def check_isolated_dynamic_thumb_modes(page, thread_id: str, messages: int) -> N
             timeout = 60_000,
         )
         census(page, messages, f"isolated-dynamic-{level}")
+        check_dynamic_streaming_tail_visibility(page, level, messages)
         check_dynamic_thumb_under_heavy_dom(page, level)
 
 
