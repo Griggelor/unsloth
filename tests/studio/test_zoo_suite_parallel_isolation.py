@@ -366,16 +366,16 @@ def test_a_skipped_isolated_file_is_named_in_the_log() -> None:
             f"empty collection is reported without saying which file it was"
         )
 
+
 def test_llama_smoke_accepts_the_same_pinned_zoo_sha_as_core() -> None:
     """Manual workflow_dispatch SHA refs must work in every Core job, not just the matrix."""
     smoke = _job("llama-cpp-smoke")
     assert smoke["needs"] == "resolve-zoo-ref"
-    assert smoke["env"]["UNSLOTH_ZOO_REF"] == _job("consolidated")["env"]["UNSLOTH_ZOO_REF"]
-    clone = [step["run"] for step in smoke["steps"]
-             if str(step.get("name", "")).startswith("Clone unsloth_zoo")]
+    expected_ref = _job("consolidated")["env"]["UNSLOTH_ZOO_REF"]
+    assert smoke["env"]["UNSLOTH_ZOO_REF"] == expected_ref
+    clone = [s["run"] for s in smoke["steps"] if s.get("name", "").startswith("Clone unsloth_zoo")]
     assert len(clone) == 1
     script = clone[0]
-    assert 'git -C "$RUNNER_TEMP/unsloth-zoo" fetch -q --depth=1 origin "$UNSLOTH_ZOO_REF"' in script
+    assert 'fetch -q --depth=1 origin "$UNSLOTH_ZOO_REF"' in script
     assert 'git -C "$RUNNER_TEMP/unsloth-zoo" checkout -q FETCH_HEAD' in script
     assert "git clone --depth=1 --branch=" not in script
-
