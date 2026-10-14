@@ -2,7 +2,7 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AgentDomCostIndex, agentBudgetWindow, AGENT_DOM_TARGETS, needsAgentBudgetRebalance } from "../src/components/assistant-ui/agent-history-dom-budget.ts";
+import { AgentDomCostIndex, agentBudgetWindow, AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, needsAgentBudgetRebalance } from "../src/components/assistant-ui/agent-history-dom-budget.ts";
 
 test("low and high adapt to measured row complexity", () => {
   const costs = new AgentDomCostIndex(40);
@@ -125,4 +125,49 @@ test("canonical dynamic admits at most 16 rows under an 8k DOM-node budget", () 
   const tight = agentBudgetWindow(200, 199, costs, AGENT_DOM_TARGETS.medium, 16);
   assert.ok(tight.end - tight.start <= 16);
   assert.ok(tight.start <= 199 && tight.end > 199);
+});
+
+
+test("viewport-adaptive Fixed grows beyond five short turns while respecting hard policy limits", () => {
+  const total = 150;
+  const costs = new AgentDomCostIndex(total);
+  const anchor = 70;
+  assert.equal(AGENT_FIXED_VIEWPORT_MAX_ROWS, 32);
+  assert.equal(AGENT_FIXED_VIEWPORT_DOM_TARGET, 8_000);
+  // Only one unmeasured turn may mount at a time; prevents loading many
+  // unknown, potentially huge tool cards during the first render.
+  assert.deepEqual(agentBudgetWindow(total, anchor, costs, AGENT_FIXED_VIEWPORT_DOM_TARGET,
+    AGENT_FIXED_VIEWPORT_MAX_ROWS), { start: anchor, end: anchor + 1 });
+  let current = agentBudgetWindow(total, anchor, costs, AGENT_FIXED_VIEWPORT_DOM_TARGET,
+    AGENT_FIXED_VIEWPORT_MAX_ROWS);
+  for (let frame = 0; frame < 100; frame++) {
+    for (let i = current.start; i < current.end; i++) costs.measure(i, 2);
+    // 40px tall lightweight rows; 20+ rows are necessary for a 900px viewport.
+    const proposed = agentBudgetWindow(total, anchor, costs, AGENT_FIXED_VIEWPORT_DOM_TARGET,
+      AGENT_FIXED_VIEWPORT_MAX_ROWS);
+    const height = 40 * (current.end - current.start);
+    if (!needsAgentBudgetRebalance(current, proposed, anchor, height, 900)) break;
+    current = proposed;
+  }
+  assert.ok(current.end - current.start >= 20,
+    "Fixed must be permitted to render substantially more than five lightweight turns");
+  assert.ok(current.end - current.start <= AGENT_FIXED_VIEWPORT_MAX_ROWS);
+  assert.ok(current.start <= anchor && current.end > anchor);
+  const used = Array.from({ length: current.end-current.start }, (_, i) =>
+    costs.cost(current.start+i)).reduce((sum, v) => sum+v, 0);
+  assert.ok(used <= AGENT_FIXED_VIEWPORT_DOM_TARGET);
+});
+
+test("Fixed viewport growth cannot admit multiple unknown massive tool outputs", () => {
+  const costs = new AgentDomCostIndex(200);
+  for (let anchor = 0; anchor < 200; anchor += 11) {
+    const start = agentBudgetWindow(200, anchor, costs, AGENT_FIXED_VIEWPORT_DOM_TARGET,
+      AGENT_FIXED_VIEWPORT_MAX_ROWS);
+    assert.equal(start.end - start.start, 1);
+    costs.measure(anchor, 25_000);
+    const single = agentBudgetWindow(200, anchor, costs, AGENT_FIXED_VIEWPORT_DOM_TARGET,
+      AGENT_FIXED_VIEWPORT_MAX_ROWS);
+    assert.equal(single.end - single.start, 1,
+      "a single overbudget row must never cause additional heavy rows to mount");
+  }
 });
