@@ -1,0 +1,117 @@
+# QA-only ephemeral branch workflow. NEVER merge to upstream.
+name: QA Upstream Candidate Wheel Gap Trace
+on:
+  push:
+    branches:
+      - qa/upstream-agent-history-wheel-delta-matrix-20261014
+    paths:
+      - 'studio/frontend/src/components/assistant-ui/**'
+      - 'studio/frontend/tests/agent-history-*'
+      - 'tests/studio/playwright_agent_history_wheel_continuity.py'
+      - '.github/workflows/qa-upstream-candidate-wheel.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: qa-wheel-only-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Window, DOM and reader intent contracts
+        working-directory: studio/frontend
+        run: |
+          node --experimental-strip-types --test \
+            tests/agent-history-dom-budget.test.ts \
+            tests/agent-history-scroll-window.test.ts \
+            tests/agent-history-scroll-intent-gate.test.ts
+      - name: Python parser
+        run: python -m py_compile tests/studio/playwright_agent_history_wheel_continuity.py
+      - name: Capture source SHA
+        run: |
+          printf 'Verified SHA: %s\n' "${{ github.sha }}"
+  wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        delta: [120, 480, 1680]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Linux dependencies
+        timeout-minutes: 7
+        env:
+          RETRY_ATTEMPTS: '2'
+          RETRY_ATTEMPT_TIMEOUT: '120'
+        run: |
+          bash .github/scripts/retry-with-apt-lock.sh sudo sh -c \
+            'apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev jq || { apt-get update && apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev jq; }'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install isolated Studio without a model
+        uses: ./.github/actions/install-unsloth-local
+        with:
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+          hf-token: ''
+      - name: Headless Chromium for genuine wheel input
+        timeout-minutes: 7
+        env:
+          RETRY_ATTEMPTS: '2'
+          RETRY_ATTEMPT_TIMEOUT: '120'
+          APT_ACQUIRE_RETRIES: '0'
+        run: |
+          python -m pip install 'playwright>=1.45,<2'
+          bash .github/scripts/retry-with-apt-lock.sh python -m playwright install chromium
+          if ! python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(); b.close(); p.stop()'; then
+            bash .github/scripts/retry-with-apt-lock.sh python -m playwright install-deps chromium
+          fi
+      - name: Start disposable Studio
+        run: |
+          bash .github/scripts/boot-studio-api-only.sh --port 18899 \
+            --log logs/studio_agent_history.log --pid-var STUDIO_AGENT_HISTORY_PID
+          bash .github/scripts/wait-for-health.sh --port 18899 \
+            --log logs/studio_agent_history.log --tmp /tmp/health_agent_history.json
+          PW="$(cat ~/.unsloth/studio/auth/.bootstrap_password)"
+          echo "::add-mask::$PW"
+          echo "AGENT_HISTORY_PW=$PW" >> "$GITHUB_ENV"
+      - name: Physical wheel (delta ${{ matrix.delta }}) no repair
+        run: |
+          mkdir -p logs/wheel
+          python tests/studio/playwright_agent_history_wheel_continuity.py \
+            --url http://127.0.0.1:18899 --username unsloth \
+            --password "$AGENT_HISTORY_PW" --messages 400 \
+            --wheel-delta ${{ matrix.delta }} \
+            > logs/wheel/wheel-report.json
+      - name: Cleanup
+        if: always()
+        run: |
+          kill "$STUDIO_AGENT_HISTORY_PID" 2>/dev/null || true
+          mkdir -p logs/server-logs
+          cp -r ~/.unsloth/studio/logs/. logs/server-logs/ 2>/dev/null || true
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: agent-history-qa-wheel-${{ github.sha }}-delta-${{ matrix.delta }}
+          path: |
+            logs/wheel
+            logs/studio_agent_history.log
+            logs/server-logs/
+            agent-history-wheel-gap-*.png
+          if-no-files-found: warn
+          retention-days: 2
