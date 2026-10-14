@@ -1,0 +1,103 @@
+# QA-only desktop executable. No installer, updater publication or signing.
+name: QA Agent History Predictive Windows EXE
+on:
+  push:
+    branches:
+      - qa/agent-history-predictive-windows-exe-20261014
+    paths:
+      - '.github/workflows/qa-agent-history-windows-exe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  windows-exe:
+    name: Windows unsigned QA executable
+    runs-on: windows-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify QA source matches tested revision
+        shell: pwsh
+        run: |
+          $base = '300b1fd74d0abeef76ef8339564d33a07e5abea1'
+          if ((git rev-parse HEAD^).Trim() -ne $base) { throw 'Build branch no longer contains exactly the tested source parent' }
+          $diff = @(git diff --name-only HEAD^ HEAD)
+          if ($diff.Count -ne 1 -or $diff[0] -ne '.github/workflows/qa-agent-history-windows-exe.yml') {
+            throw ('Unexpected source files differ from tested source: ' + ($diff -join ', '))
+          }
+          Write-Host "Verified exact tested source parent $base; QA workflow is the only difference"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: 'false'
+          workspaces: studio/src-tauri -> target
+      - name: Lockfile supply chain audit
+        run: python scripts/lockfile_supply_chain_audit.py
+      - name: Frontend dependencies and app bundle
+        working-directory: studio/frontend
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+      - name: Install pinned Tauri CLI
+        run: npm ci --prefix studio --no-fund --no-audit
+      - name: Build unsigned Windows executable without installer
+        run: npx --prefix studio tauri build --debug --no-bundle
+      - name: Verify the final frontend includes the virtualizer
+        shell: pwsh
+        run: |
+          $marker = Get-ChildItem 'studio/frontend/dist/assets' -Filter '*.js' -Recurse -File |
+            Select-String -SimpleMatch 'data-agent-history-scroll-list' |
+            Select-Object -First 1
+          if ($null -eq $marker) { throw 'Predictive Agent History renderer marker missing in final Tauri frontend' }
+          Write-Host 'Confirmed virtualized renderer is present in final compiled frontend'
+      - name: Verify and stage executable
+        shell: pwsh
+        run: |
+          $exe = 'studio/src-tauri/target/debug/unsloth-studio.exe'
+          if (-not (Test-Path $exe)) { throw "Tauri did not produce $exe" }
+          New-Item -ItemType Directory -Force 'qa-windows-exe' | Out-Null
+          $name = 'unsloth-studio-Agent-History-Predictive-QA-UNSIGNED.exe'
+          Copy-Item $exe "qa-windows-exe/$name"
+          $hash = (Get-FileHash "qa-windows-exe/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = [ordered]@{
+            build_kind = 'QA_UNSIGNED_DEBUG_EXE_NO_INSTALLER'
+            tested_source_commit = '300b1fd74d0abeef76ef8339564d33a07e5abea1'
+            workflow_commit = ('${{ github.sha }}')
+            build_run = ('${{ github.run_id }}')
+            source_changes_since_test = 'QA_WORKFLOW_ONLY'
+            backend_bundled = $false
+            backend_version_unchanged = $true
+            official_release = $false
+            filename = $name
+            sha256 = $hash
+          }
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content 'qa-windows-exe/QA_MANIFEST.json' -Encoding utf8
+          @(
+            'UNSLOTH AGENT HISTORY QA - UNSIGNED DEBUG EXE'
+            'This is a standalone Tauri debug binary, NOT an installer or official update.'
+            'The executable does NOT bundle or replace the separately installed Python backend.'
+            'Use a disposable QA profile: do not launch against production or sensitive chat data.'
+            'The virtualized frontend uses the predictive wheel patch; no context-fix or Working-UI experiments.'
+            'The remaining 4/48 extreme wheel stress scenarios exceed the transient gap quality gate.'
+            'Test Dynamic and Fixed in both wheel directions, native scrollbar, search, thread switch, streaming, memory.'
+          ) | Set-Content 'qa-windows-exe/QA_README.txt' -Encoding utf8
+          Write-Host "SHA256: $hash"
+      - name: Upload unsigned QA EXE
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: agent-history-windows-qa-unsigned-exe
+          path: qa-windows-exe/*
+          retention-days: 7
+          if-no-files-found: error
