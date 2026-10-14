@@ -91,7 +91,7 @@ class StageBook:
             row[1] += (time.perf_counter() - wall) * 1000
             row[2] += (time.process_time() - cpu) * 1000
             if phase != "match_live_turn":
-            working_progress.publish(phase, current = int(row[0]), total = self.totals.get(phase), unit = "turns")
+                working_progress.publish(phase, current = int(row[0]), total = self.totals.get(phase), unit = "turns")
             if self.logging_on and phase == "match_evicted_turn" and int(row[0]) % 250 == 0:
                 LOG.info(
                     "context_perf phase=match_evicted_turn status=progress calls=%d wall_ms=%.3f cpu_ms=%.3f",
