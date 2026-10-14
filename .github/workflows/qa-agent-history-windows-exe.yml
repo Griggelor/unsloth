@@ -42,8 +42,11 @@ jobs:
         run: python scripts/lockfile_supply_chain_audit.py
       - name: Frontend dependencies and app bundle
         working-directory: studio/frontend
+        env:
+          VITE_CONTEXT_PROGRESS_QA: '1'
         run: |
           npm ci --no-fund --no-audit
+          node --experimental-strip-types --test tests/working-progress.test.ts
           npm run build
       - name: Install pinned Tauri CLI
         run: npm ci --prefix studio --no-fund --no-audit
