@@ -400,6 +400,8 @@ def archive_turns(
     ]
     if not groups:
         return 0
+    profile.set_total("match_evicted_turn", len(groups))
+    profile.set_total("match_live_turn", len(groups))
 
     model = config.effective_embedding_model()
     scope = store.conversation_archive_scope(thread_id)

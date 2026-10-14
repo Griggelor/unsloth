@@ -344,6 +344,14 @@ async def create_chat_generation_run(
             raise HTTPException(status_code = 400, detail = str(exc)) from exc
         except sqlite3.IntegrityError as exc:
             raise HTTPException(status_code = 409, detail = "Generation run conflicts") from exc
+        # The progress ID is a per-request QA header, NEVER part of the
+        # persisted requestPayload. Register before starting the producer: the
+        # worker may overtake this HTTP handler on a fast local machine.
+        if created and request.headers.get("X-Unsloth-Events") == "1":
+            progress_id = request.headers.get("X-Unsloth-Context-Progress")
+            if progress_id and progress_id == payload.runId.replace("-", ""):
+                from core.inference import working_progress
+                working_progress.begin(current_subject, progress_id)
         supervisor = getattr(request.app.state, "chat_generation_supervisor", None)
         if supervisor is not None and run["status"] == "queued":
             supervisor.start(

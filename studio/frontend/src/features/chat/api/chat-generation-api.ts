@@ -304,6 +304,8 @@ export async function toolApprovalIsPending(
 
 export async function createChatGenerationRun(
   input: CreateChatGenerationRunInput,
+  /** QA-only request correlation; not included in persisted run JSON. */
+  progressId?: string | null,
 ): Promise<ChatGenerationRun> {
   let failures = 0;
   while (true) {
@@ -311,7 +313,13 @@ export async function createChatGenerationRun(
       return await json<ChatGenerationRun>(
         await authFetch("/api/inference/chat-runs", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(progressId ? {
+              "X-Unsloth-Events": "1",
+              "X-Unsloth-Context-Progress": progressId,
+            } : {}),
+          },
           body: JSON.stringify(input),
         }),
       );
@@ -327,8 +335,9 @@ export async function createChatGenerationRun(
 export async function createChatGenerationRunUntilAbort(
   input: CreateChatGenerationRunInput,
   signal: AbortSignal,
+  progressId?: string | null,
 ): Promise<ChatGenerationRun | null> {
-  const createPromise = createChatGenerationRun(input);
+  const createPromise = createChatGenerationRun(input, progressId);
   let resolveAbort: (() => void) | undefined;
   const aborted = new Promise<null>((resolve) => {
     resolveAbort = () => resolve(null);

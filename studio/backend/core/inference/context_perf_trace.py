@@ -9,6 +9,7 @@ import time
 from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
+from core.inference import working_progress
 
 LOG = logging.getLogger("studio.context_perf")
 FLAG = "UNSLOTH_CONTEXT_PERF_TRACE"
@@ -20,9 +21,12 @@ def enabled() -> bool:
 
 def trace_call(phase: str, fn: Callable, *args: Any, messages: int = 0, **kwargs: Any):
     """Do not record arguments, results, private paths or exception text."""
-    if not enabled():
+    logging_on = enabled()
+    if not logging_on and working_progress.current() is None:
         return fn(*args, **kwargs)
-    LOG.info(
+    working_progress.publish(phase, current = 0, total = messages, unit = "messages")
+    if logging_on:
+        LOG.info(
         "context_perf phase=%s status=begin messages=%d",
         phase,
         max(0, int(messages)),
@@ -35,7 +39,9 @@ def trace_call(phase: str, fn: Callable, *args: Any, messages: int = 0, **kwargs
         status = "ok"
         return value
     finally:
-        LOG.info(
+        working_progress.publish(phase, current = messages, total = messages, unit = "messages")
+        if logging_on:
+            LOG.info(
             "context_perf phase=%s status=%s messages=%d wall_ms=%.3f cpu_ms=%.3f",
             phase,
             status,
@@ -50,13 +56,20 @@ class StageBook:
 
     def __init__(self, label: str, *, evicted_messages: int = 0) -> None:
         self.label = label
-        self.active = enabled()
+        self.logging_on = enabled()
+        self.active = self.logging_on or working_progress.current() is not None
+        self.totals: dict[str, int] = {}
         self.evicted_messages = max(0, int(evicted_messages))
         self.started = time.perf_counter() if self.active else 0.0
         self.cpu = time.process_time() if self.active else 0.0
         self.stats: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0, 0.0])
         if self.active:
+            working_progress.publish(self.label, total = self.evicted_messages, unit = "messages")
+        if self.logging_on:
             LOG.info("context_perf phase=%s status=begin evicted_messages=%d", self.label, self.evicted_messages)
+
+    def set_total(self, phase: str, count: int) -> None:
+        self.totals[phase] = max(0, int(count))
 
     def call(self, phase: str, fn: Callable, *args: Any, **kwargs: Any):
         if not self.active:
@@ -64,8 +77,10 @@ class StageBook:
         wall = time.perf_counter()
         cpu = time.process_time()
         row = self.stats[phase]
+        if phase != "match_live_turn":
+            working_progress.publish(phase, current = int(row[0]), total = self.totals.get(phase), unit = "turns")
         row[0] += 1
-        if phase == "embedding_encode":
+        if self.logging_on and phase == "embedding_encode":
             LOG.info(
                 "context_perf phase=embedding_encode status=begin evicted_messages=%d",
                 self.evicted_messages,
@@ -75,7 +90,9 @@ class StageBook:
         finally:
             row[1] += (time.perf_counter() - wall) * 1000
             row[2] += (time.process_time() - cpu) * 1000
-            if phase == "match_evicted_turn" and int(row[0]) % 250 == 0:
+            if phase != "match_live_turn":
+                working_progress.publish(phase, current = int(row[0]), total = self.totals.get(phase), unit = "turns")
+            if self.logging_on and phase == "match_evicted_turn" and int(row[0]) % 250 == 0:
                 LOG.info(
                     "context_perf phase=match_evicted_turn status=progress calls=%d wall_ms=%.3f cpu_ms=%.3f",
                     int(row[0]), row[1], row[2],
@@ -83,6 +100,9 @@ class StageBook:
 
     def report(self, *, archived_messages: int = 0, evicted_turns: int = 0) -> None:
         if not self.active:
+            return
+        working_progress.publish(self.label, current = evicted_turns, total = evicted_turns, unit = "turns")
+        if not self.logging_on:
             return
         LOG.info(
             "context_perf phase=%s status=end evicted_messages=%d evicted_turns=%d archived_messages=%d wall_ms=%.3f cpu_ms=%.3f",

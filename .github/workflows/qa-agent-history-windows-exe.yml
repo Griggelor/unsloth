@@ -42,13 +42,28 @@ jobs:
         run: python scripts/lockfile_supply_chain_audit.py
       - name: Frontend dependencies and app bundle
         working-directory: studio/frontend
+        env:
+          VITE_CONTEXT_PROGRESS_QA: '1'
         run: |
           npm ci --no-fund --no-audit
+          node --experimental-strip-types --test tests/working-progress.test.ts
           npm run build
       - name: Install pinned Tauri CLI
         run: npm ci --prefix studio --no-fund --no-audit
       - name: Build unsigned Windows executable without installer
+        # Tauri invokes beforeBuildCommand (npm run build) AGAIN. The QA flag
+        # must be set here, not only in the preceding frontend build step.
+        env:
+          VITE_CONTEXT_PROGRESS_QA: '1'
         run: npx --prefix studio tauri build --debug --no-bundle
+      - name: Assert QA polling is compiled into the final frontend
+        shell: pwsh
+        run: |
+          $asset = Get-ChildItem 'studio/frontend/dist/assets' -Filter '*.js' -Recurse -File |
+            Select-String -SimpleMatch '/api/inference/working-progress/' |
+            Select-Object -First 1
+          if ($null -eq $asset) { throw 'QA phase polling marker missing from final Tauri frontend dist' }
+          Write-Host 'Verified: QA phase polling endpoint is present in the final frontend bundle'
       - name: Verify and stage executable
         shell: pwsh
         run: |
@@ -59,6 +74,8 @@ jobs:
           $exeHash = (Get-FileHash 'qa-windows-exe/unsloth-studio-QA-UNSIGNED.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
           $manifest = [ordered]@{
             build_kind = 'QA_UNSIGNED_EXE_NO_INSTALLER'
+            backend_bundled = $false
+            backend_match_required = $true
             source_commit = '${{ github.event.pull_request.head.sha }}'
             source_branch = '${{ github.event.pull_request.head.ref }}'
             pull_request = '${{ github.event.pull_request.number }}'
@@ -68,6 +85,15 @@ jobs:
           }
           $manifest | ConvertTo-Json -Depth 3 | Set-Content 'qa-windows-exe/QA_MANIFEST.json' -Encoding utf8
           Write-Host "QA EXE SHA256: $exeHash"
+          @(
+            'UNSLOTH LONG-CHAT QA - IMPORTANT'
+            'This debug EXE bundles the frontend only. It does NOT bundle or update the Python backend.'
+            'The desktop normally starts your EXISTING installed Unsloth backend.'
+            "Frontend+backend changes must match source commit: ${{ github.event.pull_request.head.sha }}"
+            'A phase label alone is NOT proof of backend instrumentation.'
+            'For meaningful profiling, use a separate nonproduction backend built from this exact commit.'
+            'Do not copy patch files into a production-managed Python environment.'
+          ) | Set-Content 'qa-windows-exe/QA_BACKEND_MATCH_REQUIRED.txt' -Encoding utf8
       - name: Upload unsigned QA EXE
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

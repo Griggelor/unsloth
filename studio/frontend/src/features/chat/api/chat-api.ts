@@ -1922,6 +1922,8 @@ export async function* streamChatCompletions(
   signal: AbortSignal,
   /** Served context window for length-stop attribution; null or omitted when unknown. */
   loadedContextLength?: number | null,
+  /** An optional QA run key; never persisted in the OpenAI body. */
+  progressId?: string | null,
 ): AsyncGenerator<OpenAIChatChunk> {
   const response = await authFetch("/v1/chat/completions", {
     method: "POST",
@@ -1930,6 +1932,7 @@ export async function* streamChatCompletions(
       // Opt into Unsloth's UI control frames (tool cards, statuses, reasoning timing). The
       // endpoint defaults to a clean OpenAI stream for external clients.
       "X-Unsloth-Events": "1",
+      ...(progressId ? { "X-Unsloth-Context-Progress": progressId } : {}),
     },
     body: JSON.stringify(payload),
     signal,
