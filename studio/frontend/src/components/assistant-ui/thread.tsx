@@ -51,6 +51,8 @@ import { QueueResumeIcon } from "@/components/assistant-ui/queue-resume-icon";
 import { ProgressiveMessages } from "@/components/assistant-ui/progressive-messages";
 
 import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
+import { useWorkingPhase } from "@/features/chat/utils/working-progress-store";
+import { formatWorkingPhase } from "@/features/chat/utils/working-progress-format";
 import { agentHistoryLevelFor, agentHistoryWindowFor } from "@/features/chat/stores/agent-history-preference-policy";
 import { MessageMenuTime } from "@/components/assistant-ui/message-menu-time";
 import { UserMessageActionBar, UserMessageFooter } from "@/components/assistant-ui/user-message-actions";
@@ -7693,12 +7695,17 @@ const GeneratingIndicator: FC = () => {
     ({ message }) =>
       message.content.length === 0 && message.status?.type === "running",
   );
+  // Only the mounted pane's request status, never another thread's progress.
+  const threadId = useAuiState(({ threadListItem }) => threadListItem.remoteId);
+  const progress = useWorkingPhase(threadId);
   if (!show) {
     return null;
   }
   return (
-    <span className="generating-glint text-sm text-muted-foreground">
-      Working...
+    <span className="generating-glint text-sm text-muted-foreground" data-testid="working-phase-indicator" aria-live="off">
+      {progress && progress.status === "running"
+        ? formatWorkingPhase(progress)
+        : "Working..."}
     </span>
   );
 };
