@@ -74,7 +74,13 @@ _FRAME_PROBE_START = """() => {
       const h = Math.max(1, viewport.clientHeight);
       const remaining = viewport.scrollHeight - viewport.scrollTop - h;
       const interior = viewport.scrollTop >= h && remaining >= h;
-      state.frames.push([now, Math.min(1, coverage / h), interior ? 1 : 0]);
+      const list = document.querySelector('[data-agent-history-scroll-list]');
+      state.frames.push([now, Math.min(1, coverage / h), interior ? 1 : 0,
+        viewport.scrollTop, list?.dataset.agentHistoryQaStage ?? 'missing',
+        list?.dataset.agentHistoryQaStageTarget ?? '',
+        list?.dataset.agentHistoryQaWindowStart ?? '',
+        list?.dataset.agentHistoryQaWindowEnd ?? '',
+        list?.dataset.agentHistoryQaVisibleIndex ?? '']);
     }
     state.raf = requestAnimationFrame(measure);
   };
@@ -84,10 +90,14 @@ _FRAME_PROBE_START = """() => {
       cancelAnimationFrame(state.raf);
       viewport.removeEventListener('wheel', onWheel);
       let lastBad = null, maxBadMs = 0, badFrames = 0;
-      for (const [time, ratio, interior] of state.frames) {
+      let worst = null;
+      for (const [time, ratio, interior, scrollTop, staged, target, start, end, visibleIndex] of state.frames) {
         if (interior && ratio < 0.55) {
           if (lastBad === null) lastBad = time;
-          maxBadMs = Math.max(maxBadMs, time - lastBad);
+          if (time - lastBad >= maxBadMs) {
+            maxBadMs = time - lastBad;
+            worst = { time, ratio, scrollTop, staged, target, start, end, visibleIndex };
+          }
           badFrames++;
         } else {
           lastBad = null;
@@ -98,6 +108,7 @@ _FRAME_PROBE_START = """() => {
         frames: state.frames.length,
         badFrames,
         maxUnderfilledMs: Math.round(maxBadMs),
+        worstFrame: worst,
         minimumCoverage: state.frames.length ?
           Math.min(...state.frames.map(f => f[1])) : null,
       };
