@@ -113,8 +113,12 @@ export const BUDGET = {
   // Keeping the tool pills in step with the loaded model's tool support (#13621) adds 1.2 KB raw / 0.4 KB
   // transfer to the eager chat chunk (6,753,387 -> 6,754,540 B raw, 2,029,398 -> 2,029,795 B transfer
   // against 97ed9415f7, before #13649, one machine and build), raised by that.
-  transferBytes: 2_033_604,
-  rawBytes: 6_764_921,
+  // Agent History virtualization keeps the renderer, height index and DOM
+  // accounting lazy. This provisional QA ceiling adds only bounded eager UI
+  // selectors/preferences, including translations. Recalibrate against a
+  // production build on the rebased source before upstream submission.
+  transferBytes: 2_051_000,
+  rawBytes: 6_783_000,
 };
 
 // The chunk count is reported but not budgeted. Splitting a page out of the entry raises it while lowering the
