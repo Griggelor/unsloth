@@ -82,6 +82,48 @@ export function agentBudgetWindow(
 }
 
 /**
+ * Budget a single genuinely adjacent physical-viewport recovery row while
+ * retaining already mounted rows, instead of collapsing the whole window to
+ * an unknown one-row seek. Admit only one previously unknown row at a time.
+ *
+ * The mandatory new row can exceed the estimated DOM budget once measured,
+ * exactly like agentBudgetWindow; otherwise drop rows from the OPPOSITE edge
+ * before committing. No native scroll position mutations.
+ */
+export function agentPhysicalNeighborWindow(
+  current: AgentScrollWindow,
+  target: number,
+  count: number,
+  costs: AgentDomCostIndex,
+  budget: number,
+  maxRows: number,
+): AgentScrollWindow | null {
+  if (!Number.isSafeInteger(target) || !Number.isSafeInteger(count) ||
+      target < 0 || target >= count || !Number.isFinite(budget) || budget <= 0 ||
+      !Number.isSafeInteger(maxRows) || maxRows < 1 ||
+      current.start < 0 || current.end > count || current.start >= current.end) return null;
+  const prepend = target === current.start - 1;
+  const append = target === current.end;
+  if (!prepend && !append) return null;
+  // Never stage a second unmeasured/heavy tool row concurrently.
+  if (!costs.measured(target)) {
+    for (let row = current.start; row < current.end; row++) {
+      if (!costs.measured(row)) return null;
+    }
+  }
+  let start = prepend ? target : current.start;
+  let end = append ? target + 1 : current.end;
+  let used = 0;
+  for (let row = start; row < end; row++) used += costs.cost(row);
+  const limit = Math.min(AGENT_DOM_MAX_ROWS, maxRows);
+  while ((end - start > limit || used > budget) && end - start > 1) {
+    if (prepend) { end--; used -= costs.cost(end); }
+    else { used -= costs.cost(start); start++; }
+  }
+  return { start, end };
+}
+
+/**
  * When measurements merely admit additional neighboring messages, keep the
  * reader's already-filled viewport stable rather than moving text every frame.
  * Contracting an over-budget window or revealing an absent target is mandatory.
