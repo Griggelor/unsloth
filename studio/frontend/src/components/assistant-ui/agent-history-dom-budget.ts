@@ -6,8 +6,8 @@ import type { AgentScrollWindow } from "./agent-history-scroll-window";
 
 export {
   AGENT_BUFFER_MODES, isAgentBufferMode, agentBufferRowLimit, agentBufferDomLevel,
-} from "./agent-history-config";
-export type { AgentBufferMode, AgentDomLevel } from "./agent-history-config";
+} from "./agent-history-config.ts";
+export type { AgentBufferMode, AgentDomLevel } from "./agent-history-config.ts";
 export const AGENT_DOM_TARGETS = { low: 5_000, medium: 8_000, high: 12_000 } as const;
 /** Adaptive Fixed grows above the legacy 5-row minimum only when the viewport
  * needs more coverage. These are hard *policy* bounds: a single mandatory
