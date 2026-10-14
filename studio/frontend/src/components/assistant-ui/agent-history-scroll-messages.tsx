@@ -647,7 +647,7 @@ export const AgentHistoryScrollMessages: FC<{
         wheelCoverageTimer.current = null;
         wheelIdleReady.current = true;
         requestHeightRevision();
-      }, 100);
+      }, 60);
     };
     viewport.addEventListener("wheel", onWheel, { passive: true });
     viewport.addEventListener("touchmove", interrupt, { passive: true });
