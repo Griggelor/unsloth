@@ -7709,18 +7709,25 @@ const GeneratingIndicator: FC = () => {
       message.content.length === 0 && message.status?.type === "running",
   );
   const [phase, setPhase] = useState<QaWorkingPhase | null>(null);
+  const [phaseSeenAt, setPhaseSeenAt] = useState(0);
+  const [clock, setClock] = useState(() => Date.now());
+  const firstWaitAt = useRef(Date.now());
   useEffect(() => {
     if (!show) return;
+    firstWaitAt.current = Date.now();
     let mounted = true;
     let busy = false;
-    const controller = new AbortController();
+    let pending: AbortController | null = null;
     const poll = async () => {
       if (busy) return;
       busy = true;
+      const request = new AbortController();
+      pending = request;
+      const deadline = window.setTimeout(() => request.abort(), 4500);
       try {
         const response = await authFetch(
           "/api/inference/context-debug-progress",
-          { method: "GET", cache: "no-store", signal: controller.signal },
+          { method: "GET", cache: "no-store", signal: request.signal },
           { retryNetworkErrors: false },
         );
         if (!response.ok || !mounted) return;
@@ -7738,6 +7745,7 @@ const GeneratingIndicator: FC = () => {
           typeof next.elapsed_ms === "number" &&
           Number.isFinite(next.elapsed_ms)
         ) {
+          setPhaseSeenAt(Date.now());
           setPhase({
             enabled: true,
             stage: next.stage,
@@ -7752,20 +7760,29 @@ const GeneratingIndicator: FC = () => {
       } catch {
         // The backend may be unavailable. Never block the actual model request.
       } finally {
+        window.clearTimeout(deadline);
+        if (pending === request) pending = null;
         busy = false;
       }
     };
     void poll();
-    const interval = window.setInterval(() => void poll(), 800);
+    const interval = window.setInterval(() => {
+      setClock(Date.now());
+      void poll();
+    }, 800);
     return () => {
       mounted = false;
-      controller.abort();
+      pending?.abort();
       window.clearInterval(interval);
     };
   }, [show]);
 
   if (!show) return null;
   const visible = phase?.enabled && phase.active ? phase : null;
+  const staleSeconds = Math.floor(Math.max(0, clock - phaseSeenAt) / 1000);
+  const displaySeconds = visible
+    ? Math.floor((visible.elapsed_ms + Math.max(0, clock - phaseSeenAt)) / 1000)
+    : Math.floor(Math.max(0, clock - firstWaitAt.current) / 1000);
   const count = visible
     ? visible.total > 0 && visible.processed > 0
       ? `${visible.processed}/${visible.total} Turns`
@@ -7780,8 +7797,8 @@ const GeneratingIndicator: FC = () => {
       data-qa-working-phase={visible?.stage ?? undefined}
     >
       {visible
-        ? `Working ${visible.stage} · ${visible.label}${count ? ` · ${count}` : ""} · ${Math.floor(visible.elapsed_ms / 1000)} s`
-        : "Working..."}
+        ? `Working ${visible.stage} · ${visible.label}${count ? ` · ${count}` : ""} · ${displaySeconds} s${staleSeconds >= 6 ? ` · Backend-Status seit ${staleSeconds} s ausstehend` : ""}`
+        : `Working 1 · Warte auf Python-Status · ${displaySeconds} s`}
     </span>
   );
 };
