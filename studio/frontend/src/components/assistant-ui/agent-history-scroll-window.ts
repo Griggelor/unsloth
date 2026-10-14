@@ -3,15 +3,12 @@
 
 /** Normal-flow virtualization: only window boundaries change; rows are never absolutely positioned. */
 /** New opt-in preference; 32 remains the legacy capacity/headroom special case. */
-export const AGENT_DEFAULT_ROWS = 5;
-export const AGENT_INITIAL_ROWS = 32;
-export const AGENT_MAX_ROWS = 96;
-/** 32 retains its legacy append headroom of 96; other choices stay strict. */
-export const AGENT_WINDOW_SIZES = [2, 5, 8, 16, 32] as const;
-export type AgentWindowSize = (typeof AGENT_WINDOW_SIZES)[number];
-export function isAgentWindowSize(value: unknown): value is AgentWindowSize {
-  return typeof value === "number" && (AGENT_WINDOW_SIZES as readonly number[]).includes(value);
-}
+import { AGENT_INITIAL_ROWS, AGENT_MAX_ROWS } from "./agent-history-config";
+export {
+  AGENT_DEFAULT_ROWS, AGENT_INITIAL_ROWS, AGENT_MAX_ROWS,
+  AGENT_WINDOW_SIZES, isAgentWindowSize,
+} from "./agent-history-config";
+export type { AgentWindowSize } from "./agent-history-config";
 export const AGENT_ROW_ESTIMATE_PX = 720;
 export type AgentScrollWindow = Readonly<{ start: number; end: number }>;
 
