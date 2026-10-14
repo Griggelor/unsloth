@@ -5803,6 +5803,22 @@ export function createOpenAIStreamAdapter(
         return;
       }
 
+      // Both supported local transports share the exact same run identity:
+      // legacy requests carry it in a header, durable producer workers derive
+      // it from the existing UUID runId. Never persist it in the chat payload.
+      const workingProgressId =
+        import.meta.env.VITE_CONTEXT_PROGRESS_QA === "1" &&
+        !isExternalRequest &&
+        resolvedThreadId &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(cancelId)
+          ? cancelId.replace(/-/g, "")
+          : null;
+      if (workingProgressId && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("unsloth-qa-working-start", {
+          detail: { threadId: resolvedThreadId, runId: cancelId, signal: runSignal },
+        }));
+      }
+
       let waitingFirstChunk = true;
       let firstTokenSettled = false;
       const streamStartTime = Date.now();
@@ -7293,6 +7309,7 @@ export function createOpenAIStreamAdapter(
                     requestPayload,
                     runSignal,
                     servedContextLength,
+                    workingProgressId,
                   );
             // Per run, not per module: two turns must not share a cycle.
             const canPublish = createStreamPublishGate();
@@ -9158,6 +9175,11 @@ export function createOpenAIStreamAdapter(
         }
         throw err;
       } finally {
+        if (workingProgressId && typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("unsloth-qa-working-stop", {
+            detail: { threadId: resolvedThreadId, runId: cancelId },
+          }));
+        }
         if (!keepMinPRecovery) minPRecoveryGuard?.dispose();
         // Unconditional, and both ids: the pre-admission claim uses `cancelId`, and a run left
         // claimed after its stream died would never be recovered.
