@@ -8,6 +8,7 @@ import {
 } from "./thread-read-cache.ts";
 import { skillLoadCardEvent } from "./skill-load-event";
 import { authFetch, getAuthSessionEpoch } from "@/features/auth";
+import { startWorkingPhase } from "../utils/working-progress-store";
 import { prepareHfTokenForUse } from "@/features/hf-auth";
 // These helpers are deliberately API-layer-only, not part of their features' public barrels.
 // eslint-disable-next-line no-restricted-imports
@@ -1923,24 +1924,34 @@ export async function* streamChatCompletions(
   /** Served context window for length-stop attribution; null or omitted when unknown. */
   loadedContextLength?: number | null,
 ): AsyncGenerator<OpenAIChatChunk> {
-  const response = await authFetch("/v1/chat/completions", {
+  const working = startWorkingPhase(payload.thread_id, signal);
+  let response: Response;
+  try {
+    response = await authFetch("/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       // Opt into Unsloth's UI control frames (tool cards, statuses, reasoning timing). The
       // endpoint defaults to a clean OpenAI stream for external clients.
       "X-Unsloth-Events": "1",
+      ...(working ? { "X-Unsloth-Context-Progress": working.id } : {}),
     },
     body: JSON.stringify(payload),
     signal,
-  });
+    });
+  } catch (error) {
+    working?.stop();
+    throw error;
+  }
 
   if (!response.ok) {
+    working?.stop();
     const body = await response.json().catch(() => null);
     throw new Error(parseErrorText(response.status, body));
   }
 
   if (!response.body) {
+    working?.stop();
     throw new Error("Stream response missing body");
   }
 
@@ -2136,6 +2147,7 @@ export async function* streamChatCompletions(
         // already closed
       }
     }
+    working?.stop();
   }
 }
 
