@@ -83,3 +83,12 @@ The 8,000-descendant Fixed budget is a conservative **measured-window policy**, 
 - These results do not prove zero transient gaps or Windows WebView2 parity. A 133 ms gap spans roughly eight 60Hz frames and remains potentially perceptible.
 - Next: isolate one-row disjoint staging, unknown-row admission, estimated-height correction and competing main-thread work before increasing DOM concurrency; add per-frame window [start,end], scroll index, stage marker and frame time.
 - No official upstream PR authorized or opened. Windows and final clean-head gates remain blockers.
+
+## Controlled early-target-alignment A/B result (2026-10-14)
+
+- Baseline source with tracing: QA run 38605953928, artifact 11915781956, passed. Longest Dynamic toward newest underfill = 133 ms, while mounted window [383, 386) was still staged toward target row 385.
+- Experimental single change: allow pending target alignment as soon as the first staged row is mounted (rather than after the entire staged window). This does not increase DOM admission; isolated QA commit d6390ef5a6ac2194d0a354fd83cd5bedaaf528fc.
+- A/B run 38606529499, artifact 11915289819, passed. Longest Dynamic toward newest underfill remains 133 ms with the same staged window and target, so the early-alignment change did NOT resolve the relevant gap.
+- Other directions: Dynamic toward older 67 ms baseline and 67 ms experiment; Fixed toward older 67 ms baseline and 33 ms experiment; Fixed toward newest 0 ms both. Single-run fluctuations cannot support a robust performance claim.
+- Negative conclusion: DO NOT PORT the experimental early-align change to the clean upstream candidate. The most relevant remaining mechanism is conservative staged row admission (normally 2 added rows/frame), potentially combined with estimated heights. Any acceleration MUST restrict additions using already measured low DOM descendant costs and preserve the heavy-tool budget.
+- Need a measured A/B fix plus 50k/200k/400k and manual Windows WebView2 before asking user to authorize the PR.
