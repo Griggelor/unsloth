@@ -51,7 +51,18 @@ jobs:
       - name: Install pinned Tauri CLI
         run: npm ci --prefix studio --no-fund --no-audit
       - name: Build unsigned Windows executable without installer
+        # Tauri invokes beforeBuildCommand (npm run build) AGAIN. The QA flag
+        # must be set here, not only in the preceding frontend build step.
+        env:
+          VITE_CONTEXT_PROGRESS_QA: '1'
         run: npx --prefix studio tauri build --debug --no-bundle
+      - name: Assert QA polling is compiled into the final frontend
+        shell: pwsh
+        run: |
+          $asset = Get-ChildItem 'studio/frontend/dist/assets' -Filter '*.js' -Recurse -File |
+            Select-String -SimpleMatch '/api/inference/working-progress/' -Quiet
+          if (-not $asset) { throw 'QA phase polling marker missing from final Tauri frontend dist' }
+          Write-Host 'Verified: QA phase polling endpoint is present in the final frontend bundle'
       - name: Verify and stage executable
         shell: pwsh
         run: |
