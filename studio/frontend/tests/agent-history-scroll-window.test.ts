@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readSrc } from "./helpers/kit.ts";
-import { AgentHeightIndex, agentIndexAtScrollPosition, latestAgentWindow, agentWindowAtIndex, agentWindowOnAppend, nextProgressiveAgentWindow, AGENT_DEFAULT_ROWS, AGENT_INITIAL_ROWS, AGENT_MAX_ROWS, AGENT_WINDOW_SIZES } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
+import { AgentHeightIndex, agentIndexAtScrollPosition, latestAgentWindow, agentWindowAtIndex, agentWindowOnAppend, nextProgressiveAgentWindow, agentViewportCoverageRecoveryTarget, AGENT_DEFAULT_ROWS, AGENT_INITIAL_ROWS, AGENT_MAX_ROWS, AGENT_WINDOW_SIZES } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
 
 test("new agent mode defaults to five while explicit 32 preserves legacy 96-row append headroom", () => {
   assert.equal(AGENT_DEFAULT_ROWS, 5);
@@ -193,4 +193,23 @@ test("explicit fixed 32 keeps exactly 32 mounted rows across 300 appends and see
     assert.equal(range.end - range.start, 32);
   }
   assert.deepEqual(agentWindowOnAppend(range, count, count + 1, false, 32, true), range);
+});
+
+test("physical viewport rescue selects an off-window row despite a tall mounted window", () => {
+  const atTail = { start: 384, end: 400 };
+  // The real 240px-wheel Chromium failure had 16 rows mounted, but the first
+  // actual DOM row began 661px below the 960px physical viewport top.
+  assert.equal(
+    agentViewportCoverageRecoveryTarget(atTail, 383, 386, 661, 0, 960),
+    383,
+  );
+  // A faster forward wheel left 535px uncovered below the final mounted row.
+  assert.equal(
+    agentViewportCoverageRecoveryTarget({ start: 375, end: 391 }, 377, 391, 0, 535, 960),
+    391,
+  );
+  // Never retarget for a small gap, an already mounted target, or invalid data.
+  assert.equal(agentViewportCoverageRecoveryTarget(atTail, 383, 399, 70, 0, 960), null);
+  assert.equal(agentViewportCoverageRecoveryTarget(atTail, 384, 399, 661, 0, 960), null);
+  assert.equal(agentViewportCoverageRecoveryTarget(atTail, 383, 399, 661, 0, NaN), null);
 });
