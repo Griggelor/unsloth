@@ -7,6 +7,7 @@ export type WorkingPhaseSnapshot = Readonly<{
 }>;
 const phases: Record<string, readonly [number, string]> = {
   client_prepare: [1, "Anfrage senden"], request_received: [2, "Backend-Vorbereitung"],
+  qa_backend_missing: [0, "QA-Backend nicht installiert (nur Oberfläche aktualisiert)"],
   "checkpoint.original_exact_count": [3, "Kontext tokenisieren"],
   "checkpoint.replay_exact_count": [3, "Checkpoint tokenisieren"],
   "checkpoint.reset_exact_count": [3, "Reset tokenisieren"],
