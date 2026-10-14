@@ -12,16 +12,19 @@ from typing import Any
 
 LOG = logging.getLogger("studio.context_perf")
 FLAG = "UNSLOTH_CONTEXT_PERF_TRACE"
+# QA-only default. Never merge this on-by-default flag into production.
+from core.inference import context_live_progress as _live
 
 
 def enabled() -> bool:
-    return os.environ.get(FLAG) == "1"
+    return os.environ.get(FLAG, "1") == "1"
 
 
 def trace_call(phase: str, fn: Callable, *args: Any, messages: int = 0, **kwargs: Any):
     """Do not record arguments, results, private paths or exception text."""
     if not enabled():
         return fn(*args, **kwargs)
+    _live.begin(phase, items = messages)
     LOG.info(
         "context_perf phase=%s status=begin messages=%d",
         phase,
@@ -35,6 +38,7 @@ def trace_call(phase: str, fn: Callable, *args: Any, messages: int = 0, **kwargs
         status = "ok"
         return value
     finally:
+        _live.end(phase)
         LOG.info(
             "context_perf phase=%s status=%s messages=%d wall_ms=%.3f cpu_ms=%.3f",
             phase,
@@ -48,14 +52,16 @@ def trace_call(phase: str, fn: Callable, *args: Any, messages: int = 0, **kwargs
 class StageBook:
     """Aggregate repeated turn operations, with no chat identifiers in logs."""
 
-    def __init__(self, label: str, *, evicted_messages: int = 0) -> None:
+    def __init__(self, label: str, *, evicted_messages: int = 0, evicted_turns: int = 0) -> None:
         self.label = label
         self.active = enabled()
         self.evicted_messages = max(0, int(evicted_messages))
+        self.evicted_turns = max(0, int(evicted_turns))
         self.started = time.perf_counter() if self.active else 0.0
         self.cpu = time.process_time() if self.active else 0.0
         self.stats: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0, 0.0])
         if self.active:
+            _live.begin(self.label, items = self.evicted_messages)
             LOG.info("context_perf phase=%s status=begin evicted_messages=%d", self.label, self.evicted_messages)
 
     def call(self, phase: str, fn: Callable, *args: Any, **kwargs: Any):
@@ -65,6 +71,8 @@ class StageBook:
         cpu = time.process_time()
         row = self.stats[phase]
         row[0] += 1
+        _live.begin(phase, items = self.evicted_messages, total = self.evicted_turns)
+        _live.advance(phase, processed = int(row[0]), total = self.evicted_turns)
         if phase == "embedding_encode":
             LOG.info(
                 "context_perf phase=embedding_encode status=begin evicted_messages=%d",
@@ -84,6 +92,7 @@ class StageBook:
     def report(self, *, archived_messages: int = 0, evicted_turns: int = 0) -> None:
         if not self.active:
             return
+        _live.begin("context.ready", items = self.evicted_messages)
         LOG.info(
             "context_perf phase=%s status=end evicted_messages=%d evicted_turns=%d archived_messages=%d wall_ms=%.3f cpu_ms=%.3f",
             self.label,

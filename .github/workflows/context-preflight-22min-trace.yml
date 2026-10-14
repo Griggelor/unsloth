@@ -5,9 +5,10 @@ on:
     branches:
       - experiment/context-preflight-22min-trace-20261013
       - experiment/context-archive-indexed-match-20261013
+      - qa/context-live-phases-windows-20261014
     paths:
       - 'studio/backend/core/inference/checkpoint.py'
-      - 'studio/backend/core/inference/context_perf_trace.py'
+      - 'studio/backend/core/inference/context_perf_trace.py studio/backend/core/inference/context_live_progress.py studio/backend/routes/context_perf_progress.py'
       - 'studio/backend/core/rag/conversation_archive.py'
       - 'studio/backend/tests/context_perf/**'
       - '.github/workflows/context-preflight-22min-trace.yml'
@@ -33,3 +34,4 @@ jobs:
           python -m unittest discover -s studio/backend/tests/context_perf -p 'test_context_perf_trace.py' -v
           python -m unittest discover -s studio/backend/tests/context_perf -p 'test_checkpoint_exact_count_reuse.py' -v
           python -m unittest discover -s studio/backend/tests/context_perf -p 'test_archive_occurrence_scaling.py' -v
+          python -m unittest discover -s studio/backend/tests/context_perf -p 'test_context_live_progress.py' -v

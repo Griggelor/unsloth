@@ -11,7 +11,7 @@ import {
   snapshotQueuedTextPrompt,
   type QueuedPrompt,
 } from "@/features/chat/utils/queued-text-attachments";
-import { getAuthSessionEpoch } from "@/features/auth";
+import { authFetch, getAuthSessionEpoch } from "@/features/auth";
 
 import {
   ComposerAttachments,
@@ -7688,17 +7688,100 @@ const MessageError: FC = () => {
   );
 };
 
+type QaWorkingPhase = {
+  enabled: boolean;
+  stage: number;
+  label: string;
+  items: number;
+  processed: number;
+  total: number;
+  elapsed_ms: number;
+  active: boolean;
+};
+
+/**
+ * Test-build-only live Python progress. The GET is authenticated and independent
+ * of the inference stream. A failed poll cannot fail, delay or cancel generation.
+ */
 const GeneratingIndicator: FC = () => {
   const show = useAuiState(
     ({ message }) =>
       message.content.length === 0 && message.status?.type === "running",
   );
-  if (!show) {
-    return null;
-  }
+  const [phase, setPhase] = useState<QaWorkingPhase | null>(null);
+  useEffect(() => {
+    if (!show) return;
+    let mounted = true;
+    let busy = false;
+    const controller = new AbortController();
+    const poll = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const response = await authFetch(
+          "/api/inference/context-debug-progress",
+          { method: "GET", cache: "no-store", signal: controller.signal },
+          { retryNetworkErrors: false },
+        );
+        if (!response.ok || !mounted) return;
+        const progress: unknown = await response.json();
+        if (!mounted || !progress || typeof progress !== "object") return;
+        const next = progress as Partial<QaWorkingPhase>;
+        if (
+          next.enabled === true &&
+          typeof next.stage === "number" &&
+          Number.isFinite(next.stage) &&
+          typeof next.label === "string" &&
+          next.label.length < 80 &&
+          typeof next.items === "number" &&
+          Number.isFinite(next.items) &&
+          typeof next.elapsed_ms === "number" &&
+          Number.isFinite(next.elapsed_ms)
+        ) {
+          setPhase({
+            enabled: true,
+            stage: next.stage,
+            label: next.label,
+            items: next.items,
+            processed: typeof next.processed === "number" ? next.processed : 0,
+            total: typeof next.total === "number" ? next.total : 0,
+            elapsed_ms: next.elapsed_ms,
+            active: next.active === true,
+          });
+        }
+      } catch {
+        // The backend may be unavailable. Never block the actual model request.
+      } finally {
+        busy = false;
+      }
+    };
+    void poll();
+    const interval = window.setInterval(() => void poll(), 800);
+    return () => {
+      mounted = false;
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [show]);
+
+  if (!show) return null;
+  const visible = phase?.enabled && phase.active ? phase : null;
+  const count = visible
+    ? visible.total > 0 && visible.processed > 0
+      ? `${visible.processed}/${visible.total} Turns`
+      : visible.items > 0
+        ? `${visible.items} Elemente`
+        : ""
+    : "";
   return (
-    <span className="generating-glint text-sm text-muted-foreground">
-      Working...
+    <span
+      className="generating-glint text-sm text-muted-foreground"
+      aria-live="off"
+      data-qa-working-phase={visible?.stage ?? undefined}
+    >
+      {visible
+        ? `Working ${visible.stage} · ${visible.label}${count ? ` · ${count}` : ""} · ${Math.floor(visible.elapsed_ms / 1000)} s`
+        : "Working..."}
     </span>
   );
 };

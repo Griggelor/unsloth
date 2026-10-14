@@ -360,6 +360,7 @@ from routes import (
     youtube_router,
 )
 import routes.browser as _browser_routes
+from routes.context_perf_progress import router as context_perf_progress_router
 from routes.llama import router as llama_router
 from routes.engines import router as engines_router
 from routes.llama_compat import is_engine_probe_path, router as llama_compat_router
@@ -1807,6 +1808,7 @@ app.include_router(
 app.include_router(inference_router, prefix = "/api/inference", tags = ["inference"])
 # Unsloth-only inference endpoints (cancel, etc.) are not on the /v1 OpenAI-compat prefix.
 app.include_router(inference_studio_router, prefix = "/api/inference", tags = ["inference"])
+app.include_router(context_perf_progress_router, prefix = "/api/inference", tags = ["qa-debug"])
 
 # Unsloth-only text-to-video endpoints; not exposed on the /v1 OpenAI-compat prefix.
 app.include_router(video_router, prefix = "/api/inference", tags = ["inference"])

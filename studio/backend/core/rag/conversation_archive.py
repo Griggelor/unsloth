@@ -386,7 +386,7 @@ def archive_turns(
     # The evictor's own grouper, so an archived unit is exactly the unit the window drops. Imported lazily because the
     # inference layer imports this module.
     from core.inference.context_window import group_turns
-    profile = StageBook("conversation_archive.archive_turns", evicted_messages = len(evicted))
+    profile = StageBook("conversation_archive.archive_turns", evicted_messages = len(evicted), evicted_turns = len(groups))
 
     # Each entry is the archivable messages AND the span of the turn they came from. The two differ whenever
     # `_archivable` drops something: an assistant batch that called `search_conversation` alongside an ordinary tool
