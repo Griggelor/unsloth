@@ -54,6 +54,59 @@ _JS = """() => {
 }"""
 
 
+# Records painted-frame coverage during the physical wheel stream, not the
+# once-per-35-ms Python snapshots. No writes to scrollTop or synthetic input.
+_FRAME_PROBE_START = """() => {
+  window.__agentWheelCoverage?.stop?.();
+  const viewport = document.querySelector('.aui-thread-viewport');
+  const state = { frames: [], wheelEvents: 0, started: false, raf: 0 };
+  const onWheel = () => { state.wheelEvents++; state.started = true; };
+  viewport.addEventListener('wheel', onWheel, { passive: true });
+  const measure = (now) => {
+    if (state.started && viewport.isConnected) {
+      const top = viewport.getBoundingClientRect();
+      let coverage = 0;
+      for (const el of viewport.querySelectorAll('[data-agent-history-row]')) {
+        const rect = el.getBoundingClientRect();
+        coverage += Math.max(0, Math.min(top.bottom, rect.bottom) -
+          Math.max(top.top, rect.top));
+      }
+      const h = Math.max(1, viewport.clientHeight);
+      const remaining = viewport.scrollHeight - viewport.scrollTop - h;
+      const interior = viewport.scrollTop >= h && remaining >= h;
+      state.frames.push([now, Math.min(1, coverage / h), interior ? 1 : 0]);
+    }
+    state.raf = requestAnimationFrame(measure);
+  };
+  state.raf = requestAnimationFrame(measure);
+  window.__agentWheelCoverage = {
+    stop: () => {
+      cancelAnimationFrame(state.raf);
+      viewport.removeEventListener('wheel', onWheel);
+      let lastBad = null, maxBadMs = 0, badFrames = 0;
+      for (const [time, ratio, interior] of state.frames) {
+        if (interior && ratio < 0.55) {
+          if (lastBad === null) lastBad = time;
+          maxBadMs = Math.max(maxBadMs, time - lastBad);
+          badFrames++;
+        } else {
+          lastBad = null;
+        }
+      }
+      return {
+        wheelEvents: state.wheelEvents,
+        frames: state.frames.length,
+        badFrames,
+        maxUnderfilledMs: Math.round(maxBadMs),
+        minimumCoverage: state.frames.length ?
+          Math.min(...state.frames.map(f => f[1])) : null,
+      };
+    }
+  };
+}"""
+_FRAME_PROBE_STOP = "() => window.__agentWheelCoverage.stop()"
+
+
 def visible_state(page, expected_mode: str, maximum: int, stage: str) -> dict:
     snap = page.evaluate(_JS)
     if snap is None or snap["mode"] != expected_mode:
@@ -64,12 +117,13 @@ def visible_state(page, expected_mode: str, maximum: int, stage: str) -> dict:
 
 
 def capture_wheel_burst(page, mode: str, expected_mode: str, maximum: int,
-                        direction: int, burst: int) -> dict:
+                        direction: int, burst: int, wheel_delta: int) -> dict:
     viewport = page.locator(".aui-thread-viewport")
     viewport.hover()
     samples = []
+    page.evaluate(_FRAME_PROBE_START)
     for _ in range(7):
-        page.mouse.wheel(0, direction * 1680)
+        page.mouse.wheel(0, direction * wheel_delta)
         # Still physical mouse wheel; the timeout permits browser paint/RAF.
         page.wait_for_timeout(35)
         snap = visible_state(page, expected_mode, maximum, "during wheel")
@@ -77,6 +131,7 @@ def capture_wheel_burst(page, mode: str, expected_mode: str, maximum: int,
     # No further wheel, synthetic scroll or programmatic scrollTop. A "needs one
     # more wheel to show messages" failure must remain reproducible at rest.
     page.wait_for_timeout(1200)
+    raf = page.evaluate(_FRAME_PROBE_STOP)
     settled = visible_state(page, expected_mode, maximum, "after wheel settled")
     # Do not treat ONE short row as a populated screen. The requested
     # regression is a partially EMPTY viewport after a wheel-only burst.
@@ -84,16 +139,18 @@ def capture_wheel_burst(page, mode: str, expected_mode: str, maximum: int,
     rest = settled["scrollHeight"] - settled["scrollTop"] - settled["viewportHeight"]
     interior = settled["scrollTop"] >= settled["viewportHeight"] and rest >= settled["viewportHeight"]
     ratio = settled["coveragePx"] / max(1, settled["viewportHeight"])
-    if settled["visibleRows"] == 0 or (interior and ratio < 0.55):
+    if (settled["visibleRows"] == 0 or (interior and ratio < 0.55)
+            or raf["maxUnderfilledMs"] > 160):
         name = f"agent-history-wheel-gap-{mode}-{direction}-{burst}.png"
         page.screenshot(path=name)
         raise AssertionError(
-            f"{mode} direction={direction} burst={burst}: underfilled after idle coverage={ratio:.3f} "
+            f"{mode} direction={direction} burst={burst}: underfilled coverage={ratio:.3f} "
+            f"continuous underfill={raf['maxUnderfilledMs']}ms "
             f"(synthetic screenshot {name}): {settled}"
         )
     return {
         "mode": mode, "direction": "toward_newest" if direction > 0 else "toward_oldest",
-        "burst": burst,
+        "burst": burst, "wheel_delta": wheel_delta,
         "wheel_events": len(samples),
         "blank_intermediate_samples": sum(s["visibleRows"] == 0 for s in samples),
         "minimum_intermediate_visible_rows": min(s["visibleRows"] for s in samples),
@@ -101,11 +158,12 @@ def capture_wheel_burst(page, mode: str, expected_mode: str, maximum: int,
             s["coveragePx"] / max(1, s["viewportHeight"]) for s in samples
         ), 3),
         "settled_coverage_ratio": round(ratio, 3),
+        "animation_frames": raf,
         "settled": settled,
     }
 
 
-def run(url: str, username: str, password: str, messages: int) -> None:
+def run(url: str, username: str, password: str, messages: int, wheel_delta: int) -> None:
     from playwright.sync_api import sync_playwright
 
     base = url.rstrip("/")
@@ -150,7 +208,7 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                         for direction in (-1, 1):
                             for burst in range(3):
                                 results.append(capture_wheel_burst(
-                                    page, mode, policy, cap, direction, burst
+                                    page, mode, policy, cap, direction, burst, wheel_delta
                                 ))
                     finally:
                         context.close()
@@ -174,7 +232,8 @@ if __name__ == "__main__":
     parser.add_argument("--username", default="unsloth")
     parser.add_argument("--password", required=True)
     parser.add_argument("--messages", type=int, default=400)
+    parser.add_argument("--wheel-delta", type=int, choices=(120, 480, 1680), default=480)
     args = parser.parse_args()
     if args.messages < 128 or args.messages % 2:
         parser.error("--messages must be even and >=128")
-    run(args.url, args.username, args.password, args.messages)
+    run(args.url, args.username, args.password, args.messages, args.wheel_delta)
