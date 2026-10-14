@@ -377,12 +377,15 @@ export const AgentHistoryScrollMessages: FC<{
       const row = viewport.querySelector<HTMLElement>('[data-agent-history-row="' + oldAnchor.index + '"]');
       if (row) correctAnchor(row.getBoundingClientRect().top - oldAnchor.top);
     }
-    // A scrollbar thumb can jump millions of estimated pixels in one event.
-    // Do not require a SECOND wheel gesture merely to reveal its destination:
-    // after the staged window is fully committed, reconcile the mounted target
-    // with the real viewport geometry once, before the browser paints.
+    // A scrollbar thumb or a long wheel gesture can move far beyond the
+    // previously mounted rows. The disjoint transition intentionally mounts
+    // only the TARGET first, then admits remaining rows in small batches.
+    // Reconcile as soon as that target is mounted, rather than waiting for
+    // the entire staged window: the latter can expose a blank viewport for
+    // several frames. This uses the shared single scrollTop owner and does
+    // NOT admit additional unmeasured/heavy rows.
     const pending = pendingPassiveReveal.current;
-    if (pending !== null && staged.current === null) {
+    if (pending !== null) {
       const row = viewport.querySelector<HTMLElement>(
         '[data-agent-history-row="' + pending + '"]',
       );
