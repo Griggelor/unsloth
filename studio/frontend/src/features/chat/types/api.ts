@@ -664,6 +664,8 @@ export interface OpenAIChatMessage {
 }
 
 export interface OpenAIChatCompletionsRequest {
+  /** Persisted thread scope for the optional QA phase display. */
+  thread_id?: string;
   model: string;
   messages: OpenAIChatMessage[];
   stream: boolean;
