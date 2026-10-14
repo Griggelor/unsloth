@@ -2,7 +2,7 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AgentDomCostIndex, agentBudgetWindow, AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, needsAgentBudgetRebalance } from "../src/components/assistant-ui/agent-history-dom-budget.ts";
+import { AgentDomCostIndex, agentPhysicalNeighborWindow, agentBudgetWindow, AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, needsAgentBudgetRebalance } from "../src/components/assistant-ui/agent-history-dom-budget.ts";
 
 test("low and high adapt to measured row complexity", () => {
   const costs = new AgentDomCostIndex(40);
@@ -170,4 +170,42 @@ test("Fixed viewport growth cannot admit multiple unknown massive tool outputs",
     assert.equal(single.end - single.start, 1,
       "a single overbudget row must never cause additional heavy rows to mount");
   }
+});
+
+test("physical neighbor recovery retains measured windows and bounded DOM", () => {
+  const costs = new AgentDomCostIndex(400);
+  for (let row = 300; row < 400; row++) costs.measure(row, 55);
+  // An adjacent still-unknown short text row must not cause a one-row
+  // renderer collapse; drop the opposite edge within the 16-row cap.
+  assert.deepEqual(
+    agentPhysicalNeighborWindow({ start: 384, end: 400 }, 383, 400, costs, 8000, 16),
+    { start: 383, end: 399 },
+  );
+  assert.deepEqual(
+    agentPhysicalNeighborWindow({ start: 300, end: 316 }, 316, 400, costs, 8000, 16),
+    { start: 301, end: 317 },
+  );
+  // The old target may be one unusually huge tool row; only the necessary
+  // adjacent target is mandatory and may exceed the soft DOM budget.
+  costs.measure(383, 18000);
+  assert.deepEqual(
+    agentPhysicalNeighborWindow({ start: 384, end: 400 }, 383, 400, costs, 8000, 16),
+    { start: 383, end: 384 },
+  );
+  assert.equal(agentPhysicalNeighborWindow({ start: 384, end: 400 }, 381, 400, costs, 8000, 16), null);
+  assert.equal(agentPhysicalNeighborWindow({ start: 384, end: 400 }, 400, 400, costs, 8000, 16), null);
+});
+
+test("physical neighbor recovery does not admit two unknown heavy rows", () => {
+  const costs = new AgentDomCostIndex(400);
+  for (let row = 384; row < 400; row++) costs.measure(row, 70);
+  // Current mounted row 392 was never measured; adding 383 could create
+  // two simultaneous unbounded tool cards, so the helper must refuse.
+  costs.resize(401);
+  const partial = new AgentDomCostIndex(400);
+  for (let row = 384; row < 400; row++) if (row !== 392) partial.measure(row, 70);
+  assert.equal(
+    agentPhysicalNeighborWindow({ start: 384, end: 400 }, 383, 400, partial, 8000, 16),
+    null,
+  );
 });
