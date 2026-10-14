@@ -7211,6 +7211,7 @@ export function createOpenAIStreamAdapter(
                         requestPayload,
                       },
                       runSignal,
+                      workingProgressId,
                     );
                   } catch (error) {
                     if (!isLegacyFallbackChatGenerationAdmissionError(error)) {
