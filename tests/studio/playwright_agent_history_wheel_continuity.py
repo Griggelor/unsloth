@@ -78,11 +78,17 @@ def capture_wheel_burst(page, mode: str, expected_mode: str, maximum: int,
     # more wheel to show messages" failure must remain reproducible at rest.
     page.wait_for_timeout(1200)
     settled = visible_state(page, expected_mode, maximum, "after wheel settled")
-    if settled["visibleRows"] == 0:
+    # Do not treat ONE short row as a populated screen. The requested
+    # regression is a partially EMPTY viewport after a wheel-only burst.
+    # At the transcript's physical ends the legitimate empty space is ignored.
+    rest = settled["scrollHeight"] - settled["scrollTop"] - settled["viewportHeight"]
+    interior = settled["scrollTop"] >= settled["viewportHeight"] and rest >= settled["viewportHeight"]
+    ratio = settled["coveragePx"] / max(1, settled["viewportHeight"])
+    if settled["visibleRows"] == 0 or (interior and ratio < 0.55):
         name = f"agent-history-wheel-gap-{mode}-{direction}-{burst}.png"
         page.screenshot(path=name)
         raise AssertionError(
-            f"{mode} direction={direction} burst={burst}: blank after idle "
+            f"{mode} direction={direction} burst={burst}: underfilled after idle coverage={ratio:.3f} "
             f"(synthetic screenshot {name}): {settled}"
         )
     return {
@@ -91,6 +97,10 @@ def capture_wheel_burst(page, mode: str, expected_mode: str, maximum: int,
         "wheel_events": len(samples),
         "blank_intermediate_samples": sum(s["visibleRows"] == 0 for s in samples),
         "minimum_intermediate_visible_rows": min(s["visibleRows"] for s in samples),
+        "minimum_intermediate_coverage_ratio": round(min(
+            s["coveragePx"] / max(1, s["viewportHeight"]) for s in samples
+        ), 3),
+        "settled_coverage_ratio": round(ratio, 3),
         "settled": settled,
     }
 
