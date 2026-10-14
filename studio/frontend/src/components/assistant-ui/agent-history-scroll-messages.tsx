@@ -471,8 +471,12 @@ export const AgentHistoryScrollMessages: FC<{
               viewport.getBoundingClientRect().top,
               viewport.scrollTop, viewport.clientHeight,
             );
-            const destination = staged.current.destination;
-            if (index < destination.start || index >= destination.end) {
+            // The future destination may contain the new wheel index while
+            // that row is STILL not mounted. Re-target the physical wheel
+            // position whenever it falls outside the CURRENT rendered window;
+            // waiting for the old destination causes 60-130ms blank viewports.
+            const mounted = rangeRef.current;
+            if (index < mounted.start || index >= mounted.end) {
               visibleIndex.current = index;
               if (seek(index)) {
                 readerIntent.current = consumeAgentReaderScrollIntent(
