@@ -94,8 +94,18 @@ export const BUDGET = {
   // and #13703 / #13700 the last 61 B. Raised by that growth so main's margin stays where it was.
   // The chat menu's Compact conversation item adds 1.6 KB raw / 0.3 KB transfer to the eager chat chunk
   // (6,741,807 -> 6,743,381 B raw, 2,021,316 -> 2,021,655 B transfer against 2a03c22812), raised by that.
-  transferBytes: 2_027_652,
-  rawBytes: 6_746_927,
+  // QA upstream Agent History port @00c586319 (Node 22, Ubuntu CI, same
+  // dependency lockfile): 6,602.1 KiB raw / 1,990.7 KiB transferred.
+  // The large renderer and DOM/height indexes are lazy; extracting the eager
+  // preference constants into agent-history-config.ts reduced 3.6 KiB raw /
+  // 1.4 KiB transferred from the initial port (6,605.7 / 1,992.1).
+  // Remaining growth includes opt-in selectors, settings and localization.
+  // Increase the prior ceilings 6,746,927 / 2,027,652 bytes by 17,073 /
+  // 14,348 bytes, retaining ~3.4 KiB small-run variability headroom. Revisit
+  // if the upstream build/dependency tree changes; this is not permission for
+  // new eager imports into the initial Studio path.
+  transferBytes: 2_042_000,
+  rawBytes: 6_764_000,
 };
 
 // The chunk count is reported but not budgeted. Splitting a page out of the entry raises it while lowering the
