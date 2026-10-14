@@ -2346,6 +2346,7 @@ export const Thread: FC<{
                     ? "low" : agentHistoryLevel === "high" || agentHistoryLevel === "dynamic-high"
                       ? "high" : undefined}
                 fixedRowsStrict={agentHistoryLevel === "fixed-high"}
+                fixedViewportAdaptive={agentHistoryLevel === "fixed-low"}
               />
             </Suspense>
           ) : (
