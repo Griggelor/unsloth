@@ -3,12 +3,12 @@
 
 /** Normal-flow virtualization: only window boundaries change; rows are never absolutely positioned. */
 /** New opt-in preference; 32 remains the legacy capacity/headroom special case. */
-import { AGENT_INITIAL_ROWS, AGENT_MAX_ROWS } from "./agent-history-config";
+import { AGENT_INITIAL_ROWS, AGENT_MAX_ROWS } from "./agent-history-config.ts";
 export {
   AGENT_DEFAULT_ROWS, AGENT_INITIAL_ROWS, AGENT_MAX_ROWS,
   AGENT_WINDOW_SIZES, isAgentWindowSize,
-} from "./agent-history-config";
-export type { AgentWindowSize } from "./agent-history-config";
+} from "./agent-history-config.ts";
+export type { AgentWindowSize } from "./agent-history-config.ts";
 export const AGENT_ROW_ESTIMATE_PX = 720;
 export type AgentScrollWindow = Readonly<{ start: number; end: number }>;
 
