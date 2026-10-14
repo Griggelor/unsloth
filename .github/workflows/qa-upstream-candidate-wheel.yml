@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - qa/upstream-agent-history-gap-duration-20261014
+      - qa/upstream-agent-history-lightweight-stage-ab-20261014
     paths:
       - 'studio/frontend/src/components/assistant-ui/**'
       - 'studio/frontend/tests/agent-history-*'
@@ -33,6 +34,12 @@ jobs:
             tests/agent-history-dom-budget.test.ts \
             tests/agent-history-scroll-window.test.ts \
             tests/agent-history-scroll-intent-gate.test.ts
+          node --experimental-strip-types --test tests/agent-history-lightweight-stage.test.ts
+      - name: Full TypeScript static typecheck
+        working-directory: studio/frontend
+        run: |
+          npm ci --ignore-scripts --no-fund --no-audit
+          npm run typecheck
       - name: Python parser
         run: python -m py_compile tests/studio/playwright_agent_history_wheel_continuity.py
       - name: Capture source SHA
