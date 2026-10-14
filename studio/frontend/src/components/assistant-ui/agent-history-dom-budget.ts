@@ -143,3 +143,25 @@ export function needsAgentBudgetRebalance(
   return Number.isFinite(mountedContentHeight) && Number.isFinite(viewportHeight) &&
     mountedContentHeight + 16 < viewportHeight;
 }
+
+/**
+ * Budget-independent geometry guard for a small *native* wheel step toward
+ * older history. Preload only an immediately adjacent row before its spacer
+ * enters the viewport; heavy-row admission stays with PhysicalNeighborWindow.
+ * Larger wheel leaps use the existing staged seek instead.
+ */
+export function agentWheelPrefetchTarget(
+  wheelDeltaY: number,
+  firstRowViewportTop: number,
+  viewportTop: number,
+  viewportHeight: number,
+  mountedStart: number,
+): number | null {
+  if (!Number.isFinite(wheelDeltaY) || wheelDeltaY >= 0 || wheelDeltaY < -720 ||
+      !Number.isFinite(firstRowViewportTop) || !Number.isFinite(viewportTop) ||
+      !Number.isFinite(viewportHeight) || viewportHeight <= 0 ||
+      !Number.isSafeInteger(mountedStart) || mountedStart <= 0) return null;
+  const lead = Math.max(96, Math.min(200, viewportHeight * 0.18));
+  const predictedFirstRowTop = firstRowViewportTop - viewportTop - wheelDeltaY;
+  return predictedFirstRowTop >= -lead ? mountedStart - 1 : null;
+}
