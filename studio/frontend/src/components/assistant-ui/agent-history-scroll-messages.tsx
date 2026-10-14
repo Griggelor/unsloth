@@ -4,6 +4,7 @@ import { AuiProvider, useAui, useAuiState } from "@assistant-ui/react";
 import { MessageByIndexProvider } from "./stale-safe-scopes";
 import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRowNotificationGate } from "./row-notification-gate";
+import { isSimpleTextHistoryRow, MAX_UNMEASURED_LIGHT_ROWS } from "./agent-history-lightweight";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
 import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
@@ -48,6 +49,10 @@ export const AgentHistoryScrollMessages: FC<{
   heights.resize(count);
   const costs = useMemo(() => new AgentDomCostIndex(count), [resetKey]);
   costs.resize(count);
+  // Read at most a few candidate turns from the logical store, never materialize
+  // the full transcript and never classify tools or media as fast-mountable.
+  const isPlainText = (row: number) =>
+    isSimpleTextHistoryRow(aui.thread().getState().messages[row]);
   // Fixed-low no longer means a permanent five-message viewport. It can grow
   // until the viewport is filled, but never exceed 32 mounted messages or the
   // same conservative 8k-descendant budget as Dynamic.
@@ -74,7 +79,7 @@ export const AgentHistoryScrollMessages: FC<{
   const lastBlankRecoveryEpoch = useRef(-1);
   const [state, setState] = useState(() => ({
     key: resetKey, count, windowRows, domLevel, fixedRowsStrict, fixedViewportAdaptive,
-    range: budget !== null ? agentBudgetWindow(count, count - 1, costs, budget, budgetRows)
+    range: budget !== null ? agentBudgetWindow(count, count - 1, costs, budget, budgetRows, isPlainText)
       : latestAgentWindow(count, windowRows),
   }));
   const visibleIndex = useRef(Math.max(0, count - 1));
@@ -123,7 +128,7 @@ export const AgentHistoryScrollMessages: FC<{
   // Preserve progressive staging and reader-intent ownership; only the
   // selected window policy changes under an explicit Low/High preference.
   const budgetWindow = (index: number) =>
-    budget === null ? null : agentBudgetWindow(count, index, costs, budget, budgetRows);
+    budget === null ? null : agentBudgetWindow(count, index, costs, budget, budgetRows, isPlainText);
   const latestWindow = () => budgetWindow(count - 1) ?? latestAgentWindow(count, windowRows);
   const visibleWindow = () => budgetWindow(visibleIndex.current) ?? agentWindowAtIndex(
     count, Math.min(visibleIndex.current, Math.max(0, count - 1)), undefined, windowRows, fixedRowsStrict,
@@ -160,7 +165,7 @@ export const AgentHistoryScrollMessages: FC<{
   const seek = useCallback((index: number, snap?: "top" | "bottom") => {
     const viewport = viewportRef.current;
     const next = budget !== null
-      ? agentBudgetWindow(countRef.current, index, costs, budget, budgetRows)
+      ? agentBudgetWindow(countRef.current, index, costs, budget, budgetRows, isPlainText)
       : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows, fixedRowsStrict);
     if (next.start === rangeRef.current.start && next.end === rangeRef.current.end) {
       if (snap === "bottom") jumpBottom("auto");
@@ -173,8 +178,15 @@ export const AgentHistoryScrollMessages: FC<{
     const progressive = !snap && !following.current && disjoint &&
       next.end - next.start > 1;
     const target = Math.min(Math.max(index, next.start), next.end - 1);
-    const candidate = progressive ? { start: target, end: target + 1 } : next;
-    staged.current = progressive ? { destination: next, target } : null;
+    // A disjoint destination with up to four strictly simple text rows can be
+    // mounted in one bounded commit. Unknown complex/tool rows still stage
+    // individually. The stage-cap is independent of row height estimates.
+    const smallPlainBatch = progressive &&
+      next.end - next.start <= MAX_UNMEASURED_LIGHT_ROWS &&
+      Array.from({ length: next.end - next.start }, (_, n) => next.start + n)
+        .every(row => costs.measured(row) || isPlainText(row));
+    const candidate = progressive && !smallPlainBatch ? { start: target, end: target + 1 } : next;
+    staged.current = progressive && !smallPlainBatch ? { destination: next, target } : null;
     pendingPassiveReveal.current = disjoint && !snap ? target : null;
     if (viewport && !snap) {
       const fold = viewport.getBoundingClientRect().top;
@@ -252,7 +264,7 @@ export const AgentHistoryScrollMessages: FC<{
     // does not produce a render. Force a fresh layout navigation transaction.
     setRevealRevision(v => v + 1);
     const next = budget !== null
-      ? agentBudgetWindow(countRef.current, index, costs, budget, budgetRows)
+      ? agentBudgetWindow(countRef.current, index, costs, budget, budgetRows, isPlainText)
       : agentWindowAtIndex(countRef.current, index, rangeRef.current, windowRows, fixedRowsStrict);
     if (next.start !== rangeRef.current.start || next.end !== rangeRef.current.end) {
       rangeRef.current = next;
@@ -612,7 +624,7 @@ export const AgentHistoryScrollMessages: FC<{
       const followingTail = getIsFollowingBottom();
       const target = intent.kind === "search" ? intent.row
         : followingTail ? countRef.current - 1 : visibleIndex.current;
-      const next = agentBudgetWindow(countRef.current, target, costs, budget, budgetRows);
+      const next = agentBudgetWindow(countRef.current, target, costs, budget, budgetRows, isPlainText);
       const viewport = viewportRef.current;
       if (!viewport) return;
       // The old policy greedily added one newly measured neighbor on every
