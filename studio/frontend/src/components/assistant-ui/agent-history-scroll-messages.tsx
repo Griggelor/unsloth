@@ -747,7 +747,7 @@ export const AgentHistoryScrollMessages: FC<{
     following.current = true;
     seek(countRef.current - 1, "bottom");
   };
-  return <div data-agent-history-scroll-list="true" data-agent-history-dom-level={domLevel ?? "legacy"} role="list" className="flex min-w-0 flex-col">
+  return <div data-agent-history-scroll-list="true" data-agent-history-dom-level={domLevel ?? "legacy"} data-agent-history-qa-stage={staged.current !== null ? "true" : "false"} data-agent-history-qa-stage-target={staged.current?.target ?? ""} data-agent-history-qa-visible-index={visibleIndex.current} data-agent-history-qa-window-start={range.start} data-agent-history-qa-window-end={range.end} role="list" className="flex min-w-0 flex-col">
     {range.end < count && <button type="button" className="sticky top-2 z-20 mx-auto rounded-full border bg-background px-3 py-1 text-xs shadow" onClick={backToLatest}>Zur neuesten Ausgabe</button>}
     <div ref={topSpacer} data-agent-history-spacer="top" aria-hidden="true" style={{ height: heights.offset(range.start), flexShrink: 0 }} />
     {rows}
