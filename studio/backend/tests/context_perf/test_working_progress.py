@@ -34,6 +34,25 @@ class TestWorkingProgress(unittest.TestCase):
         progress.finish(key)
         self.assertEqual(progress.snapshot("owner-a", rid)["status"], "done")
 
+    def test_durable_worker_only_attaches_when_registered_by_owner(self):
+        rid = uuid.uuid4().hex
+        self.assertIsNone(progress.attach("owner-x", rid))
+        key = progress.begin("owner-x", rid)
+        self.assertEqual(progress.attach("owner-x", rid), key)
+        self.assertIsNone(progress.attach("another-account", rid))
+        self.assertIsNone(progress.attach("owner-x", "../" + rid))
+        token = progress.activate(progress.attach("owner-x", rid))
+        try:
+            progress.publish("checkpoint.original_exact_count", total = 550,
+                             current = 0, unit = "messages")
+        finally:
+            progress.reset(token)
+        self.assertEqual(progress.snapshot("owner-x", rid)["phase"],
+                         "checkpoint.original_exact_count")
+        self.assertIsNone(progress.snapshot("another-account", rid))
+        progress.finish(key)
+        self.assertIsNone(progress.attach("owner-x", rid))
+
     def test_bad_ids_and_unscoped_calls_are_inert(self):
         self.assertIsNone(progress.begin("a", "../user"))
         self.assertIsNone(progress.begin("", uuid.uuid4().hex))
