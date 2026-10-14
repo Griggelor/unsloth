@@ -17,6 +17,7 @@ from typing import Any, AsyncIterator
 from starlette.requests import Request
 
 from core.inference.llama_keepwarm import InferenceActivityReservation
+from core.inference import working_progress
 from core.training.account_jobs import sweepable_job_accounts
 from utils.account_context import current_account_id, run_as
 from loggers import get_logger
@@ -709,11 +710,19 @@ class ChatGenerationSupervisor:
         saw_done = False
         worker_token: str | None = None
         next_raw_task: asyncio.Task | None = None
+        qa_progress_key = None
+        qa_progress_token = None
         try:
             worker_run = await asyncio.to_thread(db.get_worker_run, run_id)
             if worker_run is None:
                 return
             run, owner, worker_token = worker_run
+            # Only attach when the authenticated run-creation route opted in.
+            # A UUID is the persisted run identity; progress only uses its hex form.
+            qa_progress_key = working_progress.attach(owner, run_id.replace("-", ""))
+            if qa_progress_key is not None:
+                qa_progress_token = working_progress.activate(qa_progress_key)
+                working_progress.publish("request_received")
             if cancel_event.is_set():
                 shutting_down = run_id in self._shutdown_runs
                 await asyncio.to_thread(
@@ -919,9 +928,17 @@ class ChatGenerationSupervisor:
                 )
             pending = []
         finally:
-            if next_raw_task is not None:
-                if not next_raw_task.done():
-                    next_raw_task.cancel()
-                await asyncio.gather(next_raw_task, return_exceptions = True)
-            await _close_iterator(iterator)
-            activity.finish()
+            try:
+                if next_raw_task is not None:
+                    if not next_raw_task.done():
+                        next_raw_task.cancel()
+                    await asyncio.gather(next_raw_task, return_exceptions = True)
+                await _close_iterator(iterator)
+                activity.finish()
+            finally:
+                if qa_progress_token is not None:
+                    working_progress.finish(
+                        qa_progress_key,
+                        failed = not saw_done and finish_reason is None,
+                    )
+                    working_progress.reset(qa_progress_token)
