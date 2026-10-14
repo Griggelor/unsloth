@@ -77,7 +77,8 @@ class StageBook:
         wall = time.perf_counter()
         cpu = time.process_time()
         row = self.stats[phase]
-        working_progress.publish(phase, current = int(row[0]), total = self.totals.get(phase), unit = "turns")
+        if phase != "match_live_turn":
+            working_progress.publish(phase, current = int(row[0]), total = self.totals.get(phase), unit = "turns")
         row[0] += 1
         if self.logging_on and phase == "embedding_encode":
             LOG.info(
@@ -89,6 +90,7 @@ class StageBook:
         finally:
             row[1] += (time.perf_counter() - wall) * 1000
             row[2] += (time.process_time() - cpu) * 1000
+            if phase != "match_live_turn":
             working_progress.publish(phase, current = int(row[0]), total = self.totals.get(phase), unit = "turns")
             if self.logging_on and phase == "match_evicted_turn" and int(row[0]) % 250 == 0:
                 LOG.info(
