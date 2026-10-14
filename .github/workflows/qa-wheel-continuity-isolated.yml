@@ -36,7 +36,8 @@ jobs:
       - name: Python parser
         run: python -m py_compile tests/studio/playwright_agent_history_wheel_continuity.py
       - name: Capture source SHA
-        run: printf 'Verified SHA: %s\n' "${{ github.sha }}"
+        run: |
+          printf 'Verified SHA: %s\n' "${{ github.sha }}"
   wheel:
     runs-on: ubuntu-latest
     timeout-minutes: 35
