@@ -66,6 +66,11 @@ export function normalizeChatGenerationChunkPayload(
     if (frameType === "skill_load") {
       return { _toolEvent: skillLoadCardEvent(payload) } as unknown as OpenAIChatChunk;
     }
+    // Persisted durable runs replay raw SSE control frames. Re-tag this
+    // ephemeral working phase the same way as the legacy fetch stream.
+    if (frameType === "working_phase") {
+      return { _workingPhase: payload } as unknown as OpenAIChatChunk;
+    }
     // Relay server-side reasoning duration.
     if (frameType === "reasoning_summary") {
       return {
