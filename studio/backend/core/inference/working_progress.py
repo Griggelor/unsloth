@@ -6,6 +6,7 @@ authenticated subject; no thread ID, prompt or exception is stored or returned.
 """
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import re
 import threading
@@ -128,5 +129,21 @@ async def bind_response_stream(iterator, key: tuple[str, str]):
             yield chunk
         failed = False
     finally:
+        # _SameTaskStreamingResponse throws CancelledError into its body iterator
+        # on disconnect. Forward it into the ORIGINAL backend generator as well:
+        # otherwise its admission lease / tool tracker can remain suspended.
+        if failed:
+            athrow = getattr(iterator, "athrow", None)
+            if callable(athrow):
+                try:
+                    await athrow(asyncio.CancelledError())
+                except (asyncio.CancelledError, StopAsyncIteration, RuntimeError, Exception):
+                    pass
+            aclose = getattr(iterator, "aclose", None)
+            if callable(aclose):
+                try:
+                    await aclose()
+                except (asyncio.CancelledError, RuntimeError, Exception):
+                    pass
         finish(key, failed = failed)
         reset(token)
