@@ -7,7 +7,7 @@ import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
 import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
-import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
+import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentViewportCoverageRecoveryTarget, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
   allowsAgentReaderScrollIntent,
@@ -72,6 +72,9 @@ export const AgentHistoryScrollMessages: FC<{
   // window commit, never allowed to abort staging with only one row mounted.
   const deferredScroll = useRef(false);
   const lastBlankRecoveryEpoch = useRef(-1);
+  // A physical-wheel epoch may require limited further reconciliation after
+  // height-ledger corrections. Never run an unbounded layout-recovery loop.
+  const coverageRecovery = useRef({ epoch: -1, attempts: 0 });
   const [state, setState] = useState(() => ({
     key: resetKey, count, windowRows, domLevel, fixedRowsStrict, fixedViewportAdaptive,
     range: budget !== null ? agentBudgetWindow(count, count - 1, costs, budget, budgetRows)
@@ -103,6 +106,7 @@ export const AgentHistoryScrollMessages: FC<{
     pendingPassiveReveal.current = null;
     deferredScroll.current = false;
     lastBlankRecoveryEpoch.current = -1;
+    coverageRecovery.current = { epoch: -1, attempts: 0 };
   }, [resetKey]);
   const revealFrame = useRef<number | null>(null);
   useEffect(() => () => {
@@ -407,6 +411,51 @@ export const AgentHistoryScrollMessages: FC<{
     const epoch = readerIntent.current.epoch;
     const recentWheel = epoch > 0 &&
       performance.now() - lastReaderGestureAt.current <= 1500;
+    // The total mounted content height is NOT the same as physical viewport
+    // coverage. After rows shrink from the 720px estimate to their measured
+    // heights, the physical top may lie in the virtual spacer immediately
+    // above our 16/32-row window. In that state 16 mounted short messages can
+    // coexist with a 600px blank area that never gets filled on idle.
+    //
+    // Re-target the existing budgeted window to the actual physical endpoint,
+    // never write scrollTop here and never bypass search or staging ownership.
+    if (recentWheel && budget !== null &&
+        staged.current === null && pendingPassiveReveal.current === null &&
+        navigation.current.kind === "reader" && !getIsFollowingBottom()) {
+      const bounds = viewport.getBoundingClientRect();
+      const viewportHeight = viewport.clientHeight;
+      const remaining = viewport.scrollHeight - viewport.scrollTop - viewportHeight;
+      const interior = viewport.scrollTop >= viewportHeight && remaining >= viewportHeight;
+      if (interior && viewportHeight > 0) {
+        const wrappers = [...viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")];
+        const first = wrappers[0], last = wrappers[wrappers.length - 1];
+        if (first && last) {
+          const spacer = topSpacer.current;
+          if (spacer) {
+            const originTop = spacer.getBoundingClientRect().top;
+            const physicalTopIndex = agentIndexAtScrollPosition(
+              heights, originTop, bounds.top, viewport.scrollTop, 0,
+            );
+            const physicalBottomIndex = agentIndexAtScrollPosition(
+              heights, originTop, bounds.top, viewport.scrollTop, viewportHeight * 3,
+            );
+            const candidate = agentViewportCoverageRecoveryTarget(
+              rangeRef.current, physicalTopIndex, physicalBottomIndex,
+              Math.max(0, first.getBoundingClientRect().top - bounds.top),
+              Math.max(0, bounds.bottom - last.getBoundingClientRect().bottom),
+              viewportHeight,
+            );
+            const previous = coverageRecovery.current;
+            const attempts = previous.epoch === epoch ? previous.attempts : 0;
+            if (candidate !== null && attempts < 3) {
+              coverageRecovery.current = { epoch, attempts: attempts + 1 };
+              visibleIndex.current = candidate;
+              if (seek(candidate)) return;
+            }
+          }
+        }
+      }
+    }
     if (pendingPassiveReveal.current === null && staged.current === null &&
         recentWheel && !getIsFollowingBottom() &&
         navigation.current.kind === "reader" &&
@@ -426,7 +475,7 @@ export const AgentHistoryScrollMessages: FC<{
           Math.min(72, viewport.clientHeight / 4));
       }
     }
-  }, [range.start, range.end, heightRevision, searchHit, revealRevision, viewportRef, jumpBottom, correctAnchor, navigateViewport, getIsFollowingBottom]);
+  }, [range.start, range.end, heightRevision, searchHit, revealRevision, viewportRef, jumpBottom, correctAnchor, navigateViewport, getIsFollowingBottom, budget, heights, seek]);
 
   // A scroll event is not itself evidence of user navigation. Internal
   // anchor corrections, CSS/native scroll anchoring and remeasuring huge tool
