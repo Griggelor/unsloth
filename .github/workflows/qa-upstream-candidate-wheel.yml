@@ -1,10 +1,11 @@
 # QA-only ephemeral branch workflow. NEVER merge to upstream.
-name: QA Upstream Candidate Wheel Gap Trace
+name: QA Agent History Wheel Geometry Matrix
 on:
   push:
     branches:
       - qa/upstream-agent-history-gap-trace-20261014
       - qa/upstream-agent-history-frame-trace-20261014
+      - qa/agent-history-wheel-geometry-matrix-20261014
     paths:
       - 'studio/frontend/src/components/assistant-ui/**'
       - 'studio/frontend/tests/agent-history-*'
