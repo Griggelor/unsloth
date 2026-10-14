@@ -83,4 +83,10 @@ if (typeof window !== "undefined") {
     if (!detail?.threadId || !detail.runId || !detail.signal) return;
     startWorkingPhase(detail.threadId, detail.signal, detail.runId);
   });
+  window.addEventListener("unsloth-qa-working-stop", (event: Event) => {
+    const detail = (event as CustomEvent<{ threadId?: string; runId?: string }>).detail;
+    if (!detail?.threadId || !detail.runId) return;
+    const currentRun = active.get(detail.threadId);
+    if (currentRun?.id === detail.runId.replace(/-/g, "")) currentRun.stop();
+  });
 }
