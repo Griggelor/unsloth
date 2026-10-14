@@ -8,7 +8,7 @@ on:
       - 'studio/frontend/src/components/assistant-ui/**'
       - 'studio/frontend/tests/agent-history-*'
       - 'tests/studio/playwright_agent_history_wheel_continuity.py'
-      - '.github/workflows/qa-wheel-continuity-isolated.yml'
+      - '.github/workflows/qa-upstream-candidate-wheel.yml'
   workflow_dispatch:
 permissions:
   contents: read
