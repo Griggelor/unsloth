@@ -60,8 +60,9 @@ jobs:
         shell: pwsh
         run: |
           $asset = Get-ChildItem 'studio/frontend/dist/assets' -Filter '*.js' -Recurse -File |
-            Select-String -SimpleMatch '/api/inference/working-progress/' -Quiet
-          if (-not $asset) { throw 'QA phase polling marker missing from final Tauri frontend dist' }
+            Select-String -SimpleMatch '/api/inference/working-progress/' |
+            Select-Object -First 1
+          if ($null -eq $asset) { throw 'QA phase polling marker missing from final Tauri frontend dist' }
           Write-Host 'Verified: QA phase polling endpoint is present in the final frontend bundle'
       - name: Verify and stage executable
         shell: pwsh
