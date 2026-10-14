@@ -75,6 +75,8 @@ export const AgentHistoryScrollMessages: FC<{
   // A physical-wheel epoch may require limited further reconciliation after
   // height-ledger corrections. Never run an unbounded layout-recovery loop.
   const coverageRecovery = useRef({ epoch: -1, attempts: 0 });
+  const wheelCoverageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wheelIdleReady = useRef(false);
   const [state, setState] = useState(() => ({
     key: resetKey, count, windowRows, domLevel, fixedRowsStrict, fixedViewportAdaptive,
     range: budget !== null ? agentBudgetWindow(count, count - 1, costs, budget, budgetRows)
@@ -107,6 +109,9 @@ export const AgentHistoryScrollMessages: FC<{
     deferredScroll.current = false;
     lastBlankRecoveryEpoch.current = -1;
     coverageRecovery.current = { epoch: -1, attempts: 0 };
+    if (wheelCoverageTimer.current !== null) clearTimeout(wheelCoverageTimer.current);
+    wheelCoverageTimer.current = null;
+    wheelIdleReady.current = false;
   }, [resetKey]);
   const revealFrame = useRef<number | null>(null);
   useEffect(() => () => {
@@ -419,7 +424,9 @@ export const AgentHistoryScrollMessages: FC<{
     //
     // Re-target the existing budgeted window to the actual physical endpoint,
     // never write scrollTop here and never bypass search or staging ownership.
-    if (recentWheel && budget !== null &&
+    // Retarget only AFTER a short period without a physical wheel event:
+    // applying correction mid-burst creates additional 1680px blank frames.
+    if (recentWheel && wheelIdleReady.current && budget !== null &&
         staged.current === null && pendingPassiveReveal.current === null &&
         navigation.current.kind === "reader" && !getIsFollowingBottom()) {
       const bounds = viewport.getBoundingClientRect();
@@ -577,6 +584,11 @@ export const AgentHistoryScrollMessages: FC<{
     // reader transaction. A pointer drag needs repeated epochs because scroll
     // bars can move continuously while the button remains depressed.
     const interrupt = () => {
+      if (wheelCoverageTimer.current !== null) {
+        clearTimeout(wheelCoverageTimer.current);
+        wheelCoverageTimer.current = null;
+      }
+      wheelIdleReady.current = false;
       lastReaderGestureAt.current = performance.now();
       readerIntent.current = requestAgentReaderScrollIntent(readerIntent.current);
       navigation.current = interruptAgentHistoryReveal(navigation.current);
@@ -626,7 +638,18 @@ export const AgentHistoryScrollMessages: FC<{
       }
       interrupt();
     };
-    viewport.addEventListener("wheel", interrupt, { passive: true });
+    const onWheel = () => {
+      interrupt();
+      // This is a genuine trailing-wheel reconciliation, NOT a synthetic
+      // scroll event or another scrollTop owner. The layout effect samples
+      // the real physical viewport only after the reader stops spinning.
+      wheelCoverageTimer.current = setTimeout(() => {
+        wheelCoverageTimer.current = null;
+        wheelIdleReady.current = true;
+        requestHeightRevision();
+      }, 100);
+    };
+    viewport.addEventListener("wheel", onWheel, { passive: true });
     viewport.addEventListener("touchmove", interrupt, { passive: true });
     viewport.addEventListener("pointerdown", onPointerDown, { passive: true });
     viewport.addEventListener("pointermove", onPointerMove, { passive: true });
@@ -635,7 +658,10 @@ export const AgentHistoryScrollMessages: FC<{
     window.addEventListener("keydown", onKeyDown);
     return () => {
       viewport.removeEventListener("scroll", onScroll);
-      viewport.removeEventListener("wheel", interrupt);
+      viewport.removeEventListener("wheel", onWheel);
+      if (wheelCoverageTimer.current !== null) clearTimeout(wheelCoverageTimer.current);
+      wheelCoverageTimer.current = null;
+      wheelIdleReady.current = false;
       viewport.removeEventListener("touchmove", interrupt);
       viewport.removeEventListener("pointerdown", onPointerDown);
       viewport.removeEventListener("pointermove", onPointerMove);
@@ -646,7 +672,7 @@ export const AgentHistoryScrollMessages: FC<{
       animation.current = null;
       pendingScrollEpoch.current = null;
     };
-  }, [viewportRef, heights, seek, getIsFollowingBottom]);
+  }, [viewportRef, heights, seek, getIsFollowingBottom, requestHeightRevision]);
   // Measure the committed window and settle towards the known DOM budget.
   // Never supersede an in-progress staged seek or an active search epoch.
   const budgetFrame = useRef<number | null>(null);
