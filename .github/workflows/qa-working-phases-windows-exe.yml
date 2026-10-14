@@ -1,0 +1,79 @@
+name: QA Working Phases Windows EXE
+on:
+  push:
+    branches:
+      - experiment/working-phases-debug-exe-20261014
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-debug-exe:
+    name: Windows diagnostic EXE
+    runs-on: windows-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify source identity
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.sha }}') { throw 'Unpinned source checkout' }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: 'false'
+          workspaces: studio/src-tauri -> target
+      - name: Audit lockfiles
+        run: python scripts/lockfile_supply_chain_audit.py
+      - name: Install frontend dependencies and check TypeScript
+        working-directory: studio/frontend
+        shell: pwsh
+        run: |
+          npm ci --no-fund --no-audit
+          npx tsc --noEmit --pretty false
+      - name: Build Working phase frontend
+        working-directory: studio/frontend
+        env:
+          VITE_CONTEXT_PHASE_DEBUG: '1'
+        run: npm run build
+      - name: Install pinned Tauri CLI
+        run: npm ci --prefix studio --no-fund --no-audit
+      - name: Build unsigned Windows EXE (no installer)
+        run: npx --prefix studio tauri build --debug --no-bundle
+      - name: Verify and stage
+        shell: pwsh
+        run: |
+          $exe = 'studio/src-tauri/target/debug/unsloth-studio.exe'
+          if (-not (Test-Path $exe)) { throw "Missing $exe" }
+          New-Item -ItemType Directory -Force qa-working-exe | Out-Null
+          Copy-Item $exe 'qa-working-exe/unsloth-studio-WORKING-DEBUG-UNSIGNED.exe'
+          $hash = (Get-FileHash 'qa-working-exe/unsloth-studio-WORKING-DEBUG-UNSIGNED.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = [ordered]@{
+            purpose = 'Working phase diagnostics only'
+            source_commit = '${{ github.sha }}'
+            source_branch = '${{ github.ref_name }}'
+            workflow_run_id = '${{ github.run_id }}'
+            exe_sha256 = $hash
+            vite_context_phase_debug = '1'
+            python_trace_opt_in = 'UNSLOTH_CONTEXT_PERF_TRACE=1'
+            warning = 'Unsigned DEBUG app; no release; protected test profile only'
+          }
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content 'qa-working-exe/QA_MANIFEST.json' -Encoding utf8
+          Write-Host "Working-debug EXE SHA256: $hash"
+      - name: Upload QA EXE
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsloth-working-phases-windows-debug-unsigned
+          path: qa-working-exe/*
+          retention-days: 7
+          if-no-files-found: error

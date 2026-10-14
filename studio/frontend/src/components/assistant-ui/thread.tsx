@@ -7693,8 +7693,57 @@ const GeneratingIndicator: FC = () => {
     ({ message }) =>
       message.content.length === 0 && message.status?.type === "running",
   );
+  const phase = useAuiState(({ message }) => {
+    const custom = message.metadata?.custom as
+      | { workingPhaseDebug?: { step?: unknown; label?: unknown; elements?: unknown; startedAt?: unknown } }
+      | undefined;
+    const value = custom?.workingPhaseDebug;
+    if (
+      !value ||
+      typeof value.step !== "number" ||
+      !Number.isInteger(value.step) ||
+      value.step < 1 ||
+      value.step > 9 ||
+      typeof value.label !== "string" ||
+      typeof value.elements !== "number" ||
+      !Number.isSafeInteger(value.elements) ||
+      value.elements < 0 ||
+      typeof value.startedAt !== "number" ||
+      !Number.isFinite(value.startedAt)
+    ) {
+      return null;
+    }
+    return {
+      step: value.step,
+      label: value.label,
+      elements: value.elements,
+      startedAt: value.startedAt,
+    };
+  });
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!show || !phase || import.meta.env.VITE_CONTEXT_PHASE_DEBUG !== "1") {
+      return;
+    }
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [show, phase?.startedAt]);
   if (!show) {
     return null;
+  }
+  if (import.meta.env.VITE_CONTEXT_PHASE_DEBUG === "1" && phase) {
+    const seconds = Math.max(0, Math.floor((now - phase.startedAt) / 1000));
+    const duration = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    return (
+      <span
+        data-testid="working-phase-debug"
+        className="generating-glint text-sm text-muted-foreground"
+        title="Diagnosebuild: Anzahl übertragener Nachrichten; keine Tokenzahl. Backend-Unterphasen stehen im Python-Diagnoselog."
+      >
+        Working {phase.step} – {phase.label} · {phase.elements.toLocaleString("de-DE")} Nachrichten · {duration}
+      </span>
+    );
   }
   return (
     <span className="generating-glint text-sm text-muted-foreground">

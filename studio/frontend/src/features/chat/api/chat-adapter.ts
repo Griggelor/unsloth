@@ -5930,6 +5930,24 @@ export function createOpenAIStreamAdapter(
         byToolCall: {},
       };
       let codexRoundToolCallIds: string[] = [];
+      // Experiment-only telemetry, compiled out of normal Windows artifacts.
+      // The element count refers to chat messages, never tokenizer tokens.
+      const phaseDebugEnabled =
+        import.meta.env.VITE_CONTEXT_PHASE_DEBUG === "1" && !isExternalRequest;
+      const phaseDebugStarted = Date.now();
+      let workingPhaseDebug:
+        | { step: number; label: string; elements: number; startedAt: number }
+        | undefined;
+      const updateWorkingPhase = (step: number, label: string, elements: number) => {
+        if (phaseDebugEnabled) {
+          workingPhaseDebug = {
+            step,
+            label,
+            elements: Math.max(0, Math.floor(elements)),
+            startedAt: phaseDebugStarted,
+          };
+        }
+      };
       let contextTruncation: OpenAIChatChunk["context_truncated"];
       let compactionMarkers: CompactionMarker[] | undefined;
       let providerCompaction: ProviderCompactionContentPart | undefined =
@@ -5963,6 +5981,7 @@ export function createOpenAIStreamAdapter(
         openaiCodexReasoning: codexReasoningLedger,
         openaiResponsesReasoning: openAIResponsesReasoningLedger,
         contextTruncation,
+        ...(phaseDebugEnabled && workingPhaseDebug ? { workingPhaseDebug } : {}),
         compactionMarkers,
         providerCompaction,
         providerCompactionAfterToolCalls,
@@ -7136,6 +7155,13 @@ export function createOpenAIStreamAdapter(
         let retriedWithRefreshedKey = false;
         while (true) {
           try {
+            if (phaseDebugEnabled) {
+              updateWorkingPhase(1, "Nachrichten und Werkzeuge aufbereiten", outboundMessages.length);
+              yield {
+                content: liveAssistantContent(),
+                metadata: { custom: liveCustom() },
+              };
+            }
             let requestPayload: OpenAIChatCompletionsRequest;
             try {
               requestPayload = await buildRequestPayload(
@@ -7158,6 +7184,17 @@ export function createOpenAIStreamAdapter(
               : (runtime.loadedCustomContextLength ??
                 runtime.loadedContextLength ??
                 (params.maxSeqLength || null));
+            if (phaseDebugEnabled) {
+              updateWorkingPhase(
+                2,
+                "Lokale Historie speichern",
+                requestPayload.messages?.length ?? 0,
+              );
+              yield {
+                content: liveAssistantContent(),
+                metadata: { custom: liveCustom() },
+              };
+            }
             await ThreadAutosaveHandle.awaitFirstSave(resolvedThreadId);
             if (generationDecision === "pending") {
               // Keyed on `enabled_tools`, never on `requestPayload.tools`: see durable-gate.ts. Keying this on
@@ -7294,6 +7331,17 @@ export function createOpenAIStreamAdapter(
                     runSignal,
                     servedContextLength,
                   );
+            if (phaseDebugEnabled) {
+              updateWorkingPhase(
+                3,
+                "Server/Python: Aufnahme, Kontext und Warteschlange",
+                requestPayload.messages?.length ?? 0,
+              );
+              yield {
+                content: liveAssistantContent(),
+                metadata: { custom: liveCustom() },
+              };
+            }
             // Per run, not per module: two turns must not share a cycle.
             const canPublish = createStreamPublishGate();
 
@@ -7326,6 +7374,17 @@ export function createOpenAIStreamAdapter(
               }
 
               if (chunk.context_truncated) {
+                if (phaseDebugEnabled) {
+                  updateWorkingPhase(
+                    4,
+                    "Kontextauswahl abgeschlossen / Archivierung",
+                    requestPayload.messages?.length ?? 0,
+                  );
+                  yield {
+                    content: liveAssistantContent(),
+                    metadata: { custom: liveCustom() },
+                  };
+                }
                 contextTruncation = mergeContextTruncation(
                   contextTruncation,
                   chunk.context_truncated,
