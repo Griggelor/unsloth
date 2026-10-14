@@ -5931,6 +5931,9 @@ export function createOpenAIStreamAdapter(
       };
       let codexRoundToolCallIds: string[] = [];
       let contextTruncation: OpenAIChatChunk["context_truncated"];
+      let workingPhase:
+        | { stage: number; total: number; phase: string; elements: number; round: number; startedAt: number }
+        | undefined;
       let compactionMarkers: CompactionMarker[] | undefined;
       let providerCompaction: ProviderCompactionContentPart | undefined =
         continuationCompaction ?? undefined;
@@ -5963,6 +5966,7 @@ export function createOpenAIStreamAdapter(
         openaiCodexReasoning: codexReasoningLedger,
         openaiResponsesReasoning: openAIResponsesReasoningLedger,
         contextTruncation,
+        ...(workingPhase ? { workingPhase } : {}),
         compactionMarkers,
         providerCompaction,
         providerCompactionAfterToolCalls,
@@ -7303,6 +7307,32 @@ export function createOpenAIStreamAdapter(
                 responseModelId = chunkModel;
               }
 
+              const rawWorkingPhase = (
+                chunk as unknown as { _workingPhase?: Record<string, unknown> }
+              )._workingPhase;
+              if (rawWorkingPhase) {
+                const { stage, total, phase, elements, round } = rawWorkingPhase;
+                const allowed = new Set([
+                  "agent_round", "thread_state", "exact_context",
+                  "archive", "llama_request",
+                ]);
+                if (
+                  Number.isSafeInteger(stage) && Number.isSafeInteger(total) &&
+                  Number.isSafeInteger(elements) && Number.isSafeInteger(round) &&
+                  (stage as number) >= 1 && (stage as number) <= (total as number) &&
+                  (total as number) === 5 && (elements as number) >= 0 &&
+                  (elements as number) <= 10000000 &&
+                  typeof phase === "string" && allowed.has(phase)
+                ) {
+                  workingPhase = {
+                    stage: stage as number, total: total as number,
+                    phase, elements: elements as number,
+                    round: Math.max(1, round as number), startedAt: Date.now(),
+                  };
+                  yield { content: liveAssistantContent(), metadata: { custom: liveCustom() } };
+                }
+                continue;
+              }
               const toolStatusText = (
                 chunk as unknown as { _toolStatus?: string }
               )._toolStatus;

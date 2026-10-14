@@ -7688,17 +7688,50 @@ const MessageError: FC = () => {
   );
 };
 
+const WORKING_PHASE_LABELS: Record<string, string> = {
+  agent_round: "Agentenrunde",
+  thread_state: "Verlauf / Checkpoint-Zustand",
+  exact_context: "Kontext & exakte Tokenzählung",
+  archive: "Archivierung / Embedding",
+  llama_request: "Modellanfrage / Prefill",
+};
+
 const GeneratingIndicator: FC = () => {
   const show = useAuiState(
     ({ message }) =>
       message.content.length === 0 && message.status?.type === "running",
   );
-  if (!show) {
-    return null;
+  const phase = useAuiState(({ message }) => {
+    const custom = (message.metadata as { custom?: Record<string, unknown> } | undefined)?.custom;
+    const value = custom?.workingPhase;
+    if (!value || typeof value !== "object") return null;
+    return value as {
+      stage: number; total: number; phase: string;
+      elements: number; round: number; startedAt: number;
+    };
+  });
+  const [clock, setClock] = useState(Date.now());
+  useEffect(() => {
+    if (!show || !phase) return;
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [show, phase?.startedAt]);
+  if (!show) return null;
+  if (!phase) {
+    return <span className="generating-glint text-sm text-muted-foreground">Working...</span>;
   }
+  const elapsed = Math.max(0, Math.floor((clock - phase.startedAt) / 1000));
+  const minutes = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const seconds = String(elapsed % 60).padStart(2, "0");
+  const label = WORKING_PHASE_LABELS[phase.phase] ?? "Vorbereitung";
   return (
-    <span className="generating-glint text-sm text-muted-foreground">
-      Working...
+    <span
+      className="generating-glint text-sm text-muted-foreground"
+      data-testid="working-phase-telemetry"
+      aria-live="polite"
+    >
+      Working {phase.stage}/{phase.total} · {label} · {phase.elements.toLocaleString("de-DE")} Nachrichten
+      {phase.round > 1 ? ` · Runde ${phase.round}` : ""} · {minutes}:{seconds}
     </span>
   );
 };

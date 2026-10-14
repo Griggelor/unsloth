@@ -32209,6 +32209,15 @@ async def produce_openai_chat_completions(
                                 yield _OPENAI_PASSTHROUGH_SSE_KEEPALIVE
                             continue
 
+                        if event["type"] == "working_phase":
+                            # Structured, content-free local QA telemetry only.
+                            # Other OpenAI clients get no Unsloth control frames.
+                            if _ui_events:
+                                yield f"data: {json.dumps(event)}\n\n"
+                            elif _drop_keepalive.due():
+                                yield _OPENAI_PASSTHROUGH_SSE_KEEPALIVE
+                            continue
+
                         if event["type"] == "context_truncated":
                             yield _context_truncated_sse_chunk(
                                 completion_id,

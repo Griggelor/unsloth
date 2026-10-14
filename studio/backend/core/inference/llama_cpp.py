@@ -39253,6 +39253,18 @@ class LlamaCppBackend:
         loop_mcp_image_parts: list = list(replayed_image_parts)
         while True:
             iteration += 1
+            _working = os.environ.get("UNSLOTH_WORKING_PHASES", "1") == "1"
+            def _phase(stage: int, name: str, elements: int):
+                return {
+                    "type": "working_phase",
+                    "stage": stage,
+                    "total": 5,
+                    "phase": name,
+                    "elements": max(0, int(elements)),
+                    "round": iteration + 1,
+                }
+            if _working:
+                yield _phase(1, "agent_round", len(conversation))
             while _model_note_events:
                 yield _model_note_events.pop(0)
             # Here rather than at each append: six sites grow the conversation and all of
@@ -39333,6 +39345,8 @@ class LlamaCppBackend:
             )
             _preflight_context_length = None
             _preflight_succeeded = False
+            if _working:
+                yield _phase(2, "thread_state", len(conversation))
             if context_overflow == "truncate_oldest" and self._effective_context_length:
                 _preflight_context_length = self._effective_context_length
                 try:
@@ -39355,6 +39369,8 @@ class LlamaCppBackend:
                             compaction_headroom_ratio = compaction_headroom_ratio,
                         )
                     )
+                    if _working:
+                        yield _phase(3, "exact_context", len(conversation))
                     conversation, truncation = _fit_with_instruction_pins(
                         conversation,
                         context_length = self._effective_context_length,
@@ -39396,6 +39412,8 @@ class LlamaCppBackend:
                             truncation.get("prompt_tokens_after") or 0
                         ) - estimate_messages_tokens_without_unpriced_media(conversation)
                     if truncation:
+                        if _working:
+                            yield _phase(4, "archive", max(0, len(_before_fit) - len(conversation)))
                         _recalled = _archive_and_recall(
                             conversation,
                             _before_fit,
@@ -39461,6 +39479,8 @@ class LlamaCppBackend:
                 except Exception as exc:
                     logger.warning("Could not preflight the rolling context window: %s", exc)
 
+            if _working:
+                yield _phase(5, "llama_request", len(conversation))
             payload = {
                 # Re-run every iteration: tool results land in ``conversation`` as the
                 # loop goes, and a forged turn in one would render for real (#7066).

@@ -2026,6 +2026,13 @@ export async function* streamChatCompletions(
           separatorIndex = buffer.search(/\r?\n\r?\n/);
           continue;
         }
+        // Opt-in structured preflight diagnostics from the local GGUF tool loop.
+        // This is transient UI information and never assistant content.
+        if ("type" in parsed && parsed.type === "working_phase") {
+          yield { _workingPhase: parsed } as unknown as OpenAIChatChunk;
+          separatorIndex = buffer.search(/\r?\n\r?\n/);
+          continue;
+        }
         // Tool status events are custom SSE payloads, not OpenAI chunks
         if ("type" in parsed && parsed.type === "tool_status") {
           yield {
