@@ -535,7 +535,7 @@ def check_chat_header_menu(page, messages: int) -> None:
 
     for level, dom_policy, cap in (
         ("dynamic", "medium", 16),
-        ("fixed", "legacy", 5),
+        ("fixed", "legacy", 32),  # Fixed-low now adapts 5..32 within a DOM budget
     ):
         choose(level)
         page.wait_for_function(
