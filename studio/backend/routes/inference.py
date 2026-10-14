@@ -2646,8 +2646,20 @@ async def _reserve_counted_gguf_chat(
         getattr(llama_backend, "base_url", None),
         _openai_llama_admission_budget(llama_backend),
     )
+    # The first full-history count can precede the SSE response entirely.
+    # Opt-in, content-free wall/CPU timing is therefore needed here as well as in
+    # checkpoint.fit_checkpoint_context during tool iterations.
+    from core.inference.context_perf_trace import trace_call
+
     counted = await asyncio.to_thread(
-        _count_gguf_admission_prompt, llama_backend, payload, messages, injected_tools
+        trace_call,
+        "gguf.admission_exact_count",
+        _count_gguf_admission_prompt,
+        llama_backend,
+        payload,
+        messages,
+        injected_tools,
+        messages = len(messages),
     )
     if identity != (
         getattr(llama_backend, "base_url", None),

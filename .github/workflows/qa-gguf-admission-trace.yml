@@ -1,0 +1,29 @@
+name: QA GGUF Admission Timing Smoke
+on:
+  push:
+    branches:
+      - experiment/working-phases-python-admission-20261014
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cpu-only-regressions:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Compile traced Python production files
+        run: python -m py_compile studio/backend/routes/inference.py studio/backend/core/inference/context_perf_trace.py studio/backend/core/inference/checkpoint.py studio/backend/core/rag/conversation_archive.py
+      - name: Check context trace privacy, archive parity and checkpoint behavior
+        run: |
+          python -m unittest discover -s studio/backend/tests/context_perf -p 'test_context_perf_trace.py' -v
+          python -m unittest discover -s studio/backend/tests/context_perf -p 'test_checkpoint_exact_count_reuse.py' -v
+          python -m unittest discover -s studio/backend/tests/context_perf -p 'test_archive_occurrence_scaling.py' -v
