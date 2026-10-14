@@ -7,8 +7,8 @@ import {
   AGENT_DEFAULT_ROWS,
   isAgentWindowSize,
   type AgentWindowSize,
-} from "../../../components/assistant-ui/agent-history-scroll-window";
-import { isAgentBufferMode, type AgentDomLevel } from "../../../components/assistant-ui/agent-history-dom-budget";
+} from "../../../components/assistant-ui/agent-history-config";
+import { isAgentBufferMode, type AgentDomLevel } from "../../../components/assistant-ui/agent-history-config";
 import { normalizeAgentHistoryDomMode, type AgentHistoryPreferenceSnapshot } from "./agent-history-preference-policy";
 
 export type AgentHistoryModeState = AgentHistoryPreferenceSnapshot & {
