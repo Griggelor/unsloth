@@ -4,20 +4,10 @@
 /** Budget targets apply to message descendants, not the entire application DOM. */
 import type { AgentScrollWindow } from "./agent-history-scroll-window";
 
-export const AGENT_BUFFER_MODES = ["dynamic", "dynamic-low", "dynamic-high", "fixed-low", "fixed-high"] as const;
-export type AgentBufferMode = (typeof AGENT_BUFFER_MODES)[number];
-/** Old persisted "low" / "high" / "off" remain readable for v1 migration. */
-export type AgentDomLevel = "off" | "low" | "high" | AgentBufferMode;
-export function isAgentBufferMode(value: unknown): value is AgentBufferMode {
-  return typeof value === "string" && (AGENT_BUFFER_MODES as readonly string[]).includes(value);
-}
-export function agentBufferRowLimit(mode: AgentBufferMode): 5 | 16 | 32 {
-  return mode === "dynamic" ? 16 : mode.endsWith("-low") ? 5 : 32;
-}
-export function agentBufferDomLevel(mode: AgentBufferMode): "low" | "medium" | "high" | undefined {
-  return mode === "dynamic" ? "medium"
-    : mode === "dynamic-low" ? "low" : mode === "dynamic-high" ? "high" : undefined;
-}
+export {
+  AGENT_BUFFER_MODES, isAgentBufferMode, agentBufferRowLimit, agentBufferDomLevel,
+} from "./agent-history-config";
+export type { AgentBufferMode, AgentDomLevel } from "./agent-history-config";
 export const AGENT_DOM_TARGETS = { low: 5_000, medium: 8_000, high: 12_000 } as const;
 /** Adaptive Fixed grows above the legacy 5-row minimum only when the viewport
  * needs more coverage. These are hard *policy* bounds: a single mandatory
