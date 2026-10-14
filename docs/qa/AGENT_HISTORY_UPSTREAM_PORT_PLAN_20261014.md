@@ -60,3 +60,11 @@ Do not merge, deploy, or claim release while any gate above is pending.
 ### Release caveat
 
 The 8,000-descendant Fixed budget is a conservative **measured-window policy**, plus a hard 32-mounted-message cap. A mandatory single very large row can exceed 8,000 descendants until separately virtualized; therefore it must not be described as an absolute RAM ceiling. User-visible transient gaps were observed in synthetic wheel sampling even when each sequence settled correctly. Closing this issue and obtaining Windows confirmation remain approval gates.
+
+## Final automated upstream candidate QA (as of 2026-10-14)
+
+- Clean port source commit: `4de45a27376075b13ae6dfb0173ee914c583fe38`. [Compile + budget run 38600450729](https://github.com/Griggelor/unsloth/actions/runs/38600450729) SUCCESS.
+- Validation copy differs only by temporary QA workflow. [Focused browser run 38600900259](https://github.com/Griggelor/unsloth/actions/runs/38600900259): all eight jobs SUCCESS (static/formatter, menu, dom, idle-scroll, dom-churn 50k/200k/400k, GC retention).
+- Standalone upstream copy wheel-only run [38601389681](https://github.com/Griggelor/unsloth/actions/runs/38601389681) SUCCESS; evidence artifact `11913707385`. All twelve wheel-burst sequences met the settled-visible gate after 1.2 seconds, while preserving stored synthetic chat.
+- The **transient-coverage problem remains**: Dynamic toward newest in burst 0 recorded 0.000 minimum intermediate coverage; Fixed toward older history recorded as low as 0.131, in a 1440x960 test viewport. These are observed, not conjectural. The current test checks stable visibility rather than proving a zero-gap animation. User-reported partially empty areas therefore require targeted Windows/WebView2 review and preferably a stricter time-bounded transient-gap gate.
+- No upstream PR is opened. The candidate is a prepared review branch, NOT a fully release-approved version. Remove QA-only workflow from final upstream submission; revalidate any resulting source SHA.
