@@ -4546,6 +4546,20 @@ export function createOpenAIStreamAdapter(
       unstable_threadId,
       unstable_assistantMessageId,
     }) {
+      // Diagnostic-only transient metadata: visible before pre-stream awaits.
+      yield {
+        content: [],
+        metadata: {
+          custom: {
+            contextWorking: {
+              stage: 1,
+              label: "Client and history preparation",
+              elements: rawMessages.length,
+              since: Date.now(),
+            },
+          },
+        },
+      };
       // Before the first await: send() awaits document extraction and initialize() does not await
       // its row write, so the store is no longer a safe reading of the project. Null still wins.
       const creationClaim = unstable_threadId
@@ -7294,10 +7308,66 @@ export function createOpenAIStreamAdapter(
                     runSignal,
                     servedContextLength,
                   );
+            yield {
+              content: liveAssistantContent(),
+              metadata: {
+                custom: {
+                  ...liveCustom(),
+                  contextWorking: {
+                    stage: 2,
+                    label: "Backend request and admission",
+                    elements: rawMessages.length,
+                    since: Date.now(),
+                  },
+                },
+              },
+            };
             // Per run, not per module: two turns must not share a cycle.
             const canPublish = createStreamPublishGate();
 
             for await (const chunk of stream) {
+              const progress = (
+                chunk as unknown as {
+                  _contextProgress?: { stage?: unknown; elements?: unknown };
+                }
+              )._contextProgress;
+              if (progress) {
+                // Whitelist our locally named diagnostic stages; never render
+                // arbitrary server-supplied labels or message contents.
+                const stage = progress.stage;
+                const safeLabels: Record<number, string> = {
+                  3: "Exact context token count",
+                  4: "Archive and recall",
+                  5: "Prepare inference request",
+                };
+                if (
+                  typeof stage === "number" &&
+                  Object.prototype.hasOwnProperty.call(safeLabels, stage)
+                ) {
+                  const count = progress.elements;
+                  const elements =
+                    typeof count === "number" &&
+                    Number.isSafeInteger(count) &&
+                    count >= 0
+                      ? count
+                      : 0;
+                  yield {
+                    content: liveAssistantContent(),
+                    metadata: {
+                      custom: {
+                        ...liveCustom(),
+                        contextWorking: {
+                          stage,
+                          label: safeLabels[stage],
+                          elements,
+                          since: Date.now(),
+                        },
+                      },
+                    },
+                  };
+                }
+                continue;
+              }
               const chunkModel = (chunk as { model?: unknown }).model;
               if (typeof chunkModel === "string" && chunkModel.length > 0) {
                 responseModelId = chunkModel;

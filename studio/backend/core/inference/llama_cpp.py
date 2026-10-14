@@ -274,6 +274,11 @@ def _request_uses_checkpoint(requested_policy: Optional[str] = None) -> bool:
     return checkpoint.enabled()
 
 
+def _context_ui_progress(stage: int, label: str, elements: int) -> dict:
+    """Diagnostic UI control frame: no text, tools, paths, or thread IDs."""
+    return {"type": "context_progress", "stage": stage, "label": label, "elements": max(0, int(elements))}
+
+
 def _fit_context(messages, **kwargs):
     """The context policy in one place, so the five call sites do not each pick one.
 
@@ -38309,6 +38314,7 @@ class LlamaCppBackend:
                     can_reset = _can_reset,
                     compaction_headroom_ratio = compaction_headroom_ratio,
                 )
+                yield _context_ui_progress(3, "Exact context token count", len(openai_messages))
                 openai_messages, truncation = _fit_with_instruction_pins(
                     openai_messages,
                     context_length = self._effective_context_length,
@@ -38338,6 +38344,7 @@ class LlamaCppBackend:
                 if truncation:
                     # Inline, not a forged tool exchange: this path sends no tools array,
                     # and strict templates reject a tool role with no catalogue.
+                    yield _context_ui_progress(4, "Archive and recall", max(0, len(_before_fit) - len(openai_messages)))
                     _recalled = _archive_and_recall(
                         openai_messages,
                         _before_fit,
@@ -38380,6 +38387,7 @@ class LlamaCppBackend:
                 payload["messages"] = neutralize_control_markup_in_messages(
                     openai_messages, None, self.markup_profile
                 )
+                yield _context_ui_progress(5, "Prepare inference request", len(openai_messages))
                 # Reuse the fitted request on respawn; re-running the preflight would
                 # emit the same truncation event twice.
                 retry_messages = openai_messages
@@ -39355,6 +39363,7 @@ class LlamaCppBackend:
                             compaction_headroom_ratio = compaction_headroom_ratio,
                         )
                     )
+                    yield _context_ui_progress(3, "Exact context token count", len(conversation))
                     conversation, truncation = _fit_with_instruction_pins(
                         conversation,
                         context_length = self._effective_context_length,
@@ -39396,6 +39405,7 @@ class LlamaCppBackend:
                             truncation.get("prompt_tokens_after") or 0
                         ) - estimate_messages_tokens_without_unpriced_media(conversation)
                     if truncation:
+                        yield _context_ui_progress(4, "Archive and recall", max(0, len(_before_fit) - len(conversation)))
                         _recalled = _archive_and_recall(
                             conversation,
                             _before_fit,
@@ -39461,6 +39471,7 @@ class LlamaCppBackend:
                 except Exception as exc:
                     logger.warning("Could not preflight the rolling context window: %s", exc)
 
+            yield _context_ui_progress(5, "Prepare inference request", len(conversation))
             payload = {
                 # Re-run every iteration: tool results land in ``conversation`` as the
                 # loop goes, and a forged turn in one would render for real (#7066).

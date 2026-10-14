@@ -7693,12 +7693,45 @@ const GeneratingIndicator: FC = () => {
     ({ message }) =>
       message.content.length === 0 && message.status?.type === "running",
   );
+  const stage = useAuiState(({ message }) => {
+    const custom = (
+      message.metadata as {
+        custom?: {
+          contextWorking?: {
+            stage: number;
+            label: string;
+            elements: number;
+            since: number;
+          };
+        };
+      } | undefined
+    )?.custom;
+    return custom?.contextWorking;
+  });
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!show || !stage) return;
+    setNow(Date.now());
+    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(clock);
+  }, [show, stage?.since]);
   if (!show) {
     return null;
   }
+  const valid =
+    stage &&
+    Number.isInteger(stage.stage) &&
+    stage.stage >= 1 &&
+    stage.stage <= 5 &&
+    Number.isSafeInteger(stage.elements) &&
+    stage.elements >= 0 &&
+    Number.isFinite(stage.since);
+  const elapsed = valid ? Math.max(0, Math.floor((now - stage.since) / 1000)) : 0;
   return (
-    <span className="generating-glint text-sm text-muted-foreground">
-      Working...
+    <span className="generating-glint text-sm text-muted-foreground" role="status" aria-live="polite">
+      {valid
+        ? `Working ${stage.stage} – ${stage.label} · ${stage.elements.toLocaleString("de-DE")} Elemente · ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`
+        : "Working..."}
     </span>
   );
 };

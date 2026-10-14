@@ -2026,6 +2026,13 @@ export async function* streamChatCompletions(
           separatorIndex = buffer.search(/\r?\n\r?\n/);
           continue;
         }
+        // QA-only non-content phase marker from Python preflight.
+        // Never feed it into OpenAI messages, token counts or the stored transcript.
+        if ("type" in parsed && parsed.type === "context_progress") {
+          yield { _contextProgress: parsed } as unknown as OpenAIChatChunk;
+          separatorIndex = buffer.search(/\r?\n\r?\n/);
+          continue;
+        }
         // Tool status events are custom SSE payloads, not OpenAI chunks
         if ("type" in parsed && parsed.type === "tool_status") {
           yield {

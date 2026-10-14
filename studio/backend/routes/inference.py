@@ -32835,6 +32835,11 @@ async def produce_openai_chat_completions(
                                     yield f"data: {json.dumps(cumulative)}\n\n"
                                 elif _drop_keepalive.due():
                                     yield _OPENAI_PASSTHROUGH_SSE_KEEPALIVE
+                            elif cumulative.get("type") == "context_progress":
+                                if _ui_events:
+                                    yield f"data: {json.dumps(cumulative)}\n\n"
+                                elif _drop_keepalive.due():
+                                    yield _OPENAI_PASSTHROUGH_SSE_KEEPALIVE
                             elif cumulative.get("type") == "context_truncated":
                                 yield _context_truncated_sse_chunk(
                                     completion_id,
@@ -34148,6 +34153,12 @@ async def produce_openai_chat_completions(
                             yield _OPENAI_PASSTHROUGH_SSE_KEEPALIVE
                         continue
 
+                    if event["type"] == "context_progress":
+                        if _ui_events:
+                            yield f"data: {json.dumps(event)}\n\n"
+                        elif _drop_keepalive.due():
+                            yield _OPENAI_PASSTHROUGH_SSE_KEEPALIVE
+                        continue
                     if event["type"] == "context_truncated":
                         yield _context_truncated_sse_chunk(
                             completion_id,
@@ -34789,6 +34800,10 @@ async def produce_openai_chat_completions(
                     if cumulative is _DONE:
                         break
                     if isinstance(cumulative, dict):
+                        if cumulative.get("type") == "context_progress":
+                            if _ui_events:
+                                yield f"data: {json.dumps(cumulative)}\n\n"
+                            continue
                         if cumulative.get("type") == "context_truncated":
                             yield _context_truncated_sse_chunk(
                                 completion_id,
