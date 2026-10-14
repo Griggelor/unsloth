@@ -108,6 +108,31 @@ export function agentIndexAtScrollPosition(
 }
 
 /**
+ * Reconcile physical wheel coverage after unknown-height measurements.
+ * A mounted range can be taller than the viewport yet start well below its
+ * physical top (or end above its physical bottom). Return a target only when
+ * significant uncovered space points OUTSIDE the mounted range.
+ * Pure selection: this function never writes the native scroll position.
+ */
+export function agentViewportCoverageRecoveryTarget(
+  current: AgentScrollWindow,
+  topIndex: number,
+  bottomIndex: number,
+  topGapPx: number,
+  bottomGapPx: number,
+  viewportHeightPx: number,
+): number | null {
+  if (!Number.isFinite(viewportHeightPx) || viewportHeightPx <= 0) return null;
+  const threshold = viewportHeightPx * 0.2;
+  if (Number.isFinite(topGapPx) && topGapPx > threshold &&
+      Number.isSafeInteger(topIndex) && topIndex >= 0 &&
+      topIndex < current.start) return topIndex;
+  if (Number.isFinite(bottomGapPx) && bottomGapPx > threshold &&
+      Number.isSafeInteger(bottomIndex) && bottomIndex >= current.end) return bottomIndex;
+  return null;
+}
+
+/**
  * Height index: initial estimates + sparse corrections for measured rows.
  * It gives O(log N) offset lookup, and does not re-position mounted rows on append.
  * A growing capacity doubles rather than rebuilding on each agent message.
