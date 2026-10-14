@@ -6,7 +6,7 @@ import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffec
 import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
-import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
+import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, agentPhysicalNeighborWindow, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentViewportCoverageRecoveryTarget, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
@@ -457,6 +457,18 @@ export const AgentHistoryScrollMessages: FC<{
             if (candidate !== null && attempts < 3) {
               coverageRecovery.current = { epoch, attempts: attempts + 1 };
               visibleIndex.current = candidate;
+              const adjacent = agentPhysicalNeighborWindow(
+                rangeRef.current, candidate, countRef.current, costs,
+                budget, budgetRows,
+              );
+              if (adjacent) {
+                // Keep up to 15/31 ALREADY measured/mounted rows and replace
+                // only the opposite edge. An adjacent unknown row must not
+                // collapse an entire otherwise-filled window to one row.
+                rangeRef.current = adjacent;
+                setState(old => ({ ...old, range: adjacent }));
+                return;
+              }
               if (seek(candidate)) return;
             }
           }
@@ -482,7 +494,7 @@ export const AgentHistoryScrollMessages: FC<{
           Math.min(72, viewport.clientHeight / 4));
       }
     }
-  }, [range.start, range.end, heightRevision, searchHit, revealRevision, viewportRef, jumpBottom, correctAnchor, navigateViewport, getIsFollowingBottom, budget, heights, seek]);
+  }, [range.start, range.end, heightRevision, searchHit, revealRevision, viewportRef, jumpBottom, correctAnchor, navigateViewport, getIsFollowingBottom, budget, budgetRows, costs, heights, seek]);
 
   // A scroll event is not itself evidence of user navigation. Internal
   // anchor corrections, CSS/native scroll anchoring and remeasuring huge tool
