@@ -71,6 +71,7 @@ export const AgentHistoryScrollMessages: FC<{
   // A real scroll received during staging must be sampled after the last
   // window commit, never allowed to abort staging with only one row mounted.
   const deferredScroll = useRef(false);
+  const lastBlankRecoveryEpoch = useRef(-1);
   const [state, setState] = useState(() => ({
     key: resetKey, count, windowRows, domLevel, fixedRowsStrict, fixedViewportAdaptive,
     range: budget !== null ? agentBudgetWindow(count, count - 1, costs, budget, budgetRows)
@@ -101,6 +102,7 @@ export const AgentHistoryScrollMessages: FC<{
     staged.current = null;
     pendingPassiveReveal.current = null;
     deferredScroll.current = false;
+    lastBlankRecoveryEpoch.current = -1;
   }, [resetKey]);
   const revealFrame = useRef<number | null>(null);
   useEffect(() => () => {
@@ -397,7 +399,34 @@ export const AgentHistoryScrollMessages: FC<{
         }
       }
     }
-  }, [range.start, range.end, searchHit, revealRevision, viewportRef, jumpBottom, correctAnchor, navigateViewport]);
+    // Unseen rows have estimated heights. A measurement/scroll-anchor update
+    // after a physical wheel can put ALL mounted rows outside the viewport,
+    // and the reader epoch intentionally blocks layout-origin scroll echoes.
+    // Recover once per real wheel epoch, only if not a single row intersects
+    // the viewport; ordinary partial-height windows are budgeted separately.
+    const epoch = readerIntent.current.epoch;
+    const recentWheel = epoch > 0 &&
+      performance.now() - lastReaderGestureAt.current <= 1500;
+    if (pendingPassiveReveal.current === null && staged.current === null &&
+        recentWheel && !getIsFollowingBottom() &&
+        navigation.current.kind === "reader" &&
+        lastBlankRecoveryEpoch.current !== epoch) {
+      const bounds = viewport.getBoundingClientRect();
+      const rows = [...viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")];
+      const hasVisible = rows.some(row => {
+        const rect = row.getBoundingClientRect();
+        return rect.bottom > bounds.top + 1 && rect.top < bounds.bottom - 1;
+      });
+      if (!hasVisible && rows.length > 0) {
+        const index = Math.min(Math.max(visibleIndex.current, range.start), range.end - 1);
+        const row = rows.find(item => Number(item.dataset.agentHistoryRow) === index) ?? rows[0];
+        lastBlankRecoveryEpoch.current = epoch;
+        navigateViewport(viewport.scrollTop +
+          row.getBoundingClientRect().top - bounds.top -
+          Math.min(72, viewport.clientHeight / 4));
+      }
+    }
+  }, [range.start, range.end, heightRevision, searchHit, revealRevision, viewportRef, jumpBottom, correctAnchor, navigateViewport, getIsFollowingBottom]);
 
   // A scroll event is not itself evidence of user navigation. Internal
   // anchor corrections, CSS/native scroll anchoring and remeasuring huge tool
@@ -430,7 +459,32 @@ export const AgentHistoryScrollMessages: FC<{
         if (pendingEpoch === null || (!freshGesture && !recentPhysicalEdge) ||
             !allowsPassiveAgentScroll(navigation.current)) return;
         if (staged.current !== null) {
-          // A gesture during staging is replayed only after the final commit.
+          // A second REAL wheel gesture may move by many screens before the
+          // old one-row staging transaction completes. Retarget immediately
+          // rather than waiting for the previous destination to fill first.
+          // Each replacement still begins with ONE row, so heavy tool outputs
+          // cannot all mount in a single event-loop turn.
+          const spacer = topSpacer.current;
+          if (freshGesture && spacer && countRef.current > 0) {
+            const index = agentIndexAtScrollPosition(
+              heights, spacer.getBoundingClientRect().top,
+              viewport.getBoundingClientRect().top,
+              viewport.scrollTop, viewport.clientHeight,
+            );
+            const destination = staged.current.destination;
+            if (index < destination.start || index >= destination.end) {
+              visibleIndex.current = index;
+              if (seek(index)) {
+                readerIntent.current = consumeAgentReaderScrollIntent(
+                  readerIntent.current, pendingEpoch,
+                );
+              }
+              deferredScroll.current = false;
+              return;
+            }
+          }
+          // If still within the staged window, let it complete, then sample
+          // the last actual wheel position once (not every layout echo).
           deferredScroll.current = true;
           return;
         }
