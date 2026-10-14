@@ -19,6 +19,11 @@ export function agentBufferDomLevel(mode: AgentBufferMode): "low" | "medium" | "
     : mode === "dynamic-low" ? "low" : mode === "dynamic-high" ? "high" : undefined;
 }
 export const AGENT_DOM_TARGETS = { low: 5_000, medium: 8_000, high: 12_000 } as const;
+/** Adaptive Fixed grows above the legacy 5-row minimum only when the viewport
+ * needs more coverage. These are hard *policy* bounds: a single mandatory
+ * extremely large tool row can still exceed the descendant budget. */
+export const AGENT_FIXED_VIEWPORT_MAX_ROWS = 32;
+export const AGENT_FIXED_VIEWPORT_DOM_TARGET = AGENT_DOM_TARGETS.medium;
 /** Unknown rows are charged conservatively until observed, so long chats start small. */
 export const AGENT_UNKNOWN_ROW_COST = 1_000;
 export const AGENT_DOM_MAX_ROWS = 32;
