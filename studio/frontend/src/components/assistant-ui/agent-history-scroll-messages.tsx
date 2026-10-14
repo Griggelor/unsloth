@@ -6,7 +6,7 @@ import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffec
 import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
-import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, agentPhysicalNeighborWindow, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
+import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, agentPhysicalNeighborWindow, agentWheelPrefetchTarget, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentViewportCoverageRecoveryTarget, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
@@ -77,6 +77,9 @@ export const AgentHistoryScrollMessages: FC<{
   const coverageRecovery = useRef({ epoch: -1, attempts: 0 });
   const wheelCoverageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wheelIdleReady = useRef(false);
+  // At most one follow-up adjacent-row admission after each physical wheel
+  // event; a second unknown/heavy tool row cannot bypass the cost index.
+  const wheelPrefetchPending = useRef<{ at: number; deltaY: number } | null>(null);
   const [state, setState] = useState(() => ({
     key: resetKey, count, windowRows, domLevel, fixedRowsStrict, fixedViewportAdaptive,
     range: budget !== null ? agentBudgetWindow(count, count - 1, costs, budget, budgetRows)
@@ -109,6 +112,7 @@ export const AgentHistoryScrollMessages: FC<{
     deferredScroll.current = false;
     lastBlankRecoveryEpoch.current = -1;
     coverageRecovery.current = { epoch: -1, attempts: 0 };
+    wheelPrefetchPending.current = null;
     if (wheelCoverageTimer.current !== null) clearTimeout(wheelCoverageTimer.current);
     wheelCoverageTimer.current = null;
     wheelIdleReady.current = false;
@@ -200,6 +204,34 @@ export const AgentHistoryScrollMessages: FC<{
     setState(old => ({ ...old, range: candidate }));
     return true;
   }, [jumpBottom, navigateViewport, viewportRef, windowRows, costs, budget, budgetRows, fixedRowsStrict]);
+
+  // The first prefetch mounts a single new row. After its actual DOM cost is
+  // measured, we may add just ONE more neighbor if physical coverage still
+  // needs it. No loops, scrollTop writes, timer-based continuous retries or
+  // multiple unknown heavy tool rows are possible.
+  useEffect(() => {
+    const pending = wheelPrefetchPending.current;
+    if (!pending) return;
+    wheelPrefetchPending.current = null;
+    if (budget === null || performance.now() - pending.at > 250 ||
+        staged.current !== null || pendingPassiveReveal.current !== null ||
+        navigation.current.kind !== "reader" || getIsFollowingBottom()) return;
+    const viewport = viewportRef.current;
+    const first = viewport?.querySelector<HTMLElement>("[data-agent-history-row]");
+    if (!viewport || !first) return;
+    const top = viewport.getBoundingClientRect();
+    const target = agentWheelPrefetchTarget(
+      Math.max(-240, pending.deltaY), first.getBoundingClientRect().top,
+      top.top, viewport.clientHeight, rangeRef.current.start,
+    );
+    if (target === null) return;
+    const next = agentPhysicalNeighborWindow(
+      rangeRef.current, target, countRef.current, costs, budget, budgetRows,
+    );
+    if (!next) return;
+    rangeRef.current = next;
+    setState(old => ({ ...old, range: next }));
+  }, [range.start, range.end, budget, budgetRows, costs, viewportRef, getIsFollowingBottom]);
 
   useEffect(() => {
     const task = staged.current;
@@ -650,8 +682,35 @@ export const AgentHistoryScrollMessages: FC<{
       }
       interrupt();
     };
-    const onWheel = () => {
+    const onWheel = (event: WheelEvent) => {
       interrupt();
+      wheelPrefetchPending.current = null;
+      // Predict ONLY an adjacent older-history row for a native, moderate
+      // wheel gesture. The existing measured-DOM policy rejects a second
+      // unknown heavy row and drops opposite-edge rows before exceeding caps.
+      // Large jumps still use conservative staged seeks as before.
+      if (budget !== null && !event.ctrlKey && !event.defaultPrevented &&
+          staged.current === null && pendingPassiveReveal.current === null &&
+          navigation.current.kind === "reader" && !getIsFollowingBottom()) {
+        const first = viewport.querySelector<HTMLElement>("[data-agent-history-row]");
+        if (first) {
+          const box = viewport.getBoundingClientRect();
+          const target = agentWheelPrefetchTarget(
+            event.deltaY, first.getBoundingClientRect().top,
+            box.top, viewport.clientHeight, rangeRef.current.start,
+          );
+          if (target !== null) {
+            const next = agentPhysicalNeighborWindow(
+              rangeRef.current, target, countRef.current, costs, budget, budgetRows,
+            );
+            if (next) {
+              wheelPrefetchPending.current = { at: performance.now(), deltaY: event.deltaY };
+              rangeRef.current = next;
+              setState(old => ({ ...old, range: next }));
+            }
+          }
+        }
+      }
       // This is a genuine trailing-wheel reconciliation, NOT a synthetic
       // scroll event or another scrollTop owner. The layout effect samples
       // the real physical viewport only after the reader stops spinning.
@@ -684,7 +743,7 @@ export const AgentHistoryScrollMessages: FC<{
       animation.current = null;
       pendingScrollEpoch.current = null;
     };
-  }, [viewportRef, heights, seek, getIsFollowingBottom, requestHeightRevision]);
+  }, [viewportRef, heights, seek, getIsFollowingBottom, requestHeightRevision, budget, budgetRows, costs]);
   // Measure the committed window and settle towards the known DOM budget.
   // Never supersede an in-progress staged seek or an active search epoch.
   const budgetFrame = useRef<number | null>(null);
