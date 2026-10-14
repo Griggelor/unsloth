@@ -27,6 +27,7 @@ export function startWorkingPhase(
       !threadId || !/^[0-9a-f]{32}$/.test(id) || signal.aborted) return null;
   active.get(threadId)?.stop();
   const controller = new AbortController();
+  const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | null = null;
   snapshots.set(threadId, {
     phase: "client_prepare", current: 0, total: null,
@@ -59,6 +60,23 @@ export function startWorkingPhase(
             ["running", "done", "failed"].includes(data.status)) {
           snapshots.set(threadId, data);
           notify();
+        }
+      } else if (response.status === 404) {
+        // The *new* backend responds "Progress run not found" while
+        // registration is pending. The old backend's unregistered route
+        // responds "Not Found". Distinguish these instead of waiting
+        // for minutes behind a generic Working placeholder.
+        const body = await response.json().catch(() => null) as {
+          detail?: unknown;
+        } | null;
+        if (body?.detail === "Not Found" && active.get(threadId)?.id === id) {
+          snapshots.set(threadId, {
+            phase: "qa_backend_missing", current: 0, total: null,
+            unit: "calls", status: "running",
+            elapsed_ms: Math.max(0, Date.now() - startedAt),
+          });
+          notify();
+          return;
         }
       }
     } catch {
