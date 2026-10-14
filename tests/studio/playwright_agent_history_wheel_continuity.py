@@ -108,7 +108,7 @@ def run(url: str, username: str, password: str, messages: int) -> None:
             try:
                 results = []
                 for mode, policy, cap in (("dynamic", "medium", 16),
-                                          ("fixed", "legacy", 5)):
+                                          ("fixed", "legacy", 32)):
                     context = browser.new_context(viewport={"width": 1440, "height": 960})
                     try:
                         context.add_init_script(seed_init_script(auth, []))
