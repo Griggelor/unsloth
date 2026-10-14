@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """QA characterization: repeated REAL wheel events, no synthetic scroll rescue.
 
+Characterize four wheel deltas against an isolated Studio with synthetic fixture
+messages. All scenarios are recorded even when a strict coverage gate fails.
+
 Run only against an isolated, disposable Studio instance with synthetic fixture
 messages. This intentionally tests the interaction absent from scroll_to(): no
 post-wheel scrollTop assignments and no manually dispatched 'scroll' events.
@@ -34,6 +37,7 @@ _JS = """() => {
   const rows = [...document.querySelectorAll('[data-agent-history-row]')];
   if (!viewport || !list) return null;
   const box = viewport.getBoundingClientRect();
+  const heights = rows.map(el => Math.round(el.getBoundingClientRect().height)).sort((a,b) => a-b);
   const intersect = rows.map(el => {
     const b = el.getBoundingClientRect();
     return Math.max(0, Math.min(box.bottom, b.bottom) - Math.max(box.top, b.top));
@@ -44,6 +48,9 @@ _JS = """() => {
     scrollHeight: viewport.scrollHeight,
     viewportHeight: viewport.clientHeight,
     mounted: rows.length,
+    rowHeightMedianPx: heights.length ? heights[Math.floor(heights.length / 2)] : null,
+    rowHeightMinPx: heights.length ? heights[0] : null,
+    rowHeightMaxPx: heights.length ? heights.at(-1) : null,
     first: rows[0]?.dataset.agentHistoryRow ?? null,
     last: rows.at(-1)?.dataset.agentHistoryRow ?? null,
     visibleRows: intersect.filter(px => px > 1).length,
@@ -142,13 +149,13 @@ def visible_state(page, expected_mode: str, maximum: int, stage: str) -> dict:
 
 
 def capture_wheel_burst(page, mode: str, expected_mode: str, maximum: int,
-                        direction: int, burst: int) -> dict:
+                        direction: int, burst: int, wheel_delta: int) -> dict:
     viewport = page.locator(".aui-thread-viewport")
     viewport.hover()
     samples = []
     page.evaluate(_FRAME_PROBE_START)
     for _ in range(7):
-        page.mouse.wheel(0, direction * 1680)
+        page.mouse.wheel(0, direction * wheel_delta)
         # Still physical mouse wheel; the timeout permits browser paint/RAF.
         page.wait_for_timeout(35)
         snap = visible_state(page, expected_mode, maximum, "during wheel")
@@ -164,16 +171,18 @@ def capture_wheel_burst(page, mode: str, expected_mode: str, maximum: int,
     rest = settled["scrollHeight"] - settled["scrollTop"] - settled["viewportHeight"]
     interior = settled["scrollTop"] >= settled["viewportHeight"] and rest >= settled["viewportHeight"]
     ratio = settled["coveragePx"] / max(1, settled["viewportHeight"])
+    failure = None
     if (settled["visibleRows"] == 0 or (interior and ratio < 0.55)
             or raf["maxUnderfilledMs"] > 160):
-        name = f"agent-history-wheel-gap-{mode}-{direction}-{burst}.png"
+        name = f"agent-history-wheel-gap-{mode}-{wheel_delta}-{direction}-{burst}.png"
         page.screenshot(path=name)
-        raise AssertionError(
-            f"{mode} direction={direction} burst={burst}: underfilled coverage={ratio:.3f} "
-            f"continuous underfill={raf['maxUnderfilledMs']}ms "
-            f"(synthetic screenshot {name}): {settled}"
+        failure = (
+            f"{mode} delta={wheel_delta} direction={direction} burst={burst}: "
+            f"underfilled coverage={ratio:.3f}, underfill={raf['maxUnderfilledMs']}ms"
         )
     return {
+        "failure": failure,
+        "wheel_delta_px": wheel_delta,
         "mode": mode, "direction": "toward_newest" if direction > 0 else "toward_oldest",
         "burst": burst,
         "wheel_events": len(samples),
@@ -202,48 +211,54 @@ def run(url: str, username: str, password: str, messages: int) -> None:
                 results = []
                 for mode, policy, cap in (("dynamic", "medium", 16),
                                           ("fixed", "legacy", 32)):
-                    context = browser.new_context(viewport={"width": 1440, "height": 960})
-                    try:
-                        context.add_init_script(seed_init_script(auth, []))
-                        history_state = {
-                            "state": {"enabledThreads": {tid: True},
-                                      "domLevelByThreadId": {
-                                          tid: "dynamic" if mode == "dynamic" else "fixed-low"}},
-                            "version": 0,
-                        }
-                        context.add_init_script(
-                            "(() => {const k='unsloth_agent_chat_history_v1';"
-                            "localStorage.setItem(k," +
-                            json.dumps(json.dumps(history_state)) + ");})();"
-                        )
-                        page = context.new_page()
-                        page.goto(f"{base}/chat?thread={tid}",
-                                  wait_until="domcontentloaded", timeout=120_000)
-                        page.wait_for_function(
-                            """([policy, n]) => {
-                              const list = document.querySelector('[data-agent-history-scroll-list="true"]');
-                              return list?.dataset.agentHistoryDomLevel === policy &&
-                                document.querySelectorAll('[data-agent-history-row]').length > 0 &&
-                                document.querySelectorAll('[data-agent-history-row]').length <= n;
-                            }""",
-                            arg=[policy, cap], timeout=60_000,
-                        )
-                        # Disjoint travel across dozens of screens in both
-                        # directions, using only user-like wheel input.
-                        for direction in (-1, 1):
-                            for burst in range(3):
-                                results.append(capture_wheel_burst(
-                                    page, mode, policy, cap, direction, burst
-                                ))
-                    finally:
-                        context.close()
+                    for wheel_delta in (240, 720, 1680, 2400):
+                        context = browser.new_context(viewport={"width": 1440, "height": 960})
+                        try:
+                            context.add_init_script(seed_init_script(auth, []))
+                            history_state = {
+                                "state": {"enabledThreads": {tid: True},
+                                          "domLevelByThreadId": {
+                                              tid: "dynamic" if mode == "dynamic" else "fixed-low"}},
+                                "version": 0,
+                            }
+                            context.add_init_script(
+                                "(() => {const k='unsloth_agent_chat_history_v1';"
+                                "localStorage.setItem(k," +
+                                json.dumps(json.dumps(history_state)) + ");})();"
+                            )
+                            page = context.new_page()
+                            page.goto(f"{base}/chat?thread={tid}",
+                                      wait_until="domcontentloaded", timeout=120_000)
+                            page.wait_for_function(
+                                """([policy, n]) => {
+                                  const list = document.querySelector('[data-agent-history-scroll-list="true"]');
+                                  return list?.dataset.agentHistoryDomLevel === policy &&
+                                    document.querySelectorAll('[data-agent-history-row]').length > 0 &&
+                                    document.querySelectorAll('[data-agent-history-row]').length <= n;
+                                }""",
+                                arg=[policy, cap], timeout=60_000,
+                            )
+                            # Disjoint travel across dozens of screens in both
+                            # directions, using only user-like wheel input.
+                            for direction in (-1, 1):
+                                for burst in range(3):
+                                    results.append(capture_wheel_burst(
+                                        page, mode, policy, cap, direction, burst, wheel_delta
+                                    ))
+                        finally:
+                            context.close()
                 persisted = auth_request_json(
                     auth, f"{base}/api/chat/threads/{tid}/messages"
                 )
                 if persisted.get("messages") != baseline.get("messages"):
                     raise AssertionError("Wheel test mutated the persisted synthetic chat")
-                print(json.dumps({"test": "physical-wheel-continuity",
-                                  "status": "PASS", "results": results}, sort_keys=True))
+                failures = [r["failure"] for r in results if r["failure"]]
+                print(json.dumps({"test": "physical-wheel-geometry-matrix",
+                                  "source": "synthetic-short-rows",
+                                  "status": "FAIL" if failures else "PASS",
+                                  "failures": failures, "results": results}, sort_keys=True))
+                if failures:
+                    raise AssertionError(f"{len(failures)} wheel geometry scenarios failed")
             finally:
                 browser.close()
     finally:
