@@ -68,3 +68,18 @@ The 8,000-descendant Fixed budget is a conservative **measured-window policy**, 
 - Standalone upstream copy wheel-only run [38601389681](https://github.com/Griggelor/unsloth/actions/runs/38601389681) SUCCESS; evidence artifact `11913707385`. All twelve wheel-burst sequences met the settled-visible gate after 1.2 seconds, while preserving stored synthetic chat.
 - The **transient-coverage problem remains**: Dynamic toward newest in burst 0 recorded 0.000 minimum intermediate coverage; Fixed toward older history recorded as low as 0.131, in a 1440x960 test viewport. These are observed, not conjectural. The current test checks stable visibility rather than proving a zero-gap animation. User-reported partially empty areas therefore require targeted Windows/WebView2 review and preferably a stricter time-bounded transient-gap gate.
 - No upstream PR is opened. The candidate is a prepared review branch, NOT a fully release-approved version. Remove QA-only workflow from final upstream submission; revalidate any resulting source SHA.
+
+## Follow-up: frame-duration characterization (2026-10-14)
+
+- Official-upstream-based source remains unchanged at 4de45a27376075b13ae6dfb0173ee914c583fe38. Verification is on temporary QA branch qa/upstream-agent-history-gap-duration-20261014 only.
+- Browser run https://github.com/Griggelor/unsloth/actions/runs/38605024038 at 5675724ef331997bd96714e8ad348dbb69f6b880 PASSED unit and real wheel. Artifact 11914738822 includes logs/wheel/wheel-report.json.
+- The test sampled each animation frame after real wheel events. An interior viewport was underfilled when actual intersecting message height was below 55% of viewport height. No synthetic scroll or scrollTop writes were introduced.
+- Maximum contiguous underfilled time across three seven-event bursts (400 short synthetic messages, Chromium 1440x960):
+  - Dynamic older: 67 ms (33, 67, 67 ms).
+  - Dynamic newer: 133 ms (133, 0, 0 ms).
+  - Fixed older: 67 ms (33, 67, 67 ms).
+  - Fixed newer: 0 ms (0, 0, 0 ms).
+- Each settled sample after 1.2 seconds covered at least 67.5% of viewport. No run exceeded the exploratory 160 ms contiguous-underfill ceiling.
+- These results do not prove zero transient gaps or Windows WebView2 parity. A 133 ms gap spans roughly eight 60Hz frames and remains potentially perceptible.
+- Next: isolate one-row disjoint staging, unknown-row admission, estimated-height correction and competing main-thread work before increasing DOM concurrency; add per-frame window [start,end], scroll index, stage marker and frame time.
+- No official upstream PR authorized or opened. Windows and final clean-head gates remain blockers.
