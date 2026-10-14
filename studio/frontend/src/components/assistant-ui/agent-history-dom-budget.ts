@@ -3,6 +3,7 @@
 
 /** Budget targets apply to message descendants, not the entire application DOM. */
 import type { AgentScrollWindow } from "./agent-history-scroll-window";
+import { MAX_UNMEASURED_LIGHT_ROWS } from "./agent-history-lightweight";
 
 export {
   AGENT_BUFFER_MODES, isAgentBufferMode, agentBufferRowLimit, agentBufferDomLevel,
@@ -49,6 +50,7 @@ export function agentBudgetWindow(
   costs: AgentDomCostIndex,
   budget: number,
   maxRows = AGENT_DOM_MAX_ROWS,
+  isLightweightUnmeasured?: (row: number) => boolean,
 ): Readonly<{ start: number; end: number }> {
   if (count <= 0) return { start: 0, end: 0 };
   const at = Number.isFinite(target)
@@ -57,12 +59,26 @@ export function agentBudgetWindow(
   let start = at, end = at + 1, used = costs.cost(at);
   // Unknown rows can contain arbitrarily large tool outputs. Admit only one
   // unmeasured row at a time, then rebalance after measuring its real DOM cost.
-  let unknown = costs.measured(at) ? 0 : 1;
-  const eligible = (row: number, cost: number) =>
-    used + cost <= budget && (costs.measured(row) || unknown === 0);
+  // An arbitrary unseen row can be an enormous tool result. Permit exactly
+  // one such row until it has been measured. A strictly classified simple
+  // text row, by contrast, may share one first render with at most three
+  // others; never mix an unmeasured complex row into that tentative batch.
+  const isLight = (row: number) => !costs.measured(row) &&
+    (isLightweightUnmeasured?.(row) === true);
+  let safeUnknown = isLight(at) ? 1 : 0;
+  let unsafeUnknown = costs.measured(at) || safeUnknown ? 0 : 1;
+  const eligible = (row: number, cost: number) => {
+    if (used + cost > budget) return false;
+    if (costs.measured(row)) return true;
+    if (isLight(row)) return unsafeUnknown === 0 && safeUnknown < MAX_UNMEASURED_LIGHT_ROWS;
+    return unsafeUnknown === 0 && safeUnknown === 0;
+  };
   const add = (row: number, cost: number) => {
     used += cost;
-    if (!costs.measured(row)) unknown++;
+    if (!costs.measured(row)) {
+      if (isLight(row)) safeUnknown++;
+      else unsafeUnknown++;
+    }
   };
   while (end - start < maxRows) {
     const previous = start > 0 ? costs.cost(start - 1) : Infinity;
