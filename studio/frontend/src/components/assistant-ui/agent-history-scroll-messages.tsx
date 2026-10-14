@@ -54,7 +54,7 @@ export const AgentHistoryScrollMessages: FC<{
   const budget = domLevel ? AGENT_DOM_TARGETS[domLevel]
     : fixedViewportAdaptive ? AGENT_FIXED_VIEWPORT_DOM_TARGET : null;
   const budgetRows = fixedViewportAdaptive ? AGENT_FIXED_VIEWPORT_MAX_ROWS
-    : budgetRows;
+    : domLevel === "low" ? 5 : domLevel === "medium" ? 16 : 32;
   const jumpBottom = useScrollThreadToBottom();
   const getIsFollowingBottom = useGetThreadBottomFollowIntent();
   const correctAnchor = useAdjustForContentInsertedAbove();
