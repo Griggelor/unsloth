@@ -3,6 +3,16 @@
 # Independent fast gate; full studio-ui-smoke remains mandatory.
 name: Agent History Focused QA
 on:
+  # QA branch only; never included in the clean upstream submission.
+  push:
+    branches:
+      - qa/agent-history-wheel-continuity-20261014
+    paths:
+      - '.github/workflows/agent-history-focused-qa.yml'
+      - 'studio/frontend/src/components/assistant-ui/agent-history-*'
+      - 'studio/frontend/src/components/assistant-ui/thread.tsx'
+      - 'studio/frontend/tests/agent-history-*'
+      - 'tests/studio/playwright_agent_history_*.py'
   pull_request:
     paths:
       - 'studio/frontend/src/components/assistant-ui/agent-history-*'
