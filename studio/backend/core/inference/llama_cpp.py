@@ -43070,6 +43070,16 @@ class LlamaCppBackend:
         )
         tools = neutralize_tool_descriptions(tools, None, _profile)
 
+        from core.inference.context_perf_trace import enabled as _qa_trace_enabled
+        from core.inference.context_live_progress import begin as _qa_begin, end as _qa_end
+        _qa_active = _qa_trace_enabled()
+        if _qa_active:
+            _qa_started = time.perf_counter()
+            logger.info(
+                "context_perf phase=llama.apply_template_and_tokenize status=begin messages=%d",
+                len(messages or []),
+            )
+            _qa_begin("llama.apply_template_and_tokenize", items = len(messages or []))
         try:
             with httpx.Client(
                 timeout = 10,
@@ -43200,6 +43210,13 @@ class LlamaCppBackend:
             if strict:
                 raise
             return 0
+        finally:
+            if _qa_active:
+                _qa_end("llama.apply_template_and_tokenize")
+                logger.info(
+                    "context_perf phase=llama.apply_template_and_tokenize status=end wall_ms=%.3f",
+                    (time.perf_counter() - _qa_started) * 1000,
+                )
 
     # ── TTS support ────────────────────────────────────────────
 
