@@ -52,6 +52,17 @@ def begin(subject: str, run_id: str | None) -> tuple[str, str] | None:
     return key
 
 
+def attach(subject: str, run_id: str | None) -> tuple[str, str] | None:
+    """Worker may attach only to a run explicitly opted in by its authenticated creator."""
+    if not isinstance(subject, str) or not isinstance(run_id, str) or not _KEY.fullmatch(run_id):
+        return None
+    key = (subject, run_id)
+    with _lock:
+        _sweep(time.monotonic())
+        row = _records.get(key)
+        return key if row is not None and row["status"] == "running" else None
+
+
 def _sweep(now: float) -> None:
     for key, row in list(_records.items()):
         ttl = _DONE_TTL if row["status"] != "running" else _ACTIVE_TTL
