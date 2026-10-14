@@ -1,9 +1,10 @@
 # Temporary fork-only validation. Delete before any upstream submission.
-name: QA Agent History Upstream Port
+name: QA Agent History Neighbor Compile Validation
 on:
   push:
     branches:
       - qa/upstream-agent-history-candidate-20261014
+      - qa/agent-history-neighbor-compile-validation-20261014
     paths:
       - 'studio/frontend/**'
       - 'tests/studio/playwright_agent_history_*.py'
