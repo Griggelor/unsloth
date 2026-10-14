@@ -3,7 +3,7 @@
 
 /** Budget targets apply to message descendants, not the entire application DOM. */
 import type { AgentScrollWindow } from "./agent-history-scroll-window";
-import { MAX_UNMEASURED_LIGHT_ROWS } from "./agent-history-lightweight";
+import { MAX_UNMEASURED_LIGHT_ROWS } from "./agent-history-lightweight.ts";
 
 export {
   AGENT_BUFFER_MODES, isAgentBufferMode, agentBufferRowLimit, agentBufferDomLevel,
