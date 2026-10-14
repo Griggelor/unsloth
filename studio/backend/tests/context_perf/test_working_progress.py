@@ -78,6 +78,24 @@ class TestWorkingProgress(unittest.TestCase):
         self.assertEqual(snap["phase"], "embedding_encode")
         self.assertEqual(snap["status"], "done")
 
+    def test_early_stream_close_runs_original_backend_cleanup(self):
+        rid = uuid.uuid4().hex
+        key = progress.begin("owner-close", rid)
+        cleaned = []
+        async def original():
+            try:
+                yield "first"
+                await asyncio.sleep(30)
+            finally:
+                cleaned.append("released")
+        async def stop_early():
+            wrapper = progress.bind_response_stream(original(), key)
+            self.assertEqual(await wrapper.__anext__(), "first")
+            await wrapper.aclose()
+        asyncio.run(stop_early())
+        self.assertEqual(cleaned, ["released"])
+        self.assertEqual(progress.snapshot("owner-close", rid)["status"], "failed")
+
     def test_capacity_bound(self):
         for _ in range(140):
             progress.begin("cap", uuid.uuid4().hex)
