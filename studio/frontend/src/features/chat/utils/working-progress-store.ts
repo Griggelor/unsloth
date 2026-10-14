@@ -18,12 +18,14 @@ export function useWorkingPhase(threadId: string | null | undefined): WorkingPha
   );
 }
 export function startWorkingPhase(
-  threadId: string | null | undefined, signal: AbortSignal,
+  threadId: string | null | undefined, signal: AbortSignal, runId?: string,
 ): Run | null {
+  // The durable worker and legacy stream need the SAME client-generated run key.
+  // Reject all other values, instead of accidentally polling a different request.
+  const id = typeof runId === "string" ? runId.replace(/-/g, "") : "";
   if (import.meta.env.VITE_CONTEXT_PROGRESS_QA !== "1" ||
-      !threadId || !globalThis.crypto?.randomUUID || signal.aborted) return null;
+      !threadId || !/^[0-9a-f]{32}$/.test(id) || signal.aborted) return null;
   active.get(threadId)?.stop();
-  const id = globalThis.crypto.randomUUID().replace(/-/g, "");
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | null = null;
   snapshots.set(threadId, {
@@ -69,4 +71,16 @@ export function startWorkingPhase(
   };
   timer = setTimeout(() => { void poll(); }, 250);
   return { id, stop };
+}
+
+// The transport invokes this synchronously without importing the React store.
+// This keeps chat-api / chat-adapter compatible with isolated module-stub tests.
+if (typeof window !== "undefined") {
+  window.addEventListener("unsloth-qa-working-start", (event: Event) => {
+    const detail = (event as CustomEvent<{
+      threadId?: string; runId?: string; signal?: AbortSignal;
+    }>).detail;
+    if (!detail?.threadId || !detail.runId || !detail.signal) return;
+    startWorkingPhase(detail.threadId, detail.signal, detail.runId);
+  });
 }
