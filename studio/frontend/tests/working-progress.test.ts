@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { formatWorkingPhase } from "../src/features/chat/utils/working-progress-format.ts";
 
@@ -27,4 +28,23 @@ test("unknown phase cannot surface arbitrary strings", () => {
   });
   assert.match(text, /Kontext vorbereiten/);
   assert.doesNotMatch(text, /sensitive_private_phase/);
+});
+
+test("an existing non-QA backend is diagnosed instead of silently showing Working", () => {
+  const line = formatWorkingPhase({
+    phase: "qa_backend_missing", current: 0, total: null,
+    unit: "calls", status: "running", elapsed_ms: 24_000,
+  });
+  assert.match(line, /QA-Backend nicht installiert/);
+});
+
+test("legacy streaming and durable chat both forward the same progress key", () => {
+  const base = new URL("../src/features/chat/", import.meta.url);
+  const adapter = readFileSync(new URL("api/chat-adapter.ts", base), "utf8");
+  const runApi = readFileSync(new URL("api/chat-generation-api.ts", base), "utf8");
+  const streamApi = readFileSync(new URL("api/chat-api.ts", base), "utf8");
+  assert.match(adapter, /createChatGenerationRunUntilAbort[\s\S]*?workingProgressId,/);
+  assert.match(adapter, /streamChatCompletions\([\s\S]*?workingProgressId,/);
+  assert.match(runApi, /X-Unsloth-Context-Progress/);
+  assert.match(streamApi, /X-Unsloth-Context-Progress/);
 });
