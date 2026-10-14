@@ -65,9 +65,12 @@ _FRAME_PROBE_START = """() => {
   const measure = (now) => {
     if (state.started && viewport.isConnected) {
       const top = viewport.getBoundingClientRect();
-      let coverage = 0;
+      let coverage = 0, firstTop = null, lastBottom = null, mounted = 0;
       for (const el of viewport.querySelectorAll('[data-agent-history-row]')) {
         const rect = el.getBoundingClientRect();
+        if (firstTop === null) firstTop = rect.top - top.top;
+        lastBottom = rect.bottom - top.top;
+        mounted++;
         coverage += Math.max(0, Math.min(top.bottom, rect.bottom) -
           Math.max(top.top, rect.top));
       }
@@ -80,7 +83,8 @@ _FRAME_PROBE_START = """() => {
         list?.dataset.agentHistoryQaStageTarget ?? '',
         list?.dataset.agentHistoryQaWindowStart ?? '',
         list?.dataset.agentHistoryQaWindowEnd ?? '',
-        list?.dataset.agentHistoryQaVisibleIndex ?? '']);
+        list?.dataset.agentHistoryQaVisibleIndex ?? '',
+        firstTop, lastBottom, mounted, viewport.scrollHeight]);
     }
     state.raf = requestAnimationFrame(measure);
   };
@@ -109,6 +113,16 @@ _FRAME_PROBE_START = """() => {
         badFrames,
         maxUnderfilledMs: Math.round(maxBadMs),
         worstFrame: worst,
+        // QA-only geometry trace when a perceptible gap occurs; no user data.
+        // The source fixture contains only synthetic short messages.
+        frameTrace: maxBadMs >= 80 ? state.frames.map(f => ({
+          t: Math.round(f[0]), coverage: Math.round(f[1] * 100) / 100,
+          inside: f[2], scrollTop: Math.round(f[3]), staged: f[4],
+          target: f[5], start: f[6], end: f[7], visible: f[8],
+          firstTop: f[9] === null ? null : Math.round(f[9]),
+          lastBottom: f[10] === null ? null : Math.round(f[10]),
+          mounted: f[11], scrollHeight: Math.round(f[12]),
+        })) : undefined,
         minimumCoverage: state.frames.length ?
           Math.min(...state.frames.map(f => f[1])) : null,
       };
