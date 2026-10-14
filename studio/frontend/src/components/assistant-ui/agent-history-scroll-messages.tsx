@@ -6,7 +6,7 @@ import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffec
 import { createRowNotificationGate } from "./row-notification-gate";
 import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-search";
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
-import { AGENT_DOM_TARGETS, AgentDomCostIndex, agentBudgetWindow, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
+import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { useAdjustForContentInsertedAbove, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
@@ -52,8 +52,8 @@ export const AgentHistoryScrollMessages: FC<{
   // until the viewport is filled, but never exceed 32 mounted messages or the
   // same conservative 8k-descendant budget as Dynamic.
   const budget = domLevel ? AGENT_DOM_TARGETS[domLevel]
-    : fixedViewportAdaptive ? AGENT_DOM_TARGETS.medium : null;
-  const budgetRows = fixedViewportAdaptive ? 32
+    : fixedViewportAdaptive ? AGENT_FIXED_VIEWPORT_DOM_TARGET : null;
+  const budgetRows = fixedViewportAdaptive ? AGENT_FIXED_VIEWPORT_MAX_ROWS
     : budgetRows;
   const jumpBottom = useScrollThreadToBottom();
   const getIsFollowingBottom = useGetThreadBottomFollowIntent();
