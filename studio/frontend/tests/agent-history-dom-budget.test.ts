@@ -2,7 +2,7 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AgentDomCostIndex, agentPhysicalNeighborWindow, agentBudgetWindow, AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, needsAgentBudgetRebalance } from "../src/components/assistant-ui/agent-history-dom-budget.ts";
+import { AgentDomCostIndex, agentPhysicalNeighborWindow, agentWheelPrefetchTarget, agentBudgetWindow, AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, needsAgentBudgetRebalance } from "../src/components/assistant-ui/agent-history-dom-budget.ts";
 
 test("low and high adapt to measured row complexity", () => {
   const costs = new AgentDomCostIndex(40);
@@ -208,4 +208,19 @@ test("physical neighbor recovery does not admit two unknown heavy rows", () => {
     agentPhysicalNeighborWindow({ start: 384, end: 400 }, 383, 400, partial, 8000, 16),
     null,
   );
+});
+
+test("wheel prefetch only predicts an adjacent older row close to viewport", () => {
+  // Initial real top is 180px ABOVE viewport; upcoming -240 wheel would
+  // put it 60px inside, so preload one neighbor before it becomes blank.
+  assert.equal(agentWheelPrefetchTarget(-240, -180, 0, 960, 380), 379);
+  assert.equal(agentWheelPrefetchTarget(-240, -500, 0, 960, 380), null);
+  assert.equal(agentWheelPrefetchTarget(-720, -600, 0, 960, 380), 379);
+  // Long leaps still use existing conservative progressive staging.
+  assert.equal(agentWheelPrefetchTarget(-1680, -180, 0, 960, 380), null);
+  assert.equal(agentWheelPrefetchTarget(240, -180, 0, 960, 380), null);
+  assert.equal(agentWheelPrefetchTarget(-240, -180, 0, 960, 0), null);
+  assert.equal(agentWheelPrefetchTarget(NaN, -180, 0, 960, 380), null);
+  assert.equal(agentWheelPrefetchTarget(-240, -180, 0, 0, 380), null);
+  assert.equal(agentWheelPrefetchTarget(-240, NaN, 0, 960, 380), null);
 });
