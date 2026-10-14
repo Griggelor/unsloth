@@ -30360,6 +30360,16 @@ class _DroppedFrameKeepalive:
         return True
 
 
+@studio_router.get("/working-progress/{run_id}")
+async def get_working_progress(run_id: str, current_subject: str = Depends(get_current_subject)):
+    # Authenticated subject prevents other tabs/accounts from reading another run.
+    from core.inference import working_progress
+    result = working_progress.snapshot(current_subject, run_id)
+    if result is None:
+        raise HTTPException(status_code = 404, detail = "Progress run not found")
+    return result
+
+
 @router.post("/chat/completions")
 @account_access.gpu_busy_route
 async def openai_chat_completions(
@@ -30377,12 +30387,31 @@ async def openai_chat_completions(
             status_code = 403,
             detail = "External providers can only be used from the Unsloth UI or with an API key.",
         )
-    return await produce_openai_chat_completions(
-        payload,
-        request,
-        current_subject,
-        cancel_on_disconnect = True,
+    from core.inference import working_progress
+    progress_key = working_progress.begin(
+        current_subject, request.headers.get("X-Unsloth-Context-Progress")
+        if request.headers.get("X-Unsloth-Events") == "1" else None,
     )
+    progress_token = working_progress.activate(progress_key)
+    try:
+        response = await produce_openai_chat_completions(
+            payload,
+            request,
+            current_subject,
+            cancel_on_disconnect = True,
+        )
+    except BaseException:
+        working_progress.finish(progress_key, failed = True)
+        raise
+    finally:
+        working_progress.reset(progress_token)
+    if progress_key is not None and isinstance(response, StreamingResponse):
+        response.body_iterator = working_progress.bind_response_stream(
+            response.body_iterator, progress_key,
+        )
+    else:
+        working_progress.finish(progress_key)
+    return response
 
 
 async def produce_openai_chat_completions(
