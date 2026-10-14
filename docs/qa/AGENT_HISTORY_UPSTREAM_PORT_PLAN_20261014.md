@@ -45,3 +45,18 @@ Fixed-low product change approved by user: adapt beyond five rows up to a hard 3
 - [ ] User explicitly authorizes sending to `unslothai/unsloth`.
 
 Do not merge, deploy, or claim release while any gate above is pending.
+
+## Verified follow-up evidence (2026-10-14)
+
+- A clean source candidate has been ported from the official main commit `aad900ec04d4e1a27d608295e27feee2f4c1acbc` onto fork branch `qa/upstream-agent-history-candidate-20261014`.
+- Source candidate commit `4de45a27376075b13ae6dfb0173ee914c583fe38`: GitHub Actions run [38600450729](https://github.com/Griggelor/unsloth/actions/runs/38600450729) passed focused frontend unit tests, TypeScript typecheck, production Vite build and startup bundle gate.
+- Startup transfer costs remain real and are documented: source candidate 6,602.1 KiB raw and 1,990.7 KiB transfer (Node 22, Ubuntu CI). Eager preference settings were factored away from heavy virtual indexes; after 1.4 KiB transfer reduction, a measured ~0.7% threshold increase was included with supporting evidence rather than silently ignoring the gate.
+- Browser matrix was independently run on `qa/upstream-agent-history-validation-20261014` copied from that exact source candidate (only a temporary workflow differs): [run 38600900259](https://github.com/Griggelor/unsloth/actions/runs/38600900259), all eight checks green, including 50k/200k/400k DOM churn, menu, DOM, idle-scroll, static contracts and GC retention.
+- Standalone wheel-only characterization [38591890459](https://github.com/Griggelor/unsloth/actions/runs/38591890459) on the repair branch passed the idle/stable-viewport gate in Dynamic and Fixed, with **some very low or zero intermediate coverage** while actively scrolling. This cannot be promoted to a claim of zero transient blank frames.
+- A second wheel-only check using the ported source itself was started in fork branch `qa/upstream-agent-history-wheel-verification-20261014` and must be assessed by its final result, not assumed green.
+- No Windows WebView2 manual acceptance on the ported source, no upstream PR, no merge, no release. All three experimental PR30/33/34 remain separate.
+- Temporary `.github/workflows/qa-agent-history-upstream-port.yml` must be removed before any official submission (the resulting final SHA requires revalidation). The separately copied validation branches are **never** upstream PR heads.
+
+### Release caveat
+
+The 8,000-descendant Fixed budget is a conservative **measured-window policy**, plus a hard 32-mounted-message cap. A mandatory single very large row can exceed 8,000 descendants until separately virtualized; therefore it must not be described as an absolute RAM ceiling. User-visible transient gaps were observed in synthetic wheel sampling even when each sequence settled correctly. Closing this issue and obtaining Windows confirmation remain approval gates.
