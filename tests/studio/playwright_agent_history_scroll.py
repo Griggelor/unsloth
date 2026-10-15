@@ -428,9 +428,7 @@ def check_native_thumb_track_stability(page, level: str) -> None:
                 """el => ({scrollHeight: el.scrollHeight, scrollTop: el.scrollTop})"""
             )
             # Delta-only comparison cancels the unknown native grab offset.
-            thumb_delta = initial_thumb_top - thumb_top(
-                point["scrollTop"], point["scrollHeight"]
-            )
+            thumb_delta = initial_thumb_top - thumb_top(point["scrollTop"], point["scrollHeight"])
             pointer_delta = start_y - target_y
             samples.append(
                 {
