@@ -95,3 +95,21 @@ export function finishAgentNativeThumbDrag(
     topPx,
   };
 }
+
+/**
+ * During a captured native thumb gesture, maintain the scrollbar's virtual
+ * document length even when previously unknown row heights are measured.
+ *
+ * The top prefix and mounted rows retain their live measured geometry. Only
+ * the unmounted suffix absorbs height-ledger revisions. This function never
+ * changes scrollTop, and cannot make a negative spacer if one unusually tall
+ * mounted row already exceeds the initial height estimate.
+ */
+export function agentNativeThumbBottomSpacerPx(
+  virtualTotalAtDragStart: number,
+  mountedEndOffset: number,
+): number {
+  if (!Number.isFinite(virtualTotalAtDragStart) ||
+      !Number.isFinite(mountedEndOffset)) return 0;
+  return Math.max(0, virtualTotalAtDragStart - mountedEndOffset);
+}
