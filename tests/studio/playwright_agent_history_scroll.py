@@ -530,9 +530,7 @@ def check_native_thumb_release_telemetry(page, level: str) -> None:
         flush = True,
     )
     if not after["visibleRows"]:
-        raise AssertionError(
-            f"{level}: release left a blank viewport: {before} -> {after}"
-        )
+        raise AssertionError(f"{level}: release left a blank viewport: {before} -> {after}")
 
 
 def check_dynamic_thumb_under_heavy_dom(page, level: str) -> None:
