@@ -167,8 +167,14 @@ export const BUDGET = {
   // the resident-config check) adds 1,448 B raw / 433 B transfer, inline in the eager chat chunk (6,787,367 ->
   // 6,788,815 B raw, 2,040,805 -> 2,041,238 B transfer against 4494fa58c, one machine and build, Node 24, chunk
   // count unchanged at 95). Raised by that growth.
-  transferBytes: 2_041_433,
-  rawBytes: 6_788_948,
+  // Agent History upstream-refresh integration (77bf102, CI 2026-10-15):
+  // 106 eager startup chunks; 6,642.1 KiB raw and 2,003.4 KiB gzip
+  // transfer on the integrated production build. This is a bounded increase
+  // from the opt-in history UI, while the virtual renderer stays lazy-loaded.
+  // Keep about 8 KiB headroom on each measured dimension for this exact base;
+  // remeasure after any further upstream sync instead of blindly reusing it.
+  transferBytes: 2_060_000,
+  rawBytes: 6_810_000,
 };
 
 // The chunk count is reported but not budgeted. Splitting a page out of the entry raises it while lowering the
