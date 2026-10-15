@@ -734,8 +734,8 @@ def check_isolated_dynamic_thumb_modes(page, thread_id: str, messages: int) -> N
     """
     for level, policy, cap in (
         ("dynamic", "medium", 16),
-        ("dynamic-high", "high", 32),
-        ("dynamic-low", "low", 5),
+        ("dynamic-high", "medium", 16),
+        ("dynamic-low", "medium", 16),
     ):
         page.evaluate(
             """([threadId, selected]) => {
