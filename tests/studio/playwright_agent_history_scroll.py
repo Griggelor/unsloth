@@ -543,7 +543,10 @@ def check_native_thumb_live_follow(page, level: str) -> None:
     if not samples[1]["windowStart"] < samples[0]["windowStart"] - 20:
         raise AssertionError(f"{level}: live windows failed to chase held thumb: {samples}")
     print(
-        json.dumps({"case": "native-thumb-live-follow", "level": level, "samples": samples}, sort_keys = True),
+        json.dumps(
+            {"case": "native-thumb-live-follow", "level": level, "samples": samples},
+            sort_keys = True,
+        ),
         flush = True,
     )
 
