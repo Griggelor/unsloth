@@ -751,7 +751,7 @@ def check_isolated_dynamic_thumb_modes(page, thread_id: str, messages: int) -> N
               };
               localStorage.setItem(key, JSON.stringify({ ...stored, state }));
             }""",
-            [thread_id, level],
+            [thread_id, policy],
         )
         # Reload forces the real persisted policy -> renderer activation path.
         page.reload(wait_until = "domcontentloaded", timeout = 120_000)
