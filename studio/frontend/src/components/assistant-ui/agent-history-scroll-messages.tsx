@@ -8,7 +8,7 @@ import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-searc
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
 import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, agentPhysicalNeighborWindow, agentWheelPrefetchTarget, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentViewportCoverageRecoveryTarget, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
-import { agentNativeThumbBottomSpacerPx, beginAgentNativeThumbDrag, finishAgentNativeThumbDrag, type AgentNativeThumbDrag } from "./agent-history-native-thumb";
+import { agentNativeThumbBottomSpacerPx, beginAgentNativeThumbDrag, canAdoptAgentNativeThumbPosition, finishAgentNativeThumbDrag, type AgentNativeThumbDrag } from "./agent-history-native-thumb";
 import { useAdjustForContentInsertedAbove, useDetachThreadFromBottom, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
   allowsAgentReaderScrollIntent,
@@ -699,6 +699,7 @@ export const AgentHistoryScrollMessages: FC<{
     const onPointerRelease = (event: PointerEvent) => {
       const drag = nativeThumbDrag.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
+      const frozenTotal = nativeThumbVirtualTotal.current;
       nativeThumbDrag.current = null;
       nativeThumbVirtualTotal.current = null;
       // Restore live document length after the native gesture ends, regardless
@@ -717,6 +718,29 @@ export const AgentHistoryScrollMessages: FC<{
         }
         return;
       }
+      // Read the actual painted row before React restores live spacer heights.
+      // If Chromium has already reached the intended logical viewport, do not
+      // issue a second scrollTo/seek that would visibly reposition its thumb.
+      // Conservative fallback retains R3's reliable staged seek at mismatches.
+      const targetRow = destination.kind === "position"
+        ? viewport.querySelector<HTMLElement>(
+            '[data-agent-history-row="' + destination.index + '"]',
+          )
+        : null;
+      const viewBox = viewport.getBoundingClientRect();
+      const rowBox = targetRow?.getBoundingClientRect();
+      const adoptNative = canAdoptAgentNativeThumbPosition(destination, {
+        scrollTop: viewport.scrollTop,
+        scrollHeight: viewport.scrollHeight,
+        viewportHeight: viewport.clientHeight,
+        logicalTotal: heights.total,
+        frozenTotal,
+        targetVisible: !!rowBox && rowBox.bottom > viewBox.top + 8 &&
+          rowBox.top < viewBox.bottom - 8,
+        windowSettled: staged.current === null &&
+          pendingPassiveReveal.current === null &&
+          navigation.current.kind === "reader",
+      });
       interrupt();
       // The released gesture is a committed navigation, not permission for
       // subsequent ResizeObserver/native anchor scroll echoes to seek elsewhere.
@@ -730,6 +754,12 @@ export const AgentHistoryScrollMessages: FC<{
       anchor.current = null;
       visibleIndex.current = destination.index;
       following.current = destination.kind === "bottom";
+      if (adoptNative) {
+        // Native Chromium scrollTo was already correct. Retain the rendered
+        // window and rely on normal post-drag height reconciliation; never
+        // introduce a redundant second physical movement in this path.
+        return;
+      }
       if (destination.kind === "bottom") {
         seek(countRef.current - 1, "bottom");
       } else if (destination.kind === "top") {
