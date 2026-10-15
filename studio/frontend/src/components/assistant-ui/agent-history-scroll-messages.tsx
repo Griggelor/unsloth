@@ -8,6 +8,7 @@ import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-searc
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
 import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, agentPhysicalNeighborWindow, agentWheelPrefetchTarget, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentViewportCoverageRecoveryTarget, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
+import { beginAgentNativeThumbDrag, finishAgentNativeThumbDrag, type AgentNativeThumbDrag } from "./agent-history-native-thumb";
 import { useAdjustForContentInsertedAbove, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
   allowsAgentReaderScrollIntent,
@@ -66,6 +67,8 @@ export const AgentHistoryScrollMessages: FC<{
   const topSpacer = useRef<HTMLDivElement>(null);
   const anchor = useRef<{ index: number; top: number } | null>(null);
   const jump = useRef<"top" | "bottom" | null>(null);
+  // Native scrollbar gestures temporarily own the physical viewport position.
+  const nativeThumbDrag = useRef<AgentNativeThumbDrag | null>(null);
   const staged = useRef<{ destination: AgentScrollWindow; target: number } | null>(null);
   const pendingPassiveReveal = useRef<number | null>(null);
   // A real scroll received during staging must be sampled after the last
@@ -107,6 +110,7 @@ export const AgentHistoryScrollMessages: FC<{
     lastReaderGestureAt.current = Number.NEGATIVE_INFINITY;
     pendingScrollEpoch.current = null;
     navigation.current = initialAgentHistoryNavigation();
+    nativeThumbDrag.current = null;
     staged.current = null;
     pendingPassiveReveal.current = null;
     deferredScroll.current = false;
@@ -188,8 +192,8 @@ export const AgentHistoryScrollMessages: FC<{
     const target = Math.min(Math.max(index, next.start), next.end - 1);
     const candidate = progressive ? { start: target, end: target + 1 } : next;
     staged.current = progressive ? { destination: next, target } : null;
-    pendingPassiveReveal.current = disjoint && !snap ? target : null;
-    if (viewport && !snap) {
+    pendingPassiveReveal.current = disjoint && !snap && nativeThumbDrag.current === null ? target : null;
+    if (viewport && !snap && nativeThumbDrag.current === null) {
       const fold = viewport.getBoundingClientRect().top;
       for (const el of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
         if (el.getBoundingClientRect().bottom > fold) {
@@ -384,6 +388,13 @@ export const AgentHistoryScrollMessages: FC<{
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
+    // React measurements/anchor repair must not compete with a native thumb drag.
+    if (nativeThumbDrag.current !== null) {
+      anchor.current = null;
+      jump.current = null;
+      pendingPassiveReveal.current = null;
+      return;
+    }
     const intent = navigation.current;
     if (intent.kind === "search") {
       const row = viewport.querySelector<HTMLElement>('[data-agent-history-row="' + intent.row + '"]');
