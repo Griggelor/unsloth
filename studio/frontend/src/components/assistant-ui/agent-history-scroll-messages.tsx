@@ -8,7 +8,7 @@ import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-searc
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
 import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, agentPhysicalNeighborWindow, agentWheelPrefetchTarget, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentViewportCoverageRecoveryTarget, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
-import { agentNativeThumbBottomSpacerPx, beginAgentNativeThumbDrag, finishAgentNativeThumbDrag, type AgentNativeThumbDrag } from "./agent-history-native-thumb";
+import { agentNativeThumbBottomSpacerPx, agentNativeThumbPostRebaseTop, beginAgentNativeThumbDrag, finishAgentNativeThumbDrag, type AgentNativeThumbDestination, type AgentNativeThumbDrag } from "./agent-history-native-thumb";
 import { useAdjustForContentInsertedAbove, useDetachThreadFromBottom, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
   allowsAgentReaderScrollIntent,
@@ -74,6 +74,7 @@ export const AgentHistoryScrollMessages: FC<{
   // Drag-scoped virtual document extent. The unmounted suffix compensates
   // ledger corrections so Chromium does not resize its native thumb mid-drag.
   const nativeThumbVirtualTotal = useRef<number | null>(null);
+  const pendingNativeThumbRelease = useRef<AgentNativeThumbDestination | null>(null);
   const staged = useRef<{ destination: AgentScrollWindow; target: number } | null>(null);
   const pendingPassiveReveal = useRef<number | null>(null);
   // A real scroll received during staging must be sampled after the last
@@ -117,6 +118,7 @@ export const AgentHistoryScrollMessages: FC<{
     navigation.current = initialAgentHistoryNavigation();
     nativeThumbDrag.current = null;
     nativeThumbVirtualTotal.current = null;
+    pendingNativeThumbRelease.current = null;
     staged.current = null;
     pendingPassiveReveal.current = null;
     deferredScroll.current = false;
@@ -405,6 +407,24 @@ export const AgentHistoryScrollMessages: FC<{
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
+    // The native drag ended in the previous frame. React has now restored
+    // live virtual heights. Commit ONCE against that actual physical extent
+    // before paint, rather than scrolling in pointerup against stale geometry.
+    const pendingRelease = pendingNativeThumbRelease.current;
+    if (pendingRelease !== null) {
+      pendingNativeThumbRelease.current = null;
+      const rebasedTop = agentNativeThumbPostRebaseTop(
+        pendingRelease, heights.total, viewport.scrollHeight, viewport.clientHeight,
+      );
+      // The viewport owner remains the only authorized scrollTop writer.
+      // Tiny subpixel differences do not warrant an extra native movement.
+      if (Math.abs(rebasedTop - viewport.scrollTop) > 2) {
+        navigateViewport(rebasedTop);
+      }
+      visibleIndex.current = pendingRelease.index;
+      seek(pendingRelease.index);
+      return;
+    }
     // React measurements/anchor repair must not compete with a native thumb drag.
     if (nativeThumbDrag.current !== null) {
       anchor.current = null;
@@ -730,6 +750,12 @@ export const AgentHistoryScrollMessages: FC<{
       anchor.current = null;
       visibleIndex.current = destination.index;
       following.current = destination.kind === "bottom";
+      if (destination.kind === "position") {
+        // Let the height-unfreeze render complete before committing a single
+        // viewport move. R3 endpoint handling stays untouched.
+        pendingNativeThumbRelease.current = destination;
+        return;
+      }
       if (destination.kind === "bottom") {
         seek(countRef.current - 1, "bottom");
       } else if (destination.kind === "top") {
@@ -744,6 +770,7 @@ export const AgentHistoryScrollMessages: FC<{
       if (nativeThumbDrag.current?.pointerId !== event.pointerId) return;
       nativeThumbDrag.current = null;
       nativeThumbVirtualTotal.current = null;
+      pendingNativeThumbRelease.current = null;
       requestHeightRevision();
       // Cancellation is not a committed destination. Resume native reader
       // sampling; do not map a cancelled coordinate to a logical message.
@@ -813,6 +840,7 @@ export const AgentHistoryScrollMessages: FC<{
       viewport.removeEventListener("wheel", onWheel);
       nativeThumbDrag.current = null;
       nativeThumbVirtualTotal.current = null;
+      pendingNativeThumbRelease.current = null;
       if (wheelCoverageTimer.current !== null) clearTimeout(wheelCoverageTimer.current);
       wheelCoverageTimer.current = null;
       wheelIdleReady.current = false;
