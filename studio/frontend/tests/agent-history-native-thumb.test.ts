@@ -6,6 +6,7 @@ import test from "node:test";
 import { AgentHeightIndex } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
 import {
   agentNativeThumbBottomSpacerPx,
+  agentNativeThumbPostRebaseTop,
   beginAgentNativeThumbDrag,
   finishAgentNativeThumbDrag,
 } from "../src/components/assistant-ui/agent-history-native-thumb.ts";
@@ -109,4 +110,32 @@ test("drag-scoped suffix is bounded if a huge row consumes all projected space",
   assert.equal(agentNativeThumbBottomSpacerPx(100, 125), 0);
   assert.equal(agentNativeThumbBottomSpacerPx(100, 20), 80);
   assert.equal(agentNativeThumbBottomSpacerPx(Number.NaN, 20), 0);
+});
+
+test("R4 phased release preserves the intended track fraction across large height rebase", () => {
+  const destination = { kind: "position", index: 194, topPx: 127000 } as const;
+  const logicalTotal = 255000;
+  const newPhysicalHeight = 244550;
+  const postRebaseTop = agentNativeThumbPostRebaseTop(
+    destination, logicalTotal, newPhysicalHeight, 960,
+  );
+  assert.ok(postRebaseTop < destination.topPx);
+  const beforeFraction = destination.topPx / (logicalTotal - 960);
+  const afterFraction = postRebaseTop / (newPhysicalHeight - 960);
+  assert.ok(Math.abs(beforeFraction - afterFraction) < 1e-9);
+});
+
+test("R4 phase rebasing keeps endpoints exact and malformed input bounded", () => {
+  assert.equal(agentNativeThumbPostRebaseTop({
+    kind: "top", index: 0, topPx: 0,
+  }, 280000, 240000, 960), 0);
+  assert.equal(agentNativeThumbPostRebaseTop({
+    kind: "bottom", index: 399, topPx: 279040,
+  }, 280000, 240000, 960), 239040);
+  assert.equal(agentNativeThumbPostRebaseTop({
+    kind: "position", index: 5, topPx: Number.NaN,
+  }, 280000, 240000, 960), 0);
+  assert.equal(agentNativeThumbPostRebaseTop({
+    kind: "position", index: 5, topPx: 125000,
+  }, 280000, 960, 960), 0);
 });
