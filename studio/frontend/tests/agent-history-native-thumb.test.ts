@@ -7,6 +7,7 @@ import { AgentHeightIndex } from "../src/components/assistant-ui/agent-history-s
 import {
   agentNativeThumbBottomSpacerPx,
   beginAgentNativeThumbDrag,
+  canAdoptAgentNativeThumbPosition,
   finishAgentNativeThumbDrag,
 } from "../src/components/assistant-ui/agent-history-native-thumb.ts";
 
@@ -109,4 +110,67 @@ test("drag-scoped suffix is bounded if a huge row consumes all projected space",
   assert.equal(agentNativeThumbBottomSpacerPx(100, 125), 0);
   assert.equal(agentNativeThumbBottomSpacerPx(100, 20), 80);
   assert.equal(agentNativeThumbBottomSpacerPx(Number.NaN, 20), 0);
+});
+
+test("R4 adopts a painted native interior position rather than scrolling twice", () => {
+  const desired = { kind: "position", index: 180, topPx: 125000 } as const;
+  const state = {
+    scrollTop: 125000, scrollHeight: 280000, viewportHeight: 960,
+    logicalTotal: 280000, frozenTotal: 280000,
+    targetVisible: true, windowSettled: true,
+  };
+  assert.equal(canAdoptAgentNativeThumbPosition(desired, state), true);
+  // Minor height remeasurement is tolerated in the same logical track.
+  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
+    ...state, logicalTotal: 279990, frozenTotal: 280000,
+  }), true);
+});
+
+test("R4 preserves the R3 recovery path for a lagging native thumb or missing target", () => {
+  const desired = { kind: "position", index: 180, topPx: 125000 } as const;
+  const state = {
+    scrollTop: 95000, scrollHeight: 280000, viewportHeight: 960,
+    logicalTotal: 280000, frozenTotal: 280000,
+    targetVisible: true, windowSettled: true,
+  };
+  assert.equal(canAdoptAgentNativeThumbPosition(desired, state), false);
+  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
+    ...state, scrollTop: 125000, targetVisible: false,
+  }), false);
+  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
+    ...state, scrollTop: 125000, windowSettled: false,
+  }), false);
+  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
+    ...state, scrollTop: 125000, frozenTotal: null,
+  }), false);
+  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
+    ...state, scrollTop: 125000, logicalTotal: 275000,
+  }), false);
+});
+
+test("R4 never adopts the endpoints: top and bottom retain mandatory R3 snaps", () => {
+  const state = {
+    scrollTop: 0, scrollHeight: 280000, viewportHeight: 960,
+    logicalTotal: 280000, frozenTotal: 280000,
+    targetVisible: true, windowSettled: true,
+  };
+  assert.equal(canAdoptAgentNativeThumbPosition({ kind: "top", index: 0, topPx: 0 }, state), false);
+  assert.equal(canAdoptAgentNativeThumbPosition({
+    kind: "bottom", index: 399, topPx: 279040,
+  }, { ...state, scrollTop: 279040 }), false);
+});
+
+test("R4 compares native and desired positions in track pixels, not document pixels", () => {
+  const state = {
+    scrollTop: 125000 + 2500, scrollHeight: 280000, viewportHeight: 960,
+    logicalTotal: 280000, frozenTotal: 280000,
+    targetVisible: true, windowSettled: true,
+  };
+  const desired = { kind: "position", index: 180, topPx: 125000 } as const;
+  // 2500 document pixels over a long transcript represent only 8.6px
+  // on a 960px scrollbar track. No second scroll should be necessary.
+  assert.equal(canAdoptAgentNativeThumbPosition(desired, state), true);
+  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
+    ...state, scrollTop: 125000 + 6000,
+  }), false);
 });
