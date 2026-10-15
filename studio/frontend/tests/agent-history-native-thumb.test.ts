@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AgentHeightIndex } from "../src/components/assistant-ui/agent-history-scroll-window.ts";
 import {
+  agentNativeThumbBottomSpacerPx,
   beginAgentNativeThumbDrag,
   finishAgentNativeThumbDrag,
 } from "../src/components/assistant-ui/agent-history-native-thumb.ts";
@@ -84,4 +85,28 @@ test("zero-range documents cannot open a native-thumb navigation transaction", (
     pointerId: 1, pointerY: 1, viewportTop: 0, viewportHeight,
     scrollTop: 0, scrollHeight: viewportHeight,
   }), null);
+});
+
+
+test("drag-scoped virtual-height projection keeps native track extent fixed across row measurements", () => {
+  const ledger = new AgentHeightIndex(400);
+  const virtualHeight = ledger.total;
+  for (const [start, end, rowHeight] of [
+    [384, 400, 100], [250, 266, 110], [60, 76, 2100], [4, 20, 96],
+  ]) {
+    for (let i = start; i < end; i++) ledger.measure(i, rowHeight);
+    // Prefix + mounted measured rows + projected unmounted suffix should
+    // represent the same logical scrollbar range throughout the drag.
+    const top = ledger.offset(start);
+    const mounted = ledger.offset(end) - top;
+    const suffix = agentNativeThumbBottomSpacerPx(virtualHeight, ledger.offset(end));
+    assert.equal(top + mounted + suffix, virtualHeight);
+  }
+  assert.ok(ledger.total !== virtualHeight, "measurement workload must change actual height");
+});
+
+test("drag-scoped suffix is bounded if a huge row consumes all projected space", () => {
+  assert.equal(agentNativeThumbBottomSpacerPx(100, 125), 0);
+  assert.equal(agentNativeThumbBottomSpacerPx(100, 20), 80);
+  assert.equal(agentNativeThumbBottomSpacerPx(Number.NaN, 20), 0);
 });
