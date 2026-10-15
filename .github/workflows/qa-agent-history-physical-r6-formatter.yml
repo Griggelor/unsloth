@@ -1,0 +1,21 @@
+name: QA R6 Native Thumb Exact Formatter
+on:
+  push:
+    branches:
+      - qa/agent-history-physical-thumb-r6-style-check-20261015
+permissions:
+  contents: read
+jobs:
+  formatter:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Verify exact pinned Ruff formatter fixed point
+        run: |
+          python -m pip install 'ruff==0.6.9'
+          python scripts/run_ruff_format.py tests/studio/playwright_agent_history_scroll.py
+          git diff -- tests/studio/playwright_agent_history_scroll.py
+          git diff --exit-code -- tests/studio/playwright_agent_history_scroll.py
