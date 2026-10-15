@@ -337,6 +337,48 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
     if second is None or abs(second - first["y"]) > 5:
         raise AssertionError(f"{level}: text shifted after drag without input: {first} -> {second}")
 
+    # A native thumb dragged ALL the way to the track origin must reach the
+    # first logical message in ONE gesture, even when measured heights change.
+    # Earlier tests only targeted 35% of the track and could not detect this.
+    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
+    page.wait_for_timeout(120)
+    page.mouse.move(x, bottom)
+    page.mouse.down()
+    page.mouse.move(x, box["y"] + 2, steps = 18)
+    page.mouse.up()
+    page.wait_for_function(
+        """() => {
+          const viewport = document.querySelector('.aui-thread-viewport');
+          const first = viewport?.querySelector('[data-agent-history-row="0"]');
+          if (!viewport || !first) return false;
+          const view = viewport.getBoundingClientRect();
+          const bounds = first.getBoundingClientRect();
+          return viewport.scrollTop <= 2 &&
+            bounds.bottom > view.top + 1 && bounds.top < view.bottom - 1;
+        }""",
+        timeout = 5_000,
+    )
+    at_top = page.locator(VIEWPORT).evaluate(
+        """el => ({
+          scrollTop: el.scrollTop,
+          windowStart: Number(el.querySelector('[data-agent-history-scroll-list]')?.dataset.agentHistoryQaWindowStart ?? -1),
+          firstVisible: !!el.querySelector('[data-agent-history-row="0"]')
+        })"""
+    )
+    page.wait_for_timeout(650)
+    settled_top = page.locator(VIEWPORT).evaluate(
+        """el => ({
+          scrollTop: el.scrollTop,
+          windowStart: Number(el.querySelector('[data-agent-history-scroll-list]')?.dataset.agentHistoryQaWindowStart ?? -1),
+          firstVisible: !!el.querySelector('[data-agent-history-row="0"]')
+        })"""
+    )
+    if (at_top["windowStart"] != 0 or settled_top["windowStart"] != 0 or not settled_top["firstVisible"] or abs(settled_top["scrollTop"] - at_top["scrollTop"]) > 2:
+        raise AssertionError(
+            f"{level}: full native thumb drag failed to settle at transcript origin: "
+            f"{at_top} -> {settled_top}"
+        )
+
 
 def check_dynamic_thumb_under_heavy_dom(page, level: str) -> None:
     """Stress the real renderer with a 15k-descendant tool message before dragging."""
