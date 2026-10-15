@@ -469,6 +469,28 @@ def check_native_thumb_track_stability(page, level: str) -> None:
         )
 
 
+def prepare_native_thumb_from_latest(page, level: str) -> None:
+    """Restore the real latest ROW WINDOW, not only the physical scrollTop.
+
+    Directly assigning scrollTop at the end of a long run does not authorize
+    React to mount the tail after a consumed reader gesture. The toolbar's
+    genuine back-to-latest command is the correct way to reset the virtualizer
+    before a new independent scrollbar test.
+    """
+    latest = page.locator('[data-agent-history-scroll-list="true"] > button')
+    if latest.count() > 0:
+        latest.click(timeout = 5_000)
+    page.wait_for_function(
+        """() => {
+          const l = document.querySelector('[data-agent-history-scroll-list="true"]');
+          return l && Number(l.dataset.agentHistoryQaWindowEnd) === 400;
+        }""",
+        timeout = 6_000,
+    )
+    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
+    page.wait_for_timeout(150)
+
+
 def check_native_thumb_live_follow(page, level: str) -> None:
     """A SINGLE held native scrollbar gesture must update mounted rows live.
 
@@ -476,8 +498,7 @@ def check_native_thumb_live_follow(page, level: str) -> None:
     the actual row intersects the viewport at two distant positions BEFORE
     pointerup; an eventual release-only seek cannot make this test pass.
     """
-    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
-    page.wait_for_timeout(180)
+    prepare_native_thumb_from_latest(page, level)
     box = page.locator(VIEWPORT).bounding_box()
     if box is None:
         raise AssertionError(f"{level}: live thumb viewport missing")
@@ -561,8 +582,7 @@ def check_native_thumb_drift_release(page, level: str) -> None:
     a held gesture, making such a test timing-dependent. Finish with a real
     mouse.up() to release Chromium's native pointer capture.
     """
-    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
-    page.wait_for_timeout(150)
+    prepare_native_thumb_from_latest(page, level)
     box = page.locator(VIEWPORT).bounding_box()
     if box is None:
         raise AssertionError(f"{level}: release-drift viewport missing")
