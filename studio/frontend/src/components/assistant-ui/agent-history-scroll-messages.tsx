@@ -652,12 +652,9 @@ export const AgentHistoryScrollMessages: FC<{
         revealFrame.current = null;
       }
     };
-    // Chromium's native scrollbar captures pointer movement outside the DOM
-    // event stream. We see pointerdown/up and scroll events, but not pointermove
-    // while the thumb is dragged. After the first window change consumes an
-    // intent epoch, the later scroll events would otherwise leave old rows
-    // mounted at the new physical scrollTop (a blank viewport until wheel).
-    let nativeThumbDrag: { pointerId: number; scrollTop: number } | null = null;
+    // Native scrollbar capture bypasses DOM pointermove. Under virtualization
+    // the physical scrollbar range changes as unknown heights get measured,
+    // so release needs a logical position independent of last physical scrollTop.
     const onPointerDown = (event: PointerEvent) => {
       const gutterWidth = viewport.offsetWidth - viewport.clientWidth;
       const rect = viewport.getBoundingClientRect();
@@ -665,20 +662,53 @@ export const AgentHistoryScrollMessages: FC<{
         (event.clientX >= rect.right - gutterWidth && event.clientX <= rect.right) ||
         (event.clientX >= rect.left && event.clientX <= rect.left + gutterWidth)
       );
-      // A click on a tool or message is not a scrolling gesture.
       if (inGutter) interrupt();
-      nativeThumbDrag = event.pointerType === "mouse" && event.button === 0 && inGutter
-        ? { pointerId: event.pointerId, scrollTop: viewport.scrollTop } : null;
+      nativeThumbDrag.current = event.pointerType === "mouse" && event.button === 0 && inGutter
+        ? beginAgentNativeThumbDrag({
+            pointerId: event.pointerId, pointerY: event.clientY,
+            viewportTop: rect.top, viewportHeight: viewport.clientHeight,
+            scrollTop: viewport.scrollTop, scrollHeight: viewport.scrollHeight,
+          })
+        : null;
     };
     const onPointerRelease = (event: PointerEvent) => {
-      const drag = nativeThumbDrag;
+      const drag = nativeThumbDrag.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
-      nativeThumbDrag = null;
-      if (Math.abs(viewport.scrollTop - drag.scrollTop) < 1) return;
-      // Reconcile the final *physical* position through the existing scroll
-      // owner. Do not write scrollTop or synthesize a wheel/scroll event.
+      nativeThumbDrag.current = null;
+      const destination = finishAgentNativeThumbDrag(drag, {
+        pointerId: event.pointerId, pointerY: event.clientY,
+        scrollTop: viewport.scrollTop, viewportHeight: viewport.clientHeight, heights,
+      });
+      if (!destination) {
+        // Click-only/track behavior stays native.
+        if (Math.abs(viewport.scrollTop - drag.startScrollTop) >= 1) {
+          interrupt();
+          onScroll();
+        }
+        return;
+      }
       interrupt();
-      onScroll();
+      // The released gesture is a committed navigation, not permission for
+      // subsequent ResizeObserver/native anchor scroll echoes to seek elsewhere.
+      readerIntent.current = consumeAgentReaderScrollIntent(
+        readerIntent.current, readerIntent.current.epoch,
+      );
+      pendingScrollEpoch.current = null;
+      staged.current = null;
+      deferredScroll.current = false;
+      pendingPassiveReveal.current = null;
+      anchor.current = null;
+      visibleIndex.current = destination.index;
+      following.current = destination.kind === "bottom";
+      if (destination.kind === "bottom") {
+        seek(countRef.current - 1, "bottom");
+      } else if (destination.kind === "top") {
+        navigateViewport(0);
+        seek(0, "top");
+      } else {
+        navigateViewport(destination.topPx);
+        seek(destination.index);
+      }
     };
     const onPointerMove = (event: PointerEvent) => {
       if (event.buttons !== 0) interrupt();
@@ -741,6 +771,7 @@ export const AgentHistoryScrollMessages: FC<{
     return () => {
       viewport.removeEventListener("scroll", onScroll);
       viewport.removeEventListener("wheel", onWheel);
+      nativeThumbDrag.current = null;
       if (wheelCoverageTimer.current !== null) clearTimeout(wheelCoverageTimer.current);
       wheelCoverageTimer.current = null;
       wheelIdleReady.current = false;
@@ -754,7 +785,7 @@ export const AgentHistoryScrollMessages: FC<{
       animation.current = null;
       pendingScrollEpoch.current = null;
     };
-  }, [viewportRef, heights, seek, getIsFollowingBottom, requestHeightRevision, budget, budgetRows, costs]);
+  }, [viewportRef, heights, seek, navigateViewport, getIsFollowingBottom, requestHeightRevision, budget, budgetRows, costs]);
   // Measure the committed window and settle towards the known DOM budget.
   // Never supersede an in-progress staged seek or an active search epoch.
   const budgetFrame = useRef<number | null>(null);
