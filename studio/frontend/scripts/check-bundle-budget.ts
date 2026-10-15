@@ -171,8 +171,14 @@ export const BUDGET = {
   // (6,788,764 -> 6,790,997 B raw, 2,041,243 -> 2,042,101 B transfer against 5e5511027, one machine and build,
   // Node 24, chunk count unchanged at 95). Lazy-loading the dialog cost more (2.7 KB transfer) and a 96th
   // startup chunk, so it is imported statically and the budget raised by that growth.
-  transferBytes: 2_042_291,
-  rawBytes: 6_791_181,
+  // Opt-in agent-history integration, fork QA run #38799895171 (15 Oct 2026):
+  // 106 eager chunks, 6,644.2 KiB raw / 2,004.3 KiB compressed measured.
+  // Pure history window / DOM budget modules remain lazy; the eager growth is
+  // from mode preferences and UI controls. The limits leave ~16 KiB raw and
+  // ~12 KiB compressed above that exact integration build for build variance.
+  // Re-measure on each upstream refresh; do not treat this as a blank waiver.
+  transferBytes: 2_065_000,
+  rawBytes: 6_820_000,
 };
 
 // The chunk count is reported but not budgeted. Splitting a page out of the entry raises it while lowering the
