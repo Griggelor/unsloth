@@ -2574,6 +2574,7 @@ export const ja = {
       agentHistoryGlobalDescription: "各チャットで一度に表示するメッセージを少数に限定します。履歴全体は保持され、チャット個別の設定が優先されます。",
       agentHistoryRows: "チャットごとの表示メッセージ数",
       agentHistoryRowsDescription: "仮想ウィンドウの初期サイズ（推奨：5）。チャット個別の設定が優先されます。",
+      agentHistoryJumpToLatest: "最新のメッセージへ移動",
       groups: {
         conversations: { title: "会話" },
         files: { title: "ファイルと貼り付け" },

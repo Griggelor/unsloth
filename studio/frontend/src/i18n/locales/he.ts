@@ -2694,6 +2694,7 @@ export const he = {
       agentHistoryGlobalDescription: "להציג רק מספר קטן של הודעות בכל צ'אט. ההיסטוריה המלאה נשמרת, והגדרות ייחודיות לצ'אט קודמות.",
       agentHistoryRows: "הודעות גלויות בכל צ'אט",
       agentHistoryRowsDescription: "גודל ברירת המחדל של חלון ההודעות (מומלץ 5). הגדרות לכל צ'אט קודמות.",
+      agentHistoryJumpToLatest: "מעבר להודעה האחרונה",
       groups: {
         conversations: {
           title: "שיחות",

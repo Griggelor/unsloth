@@ -2629,6 +2629,7 @@ export const de = {
       agentHistoryGlobalDescription: "Dynamisch passt die Anzahl gerenderter Nachrichten an die DOM-Komplexität an. Fix zeigt ein kleines festes Fenster. Der vollständige Verlauf bleibt erhalten.",
       agentHistoryRows: "Sichtbare Nachrichten pro Chat",
       agentHistoryRowsDescription: "Standardgröße des virtuellen Fensters (5 empfohlen). Individuelle Chat-Einstellungen haben Vorrang.",
+      agentHistoryJumpToLatest: "Zur neuesten Nachricht",
       groups: {
         conversations: { title: "Gespräche" },
         files: { title: "Dateien und Einfügen" },

@@ -2598,6 +2598,7 @@ export const hi = {
       agentHistoryGlobalDescription: "हर चैट में एक बार में केवल कुछ संदेश रेंडर करें। पूरा इतिहास उपलब्ध रहता है; अलग-अलग चैट की सेटिंग को प्राथमिकता मिलती है।",
       agentHistoryRows: "प्रति चैट दिखाई देने वाले संदेश",
       agentHistoryRowsDescription: "वर्चुअल विंडो का डिफ़ॉल्ट आकार (5 अनुशंसित)। अलग चैट की सेटिंग को प्राथमिकता मिलती है।",
+      agentHistoryJumpToLatest: "नवीनतम संदेश पर जाएं",
       groups: {
         conversations: { title: "बातचीत" },
         files: { title: "फ़ाइलें और पेस्ट" },

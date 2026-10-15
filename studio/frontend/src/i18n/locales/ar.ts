@@ -2589,6 +2589,7 @@ export const ar = {
       agentHistoryGlobalDescription: "اعرض عددًا قليلاً فقط من الرسائل في كل دردشة. يظل السجل الكامل متاحًا، وتكون لاستثناءات الدردشة الأولوية.",
       agentHistoryRows: "الرسائل الظاهرة لكل دردشة",
       agentHistoryRowsDescription: "الحجم الافتراضي لنافذة الرسائل (يُنصح بـ 5). تتقدم إعدادات الدردشة الفردية.",
+      agentHistoryJumpToLatest: "الانتقال إلى أحدث رسالة",
       groups: {
         conversations: { title: "المحادثات" },
         files: { title: "الملفات واللصق" },

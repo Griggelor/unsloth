@@ -2640,6 +2640,7 @@ export const en = {
       agentHistoryGlobalDescription: "Dynamic adapts the rendered window to DOM complexity. Fixed keeps a small fixed message window. The complete transcript remains available.",
       agentHistoryRows: "Visible messages per chat",
       agentHistoryRowsDescription: "Default number of mounted messages in virtualized chats (5 recommended). Per-chat overrides take precedence.",
+      agentHistoryJumpToLatest: "Jump to latest message",
       groups: {
         conversations: { title: "Conversations" },
         files: { title: "Files & pasting" },

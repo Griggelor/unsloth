@@ -2608,6 +2608,7 @@ export const ptBR = {
       agentHistoryGlobalDescription: "Renderizar apenas algumas mensagens de cada vez em todas as conversas. O histórico completo permanece acessível; as exceções por conversa têm prioridade.",
       agentHistoryRows: "Mensagens visíveis por conversa",
       agentHistoryRowsDescription: "Tamanho padrão da janela virtual (5 recomendado). Ajustes específicos da conversa têm prioridade.",
+      agentHistoryJumpToLatest: "Ir para a mensagem mais recente",
       groups: {
         conversations: { title: "Conversas" },
         files: { title: "Arquivos e colagem" },

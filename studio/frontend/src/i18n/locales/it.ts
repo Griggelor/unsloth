@@ -2533,6 +2533,7 @@ export const it = {
       agentHistoryGlobalDescription: "Mostra solo pochi messaggi alla volta in ogni chat. La cronologia completa resta accessibile; prevalgono le eccezioni per singola chat.",
       agentHistoryRows: "Messaggi visibili per chat",
       agentHistoryRowsDescription: "Dimensione predefinita della finestra virtuale (5 consigliati). Prevalgono le impostazioni delle singole chat.",
+      agentHistoryJumpToLatest: "Vai all'ultimo messaggio",
       groups: {
         conversations: { title: "Conversazioni" },
         files: { title: "File e incolla" },

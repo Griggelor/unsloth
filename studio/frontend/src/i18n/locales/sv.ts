@@ -2776,6 +2776,7 @@ export const sv = {
       agentHistoryGlobalDescription: "Rendera bara några få meddelanden åt gången i alla chattar. Hela historiken finns kvar; undantag per chatt har företräde.",
       agentHistoryRows: "Synliga meddelanden per chatt",
       agentHistoryRowsDescription: "Standardstorlek för det virtuella fönstret (5 rekommenderas). Chattens egna inställningar har företräde.",
+      agentHistoryJumpToLatest: "Gå till senaste meddelandet",
       groups: {
         conversations: {
           title: "Konversationer",

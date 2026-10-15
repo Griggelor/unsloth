@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 import { AuiProvider, useAui, useAuiState } from "@assistant-ui/react";
+import { useT } from "@/i18n";
 import { MessageByIndexProvider } from "./stale-safe-scopes";
 import { type FC, type ReactElement, type RefObject, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRowNotificationGate } from "./row-notification-gate";
@@ -42,6 +43,7 @@ export const AgentHistoryScrollMessages: FC<{
 }> = memo(function AgentHistoryScrollMessages({
   renderMessage, resetKey, viewportRef, windowRows = AGENT_DEFAULT_ROWS, domLevel, fixedRowsStrict = false, fixedViewportAdaptive = false,
 }) {
+  const t = useT();
   const count = useAuiState(({ thread }) => thread.messages.length);
   const aui = useAui();
   const gate = useMemo(() => createRowNotificationGate(aui), [aui]);
@@ -1044,7 +1046,7 @@ export const AgentHistoryScrollMessages: FC<{
     nativeThumbVirtualTotal.current ?? heights.total, heights.offset(range.end),
   );
   return <div data-agent-history-scroll-list="true" data-agent-history-dom-level={domLevel ?? "legacy"} data-agent-history-qa-stage={staged.current !== null ? "true" : "false"} data-agent-history-qa-stage-target={staged.current?.target ?? ""} data-agent-history-qa-visible-index={visibleIndex.current} data-agent-history-qa-window-start={range.start} data-agent-history-qa-window-end={range.end} role="list" className="flex min-w-0 flex-col">
-    {range.end < count && <button type="button" className="sticky top-2 z-20 mx-auto rounded-full border bg-background px-3 py-1 text-xs shadow" onClick={backToLatest}>Zur neuesten Ausgabe</button>}
+    {range.end < count && <button type="button" className="sticky top-2 z-20 mx-auto rounded-full border bg-background px-3 py-1 text-xs shadow" onClick={backToLatest}>{t("settings.chat.agentHistoryJumpToLatest")}</button>}
     <div ref={topSpacer} data-agent-history-spacer="top" aria-hidden="true" style={{ height: heights.offset(range.start), flexShrink: 0 }} />
     {rows}
     <div ref={bottomSpacer} data-agent-history-spacer="bottom" aria-hidden="true" style={{ height: bottomSpacerPx, flexShrink: 0 }} />

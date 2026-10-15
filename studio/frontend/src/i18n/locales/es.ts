@@ -2620,6 +2620,7 @@ export const es = {
       agentHistoryGlobalDescription: "Mostrar solo unos pocos mensajes a la vez en cada chat. Todo el historial sigue disponible; prevalecen las excepciones por chat.",
       agentHistoryRows: "Mensajes visibles por chat",
       agentHistoryRowsDescription: "Tamaño predeterminado de la ventana virtual (se recomiendan 5). Prevalecen los ajustes de cada chat.",
+      agentHistoryJumpToLatest: "Ir al mensaje más reciente",
       groups: {
         conversations: { title: "Conversaciones" },
         files: { title: "Archivos y pegado" },

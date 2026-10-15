@@ -2605,6 +2605,7 @@ export const ru = {
       agentHistoryGlobalDescription: "Отображать лишь несколько сообщений одновременно во всех чатах. Вся история доступна; настройки отдельных чатов имеют приоритет.",
       agentHistoryRows: "Видимые сообщения в чате",
       agentHistoryRowsDescription: "Стандартный размер виртуального окна (рекомендуется 5). Настройки отдельных чатов имеют приоритет.",
+      agentHistoryJumpToLatest: "Перейти к последнему сообщению",
       groups: {
         conversations: { title: "Беседы" },
         files: { title: "Файлы и вставка" },
