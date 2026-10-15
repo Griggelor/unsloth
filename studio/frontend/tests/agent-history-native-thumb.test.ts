@@ -8,7 +8,7 @@ import {
   agentNativeThumbBottomSpacerPx,
   beginAgentNativeThumbDrag,
   agentNativeThumbLiveTarget,
-  canAdoptAgentNativeThumbPosition,
+  resolveAgentNativeThumbRelease,
   finishAgentNativeThumbDrag,
 } from "../src/components/assistant-ui/agent-history-native-thumb.ts";
 
@@ -113,67 +113,67 @@ test("drag-scoped suffix is bounded if a huge row consumes all projected space",
   assert.equal(agentNativeThumbBottomSpacerPx(Number.NaN, 20), 0);
 });
 
-test("R4 adopts a painted native interior position rather than scrolling twice", () => {
-  const desired = { kind: "position", index: 180, topPx: 125000 } as const;
-  const state = {
-    scrollTop: 125000, scrollHeight: 280000, viewportHeight: 960,
-    logicalTotal: 280000, frozenTotal: 280000,
-    targetVisible: true, windowSettled: true,
-  };
-  assert.equal(canAdoptAgentNativeThumbPosition(desired, state), true);
-  // Minor height remeasurement is tolerated in the same logical track.
-  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
-    ...state, logicalTotal: 279990, frozenTotal: 280000,
-  }), true);
+test("R6 prioritizes the actually painted native scrollbar position over divergent pointer", () => {
+  const drag = startAtBottom();
+  const pointerY = viewportHeight * .52;
+  const fromPointer = finishAgentNativeThumbDrag(drag, {
+    pointerId: 1, pointerY, scrollTop: maxScroll * .20,
+    viewportHeight, heights,
+  });
+  assert.ok(fromPointer && fromPointer.kind === "position");
+  const actualIndex = heights.indexAt(maxScroll * .20 + viewportHeight / 3);
+  const decision = resolveAgentNativeThumbRelease(fromPointer, {
+    nativeScrollTop: maxScroll * .20,
+    nativeScrollHeight: heights.total,
+    viewportHeight, nativeIndex: actualIndex,
+    rowVisibleAtNativePosition: true, count,
+  });
+  assert.deepEqual(decision, { kind: "keep", index: actualIndex });
+  assert.ok(Math.abs(fromPointer.index - actualIndex) > 50,
+    "the release must not snap from the visible native position to the cursor");
 });
 
-test("R4 preserves the R3 recovery path for a lagging native thumb or missing target", () => {
-  const desired = { kind: "position", index: 180, topPx: 125000 } as const;
-  const state = {
-    scrollTop: 95000, scrollHeight: 280000, viewportHeight: 960,
-    logicalTotal: 280000, frozenTotal: 280000,
-    targetVisible: true, windowSettled: true,
-  };
-  assert.equal(canAdoptAgentNativeThumbPosition(desired, state), false);
-  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
-    ...state, scrollTop: 125000, targetVisible: false,
-  }), false);
-  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
-    ...state, scrollTop: 125000, windowSettled: false,
-  }), false);
-  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
-    ...state, scrollTop: 125000, frozenTotal: null,
-  }), false);
-  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
-    ...state, scrollTop: 125000, logicalTotal: 275000,
-  }), false);
+test("R6 preserves the visible native DOM even when heights were remeasured", () => {
+  const fromPointer = { kind: "position", index: 220, topPx: maxScroll * .55 } as const;
+  const actualIndex = 73;
+  const decision = resolveAgentNativeThumbRelease(fromPointer, {
+    nativeScrollTop: maxScroll * .18,
+    nativeScrollHeight: heights.total - 12000,
+    viewportHeight, nativeIndex: actualIndex,
+    rowVisibleAtNativePosition: true, count,
+  });
+  assert.deepEqual(decision, { kind: "keep", index: actualIndex });
 });
 
-test("R4 never adopts the endpoints: top and bottom retain mandatory R3 snaps", () => {
-  const state = {
-    scrollTop: 0, scrollHeight: 280000, viewportHeight: 960,
-    logicalTotal: 280000, frozenTotal: 280000,
-    targetVisible: true, windowSettled: true,
-  };
-  assert.equal(canAdoptAgentNativeThumbPosition({ kind: "top", index: 0, topPx: 0 }, state), false);
-  assert.equal(canAdoptAgentNativeThumbPosition({
-    kind: "bottom", index: 399, topPx: 279040,
-  }, { ...state, scrollTop: 279040 }), false);
+test("R6 recovers blank native viewport at its physical row, not at mouse position", () => {
+  const decision = resolveAgentNativeThumbRelease({
+    kind: "position", index: 300, topPx: maxScroll * .75,
+  }, {
+    nativeScrollTop: maxScroll * .25, nativeScrollHeight: heights.total,
+    viewportHeight, nativeIndex: 101,
+    rowVisibleAtNativePosition: false, count,
+  });
+  assert.deepEqual(decision, { kind: "recover", index: 101 });
 });
 
-test("R4 compares native and desired positions in track pixels, not document pixels", () => {
+test("R6 retains explicit endpoint intent and native physical endpoints", () => {
   const state = {
-    scrollTop: 125000 + 2500, scrollHeight: 280000, viewportHeight: 960,
-    logicalTotal: 280000, frozenTotal: 280000,
-    targetVisible: true, windowSettled: true,
+    nativeScrollTop: maxScroll * .4, nativeScrollHeight: heights.total,
+    viewportHeight, nativeIndex: 162,
+    rowVisibleAtNativePosition: true, count,
   };
-  const desired = { kind: "position", index: 180, topPx: 125000 } as const;
-  // 2500 document pixels over a long transcript represent only 8.6px
-  // on a 960px scrollbar track. No second scroll should be necessary.
-  assert.equal(canAdoptAgentNativeThumbPosition(desired, state), true);
-  assert.equal(canAdoptAgentNativeThumbPosition(desired, {
-    ...state, scrollTop: 125000 + 6000,
-  }), false);
+  assert.deepEqual(resolveAgentNativeThumbRelease({ kind: "top", index: 0, topPx: 0 }, state),
+    { kind: "top", index: 0 });
+  assert.deepEqual(resolveAgentNativeThumbRelease({
+    kind: "bottom", index: count - 1, topPx: maxScroll,
+  }, state), { kind: "bottom", index: count - 1 });
+  assert.deepEqual(resolveAgentNativeThumbRelease({
+    kind: "position", index: 23, topPx: 5000,
+  }, { ...state, nativeScrollTop: 0, nativeIndex: 0 }), { kind: "top", index: 0 });
+  assert.deepEqual(resolveAgentNativeThumbRelease({
+    kind: "position", index: 42, topPx: 15000,
+  }, { ...state, nativeScrollTop: maxScroll, nativeIndex: count - 1 }),
+  { kind: "bottom", index: count - 1 });
 });
 
 test("active thumb follows multiple distant ranges within the SAME held gesture", () => {
