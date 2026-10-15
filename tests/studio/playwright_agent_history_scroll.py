@@ -552,12 +552,14 @@ def check_native_thumb_live_follow(page, level: str) -> None:
 
 
 def check_native_thumb_drift_release(page, level: str) -> None:
-    """The visible native thumb wins if its position diverges from the cursor.
+    """Keep the painted native row when pointerup reports a divergent Y.
 
-    Simulate WebView2 thumb/pointer desynchronization by moving the actual
-    Chromium viewport independently while its native thumb is held. The
-    release must retain the currently visible messages, not seek to the
-    captured pointer's earlier track fraction.
+    First drag the real Chromium scrollbar and wait for the physical viewport
+    and mounted rows to settle WHILE held. Then deliver an intentionally
+    displaced pointerup coordinate to the real JS event listener. Chromium's
+    captured scrollbar can otherwise undo a synthetic scrollTop change during
+    a held gesture, making such a test timing-dependent. Finish with a real
+    mouse.up() to release Chromium's native pointer capture.
     """
     page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
     page.wait_for_timeout(150)
@@ -575,7 +577,8 @@ def check_native_thumb_drift_release(page, level: str) -> None:
     x = box["x"] + box["width"] - metrics["gutter"] / 2
     inset = 18 if metrics["gutter"] <= 12 else 6
     start_y = box["y"] + box["height"] - metrics["horizontalGutter"] - inset
-    halfway_y = box["y"] + box["height"] * .52
+    native_y = box["y"] + box["height"] * 0.24
+    divergent_pointer_y = box["y"] + box["height"] * 0.65
 
     def displayed_state():
         return page.locator(VIEWPORT).evaluate(
@@ -593,45 +596,65 @@ def check_native_thumb_drift_release(page, level: str) -> None:
             }"""
         )
 
+    page.evaluate(
+        """() => {
+          document.querySelector('.aui-thread-viewport').addEventListener(
+            'pointerdown', event => { window.__qaThumbPointerId = event.pointerId; },
+            { once: true }
+          );
+        }"""
+    )
     page.mouse.move(x, start_y)
     page.mouse.down()
     before = None
     try:
-        page.mouse.move(x, halfway_y, steps = 18)
-        page.locator(VIEWPORT).evaluate(
-            """el => {
-              el.scrollTop = Math.max(0, (el.scrollHeight - el.clientHeight) * .24);
-            }"""
-        )
+        page.mouse.move(x, native_y, steps = 18)
         page.wait_for_function(
             """() => {
               const v = document.querySelector('.aui-thread-viewport');
               if (!v) return false;
-              const b = v.getBoundingClientRect();
-              const rows = [...v.querySelectorAll('[data-agent-history-row]')];
-              return rows.some(row => {
-                const r = row.getBoundingClientRect();
-                return r.bottom > b.top + 8 && r.top < b.bottom - 8;
-              }) && v.scrollTop / Math.max(1, v.scrollHeight - v.clientHeight) < .36;
+              const box = v.getBoundingClientRect();
+              const visible = [...v.querySelectorAll('[data-agent-history-row]')]
+                .some(row => {
+                  const r = row.getBoundingClientRect();
+                  return r.bottom > box.top + 8 && r.top < box.bottom - 8;
+                });
+              const fraction = v.scrollTop / Math.max(1, v.scrollHeight - v.clientHeight);
+              return visible && fraction > 0.07 && fraction < 0.43;
             }""",
             timeout = 4_000,
         )
-        # The physical view differs from the pointer's ~52% track position.
-        # Crucially, this sample is taken with the mouse STILL pressed.
         before = displayed_state()
         if not before["visibleRows"]:
-            raise AssertionError(f"{level}: no live content before release: {before}")
+            raise AssertionError(f"{level}: no mounted content during native drag: {before}")
+        # Only the release event's clientY is displaced. No programmatic
+        # scrollTop write or mount operation intervenes here.
+        page.evaluate(
+            """releaseY => {
+              const pointerId = window.__qaThumbPointerId;
+              if (!Number.isInteger(pointerId)) throw Error('Native thumb pointerdown absent');
+              window.dispatchEvent(new PointerEvent('pointerup', {
+                pointerId, pointerType: 'mouse', button: 0,
+                clientY: releaseY, bubbles: true
+              }));
+              delete window.__qaThumbPointerId;
+            }""",
+            divergent_pointer_y,
+        )
     finally:
         page.mouse.up()
     page.wait_for_timeout(650)
     after = displayed_state()
-    displacement = abs(after["visibleRows"][0] - before["visibleRows"][0]) if after["visibleRows"] else 400
+    displacement = (
+        abs(after["visibleRows"][0] - before["visibleRows"][0]) if after["visibleRows"] else 400
+    )
     print(
         json.dumps(
             {
                 "case": "native-thumb-divergent-pointer-release",
                 "level": level,
-                "before": before, "after": after,
+                "before": before,
+                "after": after,
                 "row_displacement": displacement,
             },
             sort_keys = True,
