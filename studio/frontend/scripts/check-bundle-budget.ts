@@ -160,8 +160,15 @@ export const BUDGET = {
   // raw / 83 B transfer to the eager settings and English locale chunks (6,780,553 -> 6,780,901 B raw,
   // 2,038,848 -> 2,038,931 B transfer against 9f5b133254, one machine and build, Node 24, chunk count unchanged
   // at 95). Raised by that growth.
-  transferBytes: 2_039_292,
-  rawBytes: 6_782_356,
+  // Agent History virtualization integration, measured by Frontend CI on 2026-10-15,
+  // source 9b14378672546a: 106 eager chunks, 6,635.9 KiB raw and 2,001.6 KiB
+  // gzip transfer. The existing upstream ceilings (6,782,356 / 2,039,292 bytes)
+  // reject the opt-in chat controls' bounded eager footprint by ~12.5 KiB raw
+  // and ~10.1 KiB transfer; the overall 75 MiB dist budget still passes.
+  // Retain a small margin over this exact integration build. Further reductions
+  // should be measured on the same Node/toolchain build, not inferred from source.
+  transferBytes: 2_054_000,
+  rawBytes: 6_800_000,
 };
 
 // The chunk count is reported but not budgeted. Splitting a page out of the entry raises it while lowering the
