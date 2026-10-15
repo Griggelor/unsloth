@@ -385,6 +385,75 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
         )
 
 
+def check_native_thumb_track_stability(page, level: str) -> None:
+    """One continuous native drag should keep the thumb under the mouse.
+
+    Deliberately sample after every pointer step while the button is STILL
+    down. A previous endpoint-only assertion missed geometry drift.
+    """
+    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
+    page.wait_for_timeout(150)
+    box = page.locator(VIEWPORT).bounding_box()
+    if box is None:
+        raise AssertionError("Native thumb viewport missing")
+    initial = page.locator(VIEWPORT).evaluate(
+        """el => ({
+          scrollHeight: el.scrollHeight, scrollTop: el.scrollTop,
+          height: el.clientHeight, width: el.offsetWidth - el.clientWidth,
+          horizontalGutter: el.offsetHeight - el.clientHeight
+        })"""
+    )
+    if initial["width"] < 8 or initial["scrollHeight"] <= initial["height"]:
+        raise AssertionError(f"{level}: no physical scrollbar: {initial}")
+    x = box["x"] + box["width"] - initial["width"] / 2
+    inset = 18 if initial["width"] <= 12 else 6
+    start_y = box["y"] + box["height"] - initial["horizontalGutter"] - inset
+
+    def thumb_top(scroll_top: float, scroll_height: float) -> float:
+        vh = initial["height"]
+        thumb_height = max(18, vh * vh / scroll_height)
+        travel = max(0, vh - thumb_height)
+        return scroll_top / max(1, scroll_height - vh) * travel
+
+    initial_thumb_top = thumb_top(initial["scrollTop"], initial["scrollHeight"])
+    samples = []
+    page.mouse.move(x, start_y)
+    page.mouse.down()
+    try:
+        for fraction in (0.83, 0.70, 0.57, 0.44, 0.31, 0.18):
+            target_y = box["y"] + box["height"] * fraction
+            page.mouse.move(x, target_y, steps = 2)
+            page.wait_for_timeout(35)
+            point = page.locator(VIEWPORT).evaluate(
+                """el => ({scrollHeight: el.scrollHeight, scrollTop: el.scrollTop})"""
+            )
+            # Delta-only comparison cancels the unknown native grab offset.
+            thumb_delta = initial_thumb_top - thumb_top(
+                point["scrollTop"], point["scrollHeight"]
+            )
+            pointer_delta = start_y - target_y
+            samples.append(
+                {
+                    "finger_y": round(target_y, 2),
+                    "scroll_height": point["scrollHeight"],
+                    "thumb_gap_px": round(abs(pointer_delta - thumb_delta), 2),
+                }
+            )
+    finally:
+        page.mouse.up()
+    worst_height_change = max(
+        abs(sample["scroll_height"] - initial["scrollHeight"]) for sample in samples
+    )
+    worst_gap = max(sample["thumb_gap_px"] for sample in samples)
+    # A 400-message history is about 280k virtual pixels. Permit only a
+    # small intrinsic layout/scrollbar-gutter variance during native dragging.
+    if worst_height_change > max(144, initial["scrollHeight"] * 0.006) or worst_gap > 25:
+        raise AssertionError(
+            f"{level}: scrollbar track drift while mouse held: "
+            f"height_delta={worst_height_change}, gap={worst_gap}, samples={samples}"
+        )
+
+
 def check_dynamic_thumb_under_heavy_dom(page, level: str) -> None:
     """Stress the real renderer with a 15k-descendant tool message before dragging."""
     # Two closely spaced synthetic tool-output resizes exercise the
@@ -539,6 +608,7 @@ def check_isolated_dynamic_thumb_modes(page, thread_id: str, messages: int) -> N
         census(page, messages, f"isolated-dynamic-{level}")
         check_dynamic_streaming_tail_visibility(page, level, messages)
         check_dynamic_thumb_under_heavy_dom(page, level)
+        check_native_thumb_track_stability(page, level)
 
 
 def check_chat_header_menu(page, messages: int) -> None:
