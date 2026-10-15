@@ -115,42 +115,51 @@ export function agentNativeThumbBottomSpacerPx(
 }
 
 /**
- * Decide whether the native scroll position can be adopted at pointer release.
- * The browser already moved the viewport; a second programmatic scrollTo can
- * produce a visible jump. Never skip recovery when the target row is missing,
- * the pointer and native thumb disagree significantly, or lifting the drag
- * height projection will materially change the document's scroll range.
+ * A captured Chromium scrollbar drag has TWO positions: the native viewport
+ * position (which the user watched during the gesture), and the pointer
+ * coordinate. They can diverge in WebView2 even with a fixed scrollHeight.
  *
- * Track distances use CSS pixels on screen, not estimated document pixels.
- * This deliberately does NOT replace endpoint navigation or make the native
- * scrollbar another scrollTop writer.
+ * For an interior release, the browser's actual painted viewport wins.
+ * Never resnap it to the pointer coordinate merely because the two differ.
+ * An explicit track endpoint remains an instruction to reach the first/last
+ * message, preserving R3's one-gesture boundary guarantee.
+ *
+ * Pure decision: this function never writes scrollTop or mounts DOM rows.
  */
-export function canAdoptAgentNativeThumbPosition(
-  destination: AgentNativeThumbDestination,
+export type AgentNativeThumbReleaseAction =
+  | Readonly<{ kind: "top" | "bottom"; index: number }>
+  | Readonly<{ kind: "keep" | "recover"; index: number }>;
+
+export function resolveAgentNativeThumbRelease(
+  pointerDestination: AgentNativeThumbDestination,
   state: Readonly<{
-    scrollTop: number;
-    scrollHeight: number;
+    nativeScrollTop: number;
+    nativeScrollHeight: number;
     viewportHeight: number;
-    logicalTotal: number;
-    frozenTotal: number | null;
-    targetVisible: boolean;
-    windowSettled: boolean;
+    nativeIndex: number;
+    rowVisibleAtNativePosition: boolean;
+    count: number;
   }>,
-): boolean {
-  if (destination.kind !== "position" || !state.targetVisible ||
-      !state.windowSettled || state.frozenTotal === null) return false;
-  const { scrollTop, scrollHeight, viewportHeight, logicalTotal, frozenTotal } = state;
-  if (![scrollTop, scrollHeight, viewportHeight, logicalTotal, frozenTotal]
-    .every(Number.isFinite) || viewportHeight <= 0) return false;
-  const physicalMax = scrollHeight - viewportHeight;
-  const logicalMax = logicalTotal - viewportHeight;
-  if (physicalMax <= 0 || logicalMax <= 0) return false;
-  // Releasing the frozen suffix may otherwise invalidate a seemingly
-  // correct physical coordinate. Fallback to the R3 logical commit.
-  if (Math.abs(frozenTotal - logicalTotal) > viewportHeight / 3) return false;
-  const physicalFraction = Math.min(1, Math.max(0, scrollTop / physicalMax));
-  const targetFraction = Math.min(1, Math.max(0, destination.topPx / logicalMax));
-  return Math.abs(physicalFraction - targetFraction) * viewportHeight <= 12;
+): AgentNativeThumbReleaseAction {
+  const { nativeScrollTop, nativeScrollHeight, viewportHeight, nativeIndex,
+    rowVisibleAtNativePosition, count } = state;
+  const last = Math.max(0, count - 1);
+  const index = Number.isSafeInteger(nativeIndex)
+    ? Math.min(last, Math.max(0, nativeIndex)) : 0;
+  if (pointerDestination.kind === "top") return { kind: "top", index: 0 };
+  if (pointerDestination.kind === "bottom") return { kind: "bottom", index: last };
+  // Chromium has physically reached an endpoint even if native pointer
+  // capture reports the finger a few pixels short of the track boundary.
+  if (Number.isFinite(nativeScrollTop) && nativeScrollTop <= 1 && index === 0) {
+    return { kind: "top", index: 0 };
+  }
+  if (Number.isFinite(nativeScrollHeight) && Number.isFinite(nativeScrollTop) &&
+      Number.isFinite(viewportHeight) &&
+      nativeScrollHeight - nativeScrollTop - viewportHeight <= 2 &&
+      index === last) return { kind: "bottom", index: last };
+  return rowVisibleAtNativePosition
+    ? { kind: "keep", index }
+    : { kind: "recover", index };
 }
 
 /**
