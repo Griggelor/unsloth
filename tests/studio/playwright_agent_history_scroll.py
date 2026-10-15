@@ -373,7 +373,12 @@ def check_adaptive_thumb_drag(page, level: str) -> None:
           firstVisible: !!el.querySelector('[data-agent-history-row="0"]')
         })"""
     )
-    if (at_top["windowStart"] != 0 or settled_top["windowStart"] != 0 or not settled_top["firstVisible"] or abs(settled_top["scrollTop"] - at_top["scrollTop"]) > 2:
+    if (
+        at_top["windowStart"] != 0
+        or settled_top["windowStart"] != 0
+        or not settled_top["firstVisible"]
+        or abs(settled_top["scrollTop"] - at_top["scrollTop"]) > 2
+    ):
         raise AssertionError(
             f"{level}: full native thumb drag failed to settle at transcript origin: "
             f"{at_top} -> {settled_top}"
