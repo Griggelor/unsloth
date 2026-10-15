@@ -8,7 +8,7 @@ import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-searc
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
 import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, agentPhysicalNeighborWindow, agentWheelPrefetchTarget, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentViewportCoverageRecoveryTarget, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
-import { beginAgentNativeThumbDrag, finishAgentNativeThumbDrag, type AgentNativeThumbDrag } from "./agent-history-native-thumb";
+import { agentNativeThumbBottomSpacerPx, beginAgentNativeThumbDrag, finishAgentNativeThumbDrag, type AgentNativeThumbDrag } from "./agent-history-native-thumb";
 import { useAdjustForContentInsertedAbove, useDetachThreadFromBottom, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
   allowsAgentReaderScrollIntent,
@@ -66,10 +66,14 @@ export const AgentHistoryScrollMessages: FC<{
   countRef.current = count;
   const animation = useRef<number | null>(null);
   const topSpacer = useRef<HTMLDivElement>(null);
+  const bottomSpacer = useRef<HTMLDivElement>(null);
   const anchor = useRef<{ index: number; top: number } | null>(null);
   const jump = useRef<"top" | "bottom" | null>(null);
   // Native scrollbar gestures temporarily own the physical viewport position.
   const nativeThumbDrag = useRef<AgentNativeThumbDrag | null>(null);
+  // Drag-scoped virtual document extent. The unmounted suffix compensates
+  // ledger corrections so Chromium does not resize its native thumb mid-drag.
+  const nativeThumbVirtualTotal = useRef<number | null>(null);
   const staged = useRef<{ destination: AgentScrollWindow; target: number } | null>(null);
   const pendingPassiveReveal = useRef<number | null>(null);
   // A real scroll received during staging must be sampled after the last
@@ -112,6 +116,7 @@ export const AgentHistoryScrollMessages: FC<{
     pendingScrollEpoch.current = null;
     navigation.current = initialAgentHistoryNavigation();
     nativeThumbDrag.current = null;
+    nativeThumbVirtualTotal.current = null;
     staged.current = null;
     pendingPassiveReveal.current = null;
     deferredScroll.current = false;
@@ -174,6 +179,17 @@ export const AgentHistoryScrollMessages: FC<{
   }, [count, getIsFollowingBottom]);
   const rangeRef = useRef<AgentScrollWindow>(range);
   rangeRef.current = range;
+  // Synchronously reconcile the spacer in layout/ResizeObserver callbacks:
+  // waiting for a React frame could let Chromium recalculate the scrollbar
+  // track from newly mounted actual DOM heights in the meantime.
+  const reconcileNativeThumbSpacer = useCallback(() => {
+    const frozenTotal = nativeThumbVirtualTotal.current;
+    const spacer = bottomSpacer.current;
+    if (frozenTotal === null || !spacer) return;
+    spacer.style.height = agentNativeThumbBottomSpacerPx(
+      frozenTotal, heights.offset(rangeRef.current.end),
+    ) + "px";
+  }, [heights]);
 
   const seek = useCallback((index: number, snap?: "top" | "bottom") => {
     const viewport = viewportRef.current;
@@ -671,6 +687,8 @@ export const AgentHistoryScrollMessages: FC<{
             scrollTop: viewport.scrollTop, scrollHeight: viewport.scrollHeight,
           })
         : null;
+      nativeThumbVirtualTotal.current = nativeThumbDrag.current !== null
+        ? heights.total : null;
       if (nativeThumbDrag.current !== null) {
         // Detach the shared autoscroll owner at gesture BEGIN, before any
         // row-height changes can make an initial upward scroll look like a clamp.
@@ -682,6 +700,11 @@ export const AgentHistoryScrollMessages: FC<{
       const drag = nativeThumbDrag.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
       nativeThumbDrag.current = null;
+      nativeThumbVirtualTotal.current = null;
+      // Restore live document length after the native gesture ends, regardless
+      // of whether the reader actually moved. The same physical scroll owner
+      // will perform any necessary final logical navigation below.
+      requestHeightRevision();
       const destination = finishAgentNativeThumbDrag(drag, {
         pointerId: event.pointerId, pointerY: event.clientY,
         scrollTop: viewport.scrollTop, viewportHeight: viewport.clientHeight, heights,
@@ -720,6 +743,8 @@ export const AgentHistoryScrollMessages: FC<{
     const onPointerCancel = (event: PointerEvent) => {
       if (nativeThumbDrag.current?.pointerId !== event.pointerId) return;
       nativeThumbDrag.current = null;
+      nativeThumbVirtualTotal.current = null;
+      requestHeightRevision();
       // Cancellation is not a committed destination. Resume native reader
       // sampling; do not map a cancelled coordinate to a logical message.
       interrupt();
@@ -787,6 +812,7 @@ export const AgentHistoryScrollMessages: FC<{
       viewport.removeEventListener("scroll", onScroll);
       viewport.removeEventListener("wheel", onWheel);
       nativeThumbDrag.current = null;
+      nativeThumbVirtualTotal.current = null;
       if (wheelCoverageTimer.current !== null) clearTimeout(wheelCoverageTimer.current);
       wheelCoverageTimer.current = null;
       wheelIdleReady.current = false;
@@ -912,7 +938,10 @@ export const AgentHistoryScrollMessages: FC<{
           if (budget !== null) scheduleBudgetProbe();
         }
       }
-      if (changed) requestHeightRevision();
+      if (changed) {
+        reconcileNativeThumbSpacer();
+        requestHeightRevision();
+      }
     });
     for (const wrapper of viewport.querySelectorAll<HTMLElement>("[data-agent-history-row]")) {
       const row = wrapper.querySelector<HTMLElement>("[data-role]");
@@ -923,8 +952,9 @@ export const AgentHistoryScrollMessages: FC<{
       if (heights.measure(index, row.getBoundingClientRect().height)) requestHeightRevision();
       observer.observe(row);
     }
+    reconcileNativeThumbSpacer();
     return () => observer.disconnect();
-  }, [range.start, range.end, count, viewportRef, heights, requestHeightRevision, budget, scheduleBudgetProbe]);
+  }, [range.start, range.end, count, viewportRef, heights, requestHeightRevision, budget, scheduleBudgetProbe, reconcileNativeThumbSpacer]);
 
   // A ResizeObserver measurement must update both spacers, not merely the ledger.
   void heightRevision;
@@ -950,10 +980,13 @@ export const AgentHistoryScrollMessages: FC<{
     following.current = true;
     seek(countRef.current - 1, "bottom");
   };
+  const bottomSpacerPx = agentNativeThumbBottomSpacerPx(
+    nativeThumbVirtualTotal.current ?? heights.total, heights.offset(range.end),
+  );
   return <div data-agent-history-scroll-list="true" data-agent-history-dom-level={domLevel ?? "legacy"} data-agent-history-qa-stage={staged.current !== null ? "true" : "false"} data-agent-history-qa-stage-target={staged.current?.target ?? ""} data-agent-history-qa-visible-index={visibleIndex.current} data-agent-history-qa-window-start={range.start} data-agent-history-qa-window-end={range.end} role="list" className="flex min-w-0 flex-col">
     {range.end < count && <button type="button" className="sticky top-2 z-20 mx-auto rounded-full border bg-background px-3 py-1 text-xs shadow" onClick={backToLatest}>Zur neuesten Ausgabe</button>}
     <div ref={topSpacer} data-agent-history-spacer="top" aria-hidden="true" style={{ height: heights.offset(range.start), flexShrink: 0 }} />
     {rows}
-    <div data-agent-history-spacer="bottom" aria-hidden="true" style={{ height: Math.max(0, heights.total - heights.offset(range.end)), flexShrink: 0 }} />
+    <div ref={bottomSpacer} data-agent-history-spacer="bottom" aria-hidden="true" style={{ height: bottomSpacerPx, flexShrink: 0 }} />
   </div>;
 });
