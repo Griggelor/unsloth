@@ -7,6 +7,7 @@ import { AgentHeightIndex } from "../src/components/assistant-ui/agent-history-s
 import {
   agentNativeThumbBottomSpacerPx,
   beginAgentNativeThumbDrag,
+  agentNativeThumbLiveTarget,
   canAdoptAgentNativeThumbPosition,
   finishAgentNativeThumbDrag,
 } from "../src/components/assistant-ui/agent-history-native-thumb.ts";
@@ -173,4 +174,23 @@ test("R4 compares native and desired positions in track pixels, not document pix
   assert.equal(canAdoptAgentNativeThumbPosition(desired, {
     ...state, scrollTop: 125000 + 6000,
   }), false);
+});
+
+test("active thumb follows multiple distant ranges within the SAME held gesture", () => {
+  const current = { start: 380, end: 400 };
+  assert.equal(agentNativeThumbLiveTarget(current, null, 190, 400), 190);
+  const staging = { start: 180, end: 196 };
+  assert.equal(agentNativeThumbLiveTarget({ start: 190, end: 191 }, staging, 192, 400), null);
+  assert.equal(agentNativeThumbLiveTarget({ start: 190, end: 191 }, staging, 40, 400), 40);
+  assert.equal(agentNativeThumbLiveTarget({ start: 40, end: 41 }, { start: 32, end: 48 }, 44, 400), null);
+  assert.equal(agentNativeThumbLiveTarget({ start: 32, end: 48 }, null, 390, 400), 390);
+});
+
+test("active native thumb never seeks for already covered rows or invalid targets", () => {
+  const mounted = { start: 140, end: 156 };
+  assert.equal(agentNativeThumbLiveTarget(mounted, null, 148, 400), null);
+  assert.equal(agentNativeThumbLiveTarget(mounted, null, -1, 400), null);
+  assert.equal(agentNativeThumbLiveTarget(mounted, null, 400, 400), null);
+  assert.equal(agentNativeThumbLiveTarget(mounted, null, Number.NaN, 400), null);
+  assert.equal(agentNativeThumbLiveTarget(mounted, null, 5, 0), null);
 });
