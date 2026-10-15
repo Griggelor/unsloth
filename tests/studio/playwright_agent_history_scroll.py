@@ -469,6 +469,88 @@ def check_native_thumb_track_stability(page, level: str) -> None:
         )
 
 
+def check_native_thumb_live_follow(page, level: str) -> None:
+    """A SINGLE held native scrollbar gesture must update mounted rows live.
+
+    Chromium captures the thumb outside the DOM pointermove stream. Verify
+    the actual row intersects the viewport at two distant positions BEFORE
+    pointerup; an eventual release-only seek cannot make this test pass.
+    """
+    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
+    page.wait_for_timeout(180)
+    box = page.locator(VIEWPORT).bounding_box()
+    if box is None:
+        raise AssertionError(f"{level}: live thumb viewport missing")
+    metrics = page.locator(VIEWPORT).evaluate(
+        """el => ({
+          gutter: el.offsetWidth - el.clientWidth,
+          horizontalGutter: el.offsetHeight - el.clientHeight,
+          start: Number(el.querySelector('[data-agent-history-scroll-list]')
+            ?.dataset.agentHistoryQaWindowStart ?? -1)
+        })"""
+    )
+    if metrics["gutter"] < 8 or metrics["start"] < 200:
+        raise AssertionError(f"{level}: missing native thumb/start window: {metrics}")
+    x = box["x"] + box["width"] - metrics["gutter"] / 2
+    inset = 18 if metrics["gutter"] <= 12 else 6
+    y = box["y"] + box["height"] - metrics["horizontalGutter"] - inset
+    samples = []
+    page.mouse.move(x, y)
+    page.mouse.down()
+    try:
+        for fraction in (0.55, 0.18):
+            target_y = box["y"] + box["height"] * fraction
+            page.mouse.move(x, target_y, steps = 18)
+            # The button must remain down throughout this assertion.
+            page.wait_for_function(
+                """limit => {
+                  const v = document.querySelector('.aui-thread-viewport');
+                  const list = v?.querySelector('[data-agent-history-scroll-list]');
+                  if (!v || !list) return false;
+                  const rangeStart = Number(list.dataset.agentHistoryQaWindowStart);
+                  const box = v.getBoundingClientRect();
+                  const rows = [...list.querySelectorAll('[data-agent-history-row]')];
+                  return rangeStart < limit && rows.some(row => {
+                    const r = row.getBoundingClientRect();
+                    return r.bottom > box.top + 8 && r.top < box.bottom - 8;
+                  });
+                }""",
+                arg = 280 if fraction > 0.5 else 150,
+                timeout = 4_000,
+            )
+            sample = page.locator(VIEWPORT).evaluate(
+                """el => {
+                  const list = el.querySelector('[data-agent-history-scroll-list]');
+                  const v = el.getBoundingClientRect();
+                  return {
+                    top: el.scrollTop,
+                    windowStart: Number(list.dataset.agentHistoryQaWindowStart),
+                    windowEnd: Number(list.dataset.agentHistoryQaWindowEnd),
+                    mounted: list.querySelectorAll('[data-agent-history-row]').length,
+                    visible: [...list.querySelectorAll('[data-agent-history-row]')]
+                      .filter(row => {
+                        const r = row.getBoundingClientRect();
+                        return r.bottom > v.top + 8 && r.top < v.bottom - 8;
+                      }).map(row => Number(row.dataset.agentHistoryRow)),
+                  };
+                }"""
+            )
+            if not sample["visible"] or sample["mounted"] > 32:
+                raise AssertionError(f"{level}: bad live thumb coverage while held: {sample}")
+            samples.append(sample)
+    finally:
+        page.mouse.up()
+    if not samples[1]["windowStart"] < samples[0]["windowStart"] - 20:
+        raise AssertionError(f"{level}: live windows failed to chase held thumb: {samples}")
+    print(
+        json.dumps(
+            {"case": "native-thumb-live-follow", "level": level, "samples": samples},
+            sort_keys = True,
+        ),
+        flush = True,
+    )
+
+
 def check_native_thumb_release_telemetry(page, level: str) -> None:
     """Record native position immediately before/after release on real Chromium.
 
@@ -688,6 +770,7 @@ def check_isolated_dynamic_thumb_modes(page, thread_id: str, messages: int) -> N
         check_dynamic_streaming_tail_visibility(page, level, messages)
         check_dynamic_thumb_under_heavy_dom(page, level)
         check_native_thumb_track_stability(page, level)
+        check_native_thumb_live_follow(page, level)
         check_native_thumb_release_telemetry(page, level)
 
 
