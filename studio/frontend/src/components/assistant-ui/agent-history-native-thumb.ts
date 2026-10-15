@@ -113,3 +113,26 @@ export function agentNativeThumbBottomSpacerPx(
       !Number.isFinite(mountedEndOffset)) return 0;
   return Math.max(0, virtualTotalAtDragStart - mountedEndOffset);
 }
+
+/**
+ * The frozen native scrollbar coordinate belongs to the old virtual extent.
+ * Rebase its normalized logical destination onto the actual DOM extent only
+ * AFTER React restores live spacer heights. Invoked once in useLayoutEffect,
+ * not during an active pointer gesture or from a ResizeObserver.
+ */
+export function agentNativeThumbPostRebaseTop(
+  destination: AgentNativeThumbDestination,
+  logicalTotal: number,
+  scrollHeight: number,
+  viewportHeight: number,
+): number {
+  if (![destination.topPx, logicalTotal, scrollHeight, viewportHeight]
+    .every(Number.isFinite) || viewportHeight <= 0) return 0;
+  const maxActual = Math.max(0, scrollHeight - viewportHeight);
+  const maxLogical = Math.max(0, logicalTotal - viewportHeight);
+  if (destination.kind === "top") return 0;
+  if (destination.kind === "bottom") return maxActual;
+  if (maxLogical === 0) return 0;
+  const fraction = Math.min(1, Math.max(0, destination.topPx / maxLogical));
+  return fraction * maxActual;
+}
