@@ -575,7 +575,7 @@ def check_native_thumb_drift_release(page, level: str) -> None:
     x = box["x"] + box["width"] - metrics["gutter"] / 2
     inset = 18 if metrics["gutter"] <= 12 else 6
     start_y = box["y"] + box["height"] - metrics["horizontalGutter"] - inset
-    halfway_y = box["y"] + box["height"] * .52
+    halfway_y = box["y"] + box["height"] * 0.52
 
     def displayed_state():
         return page.locator(VIEWPORT).evaluate(
@@ -625,13 +625,16 @@ def check_native_thumb_drift_release(page, level: str) -> None:
         page.mouse.up()
     page.wait_for_timeout(650)
     after = displayed_state()
-    displacement = abs(after["visibleRows"][0] - before["visibleRows"][0]) if after["visibleRows"] else 400
+    displacement = (
+        abs(after["visibleRows"][0] - before["visibleRows"][0]) if after["visibleRows"] else 400
+    )
     print(
         json.dumps(
             {
                 "case": "native-thumb-divergent-pointer-release",
                 "level": level,
-                "before": before, "after": after,
+                "before": before,
+                "after": after,
                 "row_displacement": displacement,
             },
             sort_keys = True,
