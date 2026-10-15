@@ -9,7 +9,7 @@ import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/
 import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, agentPhysicalNeighborWindow, agentWheelPrefetchTarget, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentViewportCoverageRecoveryTarget, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
 import { beginAgentNativeThumbDrag, finishAgentNativeThumbDrag, type AgentNativeThumbDrag } from "./agent-history-native-thumb";
-import { useAdjustForContentInsertedAbove, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
+import { useAdjustForContentInsertedAbove, useDetachThreadFromBottom, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
   allowsAgentReaderScrollIntent,
   allowsRecentAgentBoundaryReconcile,
@@ -59,6 +59,7 @@ export const AgentHistoryScrollMessages: FC<{
   const jumpBottom = useScrollThreadToBottom();
   const getIsFollowingBottom = useGetThreadBottomFollowIntent();
   const correctAnchor = useAdjustForContentInsertedAbove();
+  const detachFromBottom = useDetachThreadFromBottom();
   const navigateViewport = useNavigateThreadViewport();
   const following = useRef(true);
   const countRef = useRef(count);
@@ -670,6 +671,12 @@ export const AgentHistoryScrollMessages: FC<{
             scrollTop: viewport.scrollTop, scrollHeight: viewport.scrollHeight,
           })
         : null;
+      if (nativeThumbDrag.current !== null) {
+        // Detach the shared autoscroll owner at gesture BEGIN, before any
+        // row-height changes can make an initial upward scroll look like a clamp.
+        detachFromBottom();
+        following.current = false;
+      }
     };
     const onPointerRelease = (event: PointerEvent) => {
       const drag = nativeThumbDrag.current;
@@ -709,6 +716,14 @@ export const AgentHistoryScrollMessages: FC<{
         navigateViewport(destination.topPx);
         seek(destination.index);
       }
+    };
+    const onPointerCancel = (event: PointerEvent) => {
+      if (nativeThumbDrag.current?.pointerId !== event.pointerId) return;
+      nativeThumbDrag.current = null;
+      // Cancellation is not a committed destination. Resume native reader
+      // sampling; do not map a cancelled coordinate to a logical message.
+      interrupt();
+      onScroll();
     };
     const onPointerMove = (event: PointerEvent) => {
       if (event.buttons !== 0) interrupt();
@@ -766,7 +781,7 @@ export const AgentHistoryScrollMessages: FC<{
     viewport.addEventListener("pointerdown", onPointerDown, { passive: true });
     viewport.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("pointerup", onPointerRelease, { passive: true });
-    window.addEventListener("pointercancel", onPointerRelease, { passive: true });
+    window.addEventListener("pointercancel", onPointerCancel, { passive: true });
     window.addEventListener("keydown", onKeyDown);
     return () => {
       viewport.removeEventListener("scroll", onScroll);
@@ -779,13 +794,13 @@ export const AgentHistoryScrollMessages: FC<{
       viewport.removeEventListener("pointerdown", onPointerDown);
       viewport.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerRelease);
-      window.removeEventListener("pointercancel", onPointerRelease);
+      window.removeEventListener("pointercancel", onPointerCancel);
       window.removeEventListener("keydown", onKeyDown);
       if (animation.current !== null) cancelAnimationFrame(animation.current);
       animation.current = null;
       pendingScrollEpoch.current = null;
     };
-  }, [viewportRef, heights, seek, navigateViewport, getIsFollowingBottom, requestHeightRevision, budget, budgetRows, costs]);
+  }, [viewportRef, heights, seek, navigateViewport, detachFromBottom, getIsFollowingBottom, requestHeightRevision, budget, budgetRows, costs]);
   // Measure the committed window and settle towards the known DOM budget.
   // Never supersede an in-progress staged seek or an active search epoch.
   const budgetFrame = useRef<number | null>(null);
