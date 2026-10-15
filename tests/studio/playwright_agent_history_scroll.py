@@ -469,6 +469,72 @@ def check_native_thumb_track_stability(page, level: str) -> None:
         )
 
 
+def check_native_thumb_release_telemetry(page, level: str) -> None:
+    """Record native position immediately before/after release on real Chromium.
+
+    No synthetic scroll or wheel recovery is issued. Measurements are
+    observational, not hard timing gates: thumb capture and scheduling are
+    browser-specific. A visible message after release is mandatory.
+    """
+    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
+    page.wait_for_timeout(150)
+    box = page.locator(VIEWPORT).bounding_box()
+    if box is None:
+        raise AssertionError(f"{level}: viewport disappeared during release QA")
+    metrics = page.locator(VIEWPORT).evaluate(
+        """el => ({
+          gutter: el.offsetWidth - el.clientWidth,
+          horizontalGutter: el.offsetHeight - el.clientHeight
+        })"""
+    )
+    if metrics["gutter"] < 8:
+        raise AssertionError(f"{level}: native scrollbar gutter disappeared")
+    x = box["x"] + box["width"] - metrics["gutter"] / 2
+    inset = 18 if metrics["gutter"] <= 12 else 6
+    start_y = box["y"] + box["height"] - metrics["horizontalGutter"] - inset
+    target_y = box["y"] + box["height"] * 0.5
+    page.mouse.move(x, start_y)
+    page.mouse.down()
+    page.mouse.move(x, target_y, steps = 18)
+    page.wait_for_timeout(250)
+    before = page.locator(VIEWPORT).evaluate(
+        """el => ({ top: el.scrollTop, height: el.scrollHeight })"""
+    )
+    page.mouse.up()
+    page.wait_for_timeout(750)
+    after = page.locator(VIEWPORT).evaluate(
+        """el => {
+          const view = el.getBoundingClientRect();
+          const rows = [...el.querySelectorAll('[data-agent-history-row]')];
+          const visible = rows.filter(row => {
+            const rect = row.getBoundingClientRect();
+            return rect.bottom > view.top + 8 && rect.top < view.bottom - 8;
+          });
+          return {
+            top: el.scrollTop, height: el.scrollHeight,
+            visibleRows: visible.map(row => Number(row.dataset.agentHistoryRow)),
+          };
+        }"""
+    )
+    print(
+        json.dumps(
+            {
+                "case": "native-thumb-release-telemetry",
+                "level": level,
+                "before_release": before,
+                "after_settle": after,
+                "delta_scroll_top": round(after["top"] - before["top"], 2),
+            },
+            sort_keys = True,
+        ),
+        flush = True,
+    )
+    if not after["visibleRows"]:
+        raise AssertionError(
+            f"{level}: release left a blank viewport: {before} -> {after}"
+        )
+
+
 def check_dynamic_thumb_under_heavy_dom(page, level: str) -> None:
     """Stress the real renderer with a 15k-descendant tool message before dragging."""
     # Two closely spaced synthetic tool-output resizes exercise the
@@ -624,6 +690,7 @@ def check_isolated_dynamic_thumb_modes(page, thread_id: str, messages: int) -> N
         check_dynamic_streaming_tail_visibility(page, level, messages)
         check_dynamic_thumb_under_heavy_dom(page, level)
         check_native_thumb_track_stability(page, level)
+        check_native_thumb_release_telemetry(page, level)
 
 
 def check_chat_header_menu(page, messages: int) -> None:
