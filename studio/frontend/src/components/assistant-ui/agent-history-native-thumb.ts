@@ -152,3 +152,26 @@ export function canAdoptAgentNativeThumbPosition(
   const targetFraction = Math.min(1, Math.max(0, destination.topPx / logicalMax));
   return Math.abs(physicalFraction - targetFraction) * viewportHeight <= 12;
 }
+
+/**
+ * While the native thumb is still held, mount the logical row currently
+ * under Chromium's real scroll position. This authorization is scoped to
+ * the captured thumb gesture: normal wheel/anchor scroll events continue to
+ * use one-shot reader intent epochs.
+ *
+ * A progressive DOM-budget window may still be filling in. Retarget only
+ * if the thumb moved OUTSIDE its eventual destination; otherwise allow
+ * the existing 1-2-row-per-frame staging process to finish.
+ */
+export function agentNativeThumbLiveTarget(
+  current: Readonly<{ start: number; end: number }>,
+  stagedDestination: Readonly<{ start: number; end: number }> | null,
+  index: number,
+  count: number,
+): number | null {
+  if (!Number.isSafeInteger(index) || !Number.isSafeInteger(count) ||
+      count <= 0 || index < 0 || index >= count) return null;
+  const desired = stagedDestination ?? current;
+  if (index >= desired.start && index < desired.end) return null;
+  return index;
+}
