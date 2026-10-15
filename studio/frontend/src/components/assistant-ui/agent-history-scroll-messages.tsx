@@ -8,7 +8,7 @@ import { findAgentTextMatches, type AgentFindMatch } from "./agent-history-searc
 import { notifyFindTargets, registerFindTarget, type FindTargetResult } from "@/features/find-in-page/lib/find-targets";
 import { AGENT_DOM_TARGETS, AGENT_FIXED_VIEWPORT_DOM_TARGET, AGENT_FIXED_VIEWPORT_MAX_ROWS, AgentDomCostIndex, agentBudgetWindow, agentPhysicalNeighborWindow, agentWheelPrefetchTarget, needsAgentBudgetRebalance } from "./agent-history-dom-budget";
 import { AGENT_DEFAULT_ROWS, AgentHeightIndex, agentIndexAtScrollPosition, agentViewportCoverageRecoveryTarget, agentWindowAtIndex, agentWindowOnAppend, latestAgentWindow, nextProgressiveAgentWindow, type AgentScrollWindow } from "./agent-history-scroll-window";
-import { agentNativeThumbBottomSpacerPx, beginAgentNativeThumbDrag, canAdoptAgentNativeThumbPosition, finishAgentNativeThumbDrag, type AgentNativeThumbDrag } from "./agent-history-native-thumb";
+import { agentNativeThumbBottomSpacerPx, agentNativeThumbLiveTarget, beginAgentNativeThumbDrag, canAdoptAgentNativeThumbPosition, finishAgentNativeThumbDrag, type AgentNativeThumbDrag } from "./agent-history-native-thumb";
 import { useAdjustForContentInsertedAbove, useDetachThreadFromBottom, useGetThreadBottomFollowIntent, useNavigateThreadViewport, useScrollThreadToBottom } from "./use-intent-aware-autoscroll";
 import {
   allowsAgentReaderScrollIntent,
@@ -573,7 +573,12 @@ export const AgentHistoryScrollMessages: FC<{
     };
     const onScroll = () => {
       const epoch = readerIntent.current.epoch;
-      if (!allowsAgentReaderScrollIntent(readerIntent.current, epoch) &&
+      // Native Chromium captures the thumb outside the DOM pointermove stream.
+      // Its actual scroll events are reader intent for the *entire* captured
+      // gesture, not just its first window transition. Regular wheel/anchor
+      // events retain their strict one-transition-per-epoch gate.
+      if (nativeThumbDrag.current === null &&
+          !allowsAgentReaderScrollIntent(readerIntent.current, epoch) &&
           !physicalEdgeReconcile()) return;
       pendingScrollEpoch.current = epoch;
       if (animation.current !== null) return;
@@ -581,11 +586,35 @@ export const AgentHistoryScrollMessages: FC<{
         animation.current = null;
         const pendingEpoch = pendingScrollEpoch.current;
         pendingScrollEpoch.current = null;
+        const activeThumb = nativeThumbDrag.current !== null;
         const freshGesture = pendingEpoch !== null &&
           allowsAgentReaderScrollIntent(readerIntent.current, pendingEpoch);
         const recentPhysicalEdge = !freshGesture && physicalEdgeReconcile();
-        if (pendingEpoch === null || (!freshGesture && !recentPhysicalEdge) ||
+        if (pendingEpoch === null || (!activeThumb && !freshGesture && !recentPhysicalEdge) ||
             !allowsPassiveAgentScroll(navigation.current)) return;
+        if (activeThumb) {
+          // The viewport is owned by the native thumb. Chase its actual
+          // physical coordinate with DOM-window changes only: never write
+          // scrollTop, synthesize pointermove or enable passive anchor repair.
+          // Retarget a progressive window only after the thumb leaves its
+          // eventual destination; otherwise let its budgeted staging finish.
+          const spacer = topSpacer.current;
+          if (!spacer || countRef.current === 0) return;
+          const index = agentIndexAtScrollPosition(
+            heights, spacer.getBoundingClientRect().top,
+            viewport.getBoundingClientRect().top,
+            viewport.scrollTop, viewport.clientHeight,
+          );
+          const nextTarget = agentNativeThumbLiveTarget(
+            rangeRef.current, staged.current?.destination ?? null,
+            index, countRef.current,
+          );
+          if (nextTarget !== null) {
+            visibleIndex.current = nextTarget;
+            seek(nextTarget);
+          }
+          return;
+        }
         if (staged.current !== null) {
           // A second REAL wheel gesture may move by many screens before the
           // old one-row staging transaction completes. Retarget immediately
