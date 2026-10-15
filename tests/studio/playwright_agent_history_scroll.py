@@ -551,6 +551,99 @@ def check_native_thumb_live_follow(page, level: str) -> None:
     )
 
 
+def check_native_thumb_drift_release(page, level: str) -> None:
+    """The visible native thumb wins if its position diverges from the cursor.
+
+    Simulate WebView2 thumb/pointer desynchronization by moving the actual
+    Chromium viewport independently while its native thumb is held. The
+    release must retain the currently visible messages, not seek to the
+    captured pointer's earlier track fraction.
+    """
+    page.locator(VIEWPORT).evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
+    page.wait_for_timeout(150)
+    box = page.locator(VIEWPORT).bounding_box()
+    if box is None:
+        raise AssertionError(f"{level}: release-drift viewport missing")
+    metrics = page.locator(VIEWPORT).evaluate(
+        """el => ({
+          gutter: el.offsetWidth - el.clientWidth,
+          horizontalGutter: el.offsetHeight - el.clientHeight
+        })"""
+    )
+    if metrics["gutter"] < 8:
+        raise AssertionError(f"{level}: release-drift native scrollbar missing")
+    x = box["x"] + box["width"] - metrics["gutter"] / 2
+    inset = 18 if metrics["gutter"] <= 12 else 6
+    start_y = box["y"] + box["height"] - metrics["horizontalGutter"] - inset
+    halfway_y = box["y"] + box["height"] * .52
+
+    def displayed_state():
+        return page.locator(VIEWPORT).evaluate(
+            """el => {
+              const view = el.getBoundingClientRect();
+              const rows = [...el.querySelectorAll('[data-agent-history-row]')];
+              const visible = rows.filter(row => {
+                const rect = row.getBoundingClientRect();
+                return rect.bottom > view.top + 8 && rect.top < view.bottom - 8;
+              });
+              return {
+                top: el.scrollTop, height: el.scrollHeight,
+                visibleRows: visible.map(row => Number(row.dataset.agentHistoryRow))
+              };
+            }"""
+        )
+
+    page.mouse.move(x, start_y)
+    page.mouse.down()
+    before = None
+    try:
+        page.mouse.move(x, halfway_y, steps = 18)
+        page.locator(VIEWPORT).evaluate(
+            """el => {
+              el.scrollTop = Math.max(0, (el.scrollHeight - el.clientHeight) * .24);
+            }"""
+        )
+        page.wait_for_function(
+            """() => {
+              const v = document.querySelector('.aui-thread-viewport');
+              if (!v) return false;
+              const b = v.getBoundingClientRect();
+              const rows = [...v.querySelectorAll('[data-agent-history-row]')];
+              return rows.some(row => {
+                const r = row.getBoundingClientRect();
+                return r.bottom > b.top + 8 && r.top < b.bottom - 8;
+              }) && v.scrollTop / Math.max(1, v.scrollHeight - v.clientHeight) < .36;
+            }""",
+            timeout = 4_000,
+        )
+        # The physical view differs from the pointer's ~52% track position.
+        # Crucially, this sample is taken with the mouse STILL pressed.
+        before = displayed_state()
+        if not before["visibleRows"]:
+            raise AssertionError(f"{level}: no live content before release: {before}")
+    finally:
+        page.mouse.up()
+    page.wait_for_timeout(650)
+    after = displayed_state()
+    displacement = abs(after["visibleRows"][0] - before["visibleRows"][0]) if after["visibleRows"] else 400
+    print(
+        json.dumps(
+            {
+                "case": "native-thumb-divergent-pointer-release",
+                "level": level,
+                "before": before, "after": after,
+                "row_displacement": displacement,
+            },
+            sort_keys = True,
+        ),
+        flush = True,
+    )
+    if displacement > 24:
+        raise AssertionError(
+            f"{level}: pointer-up snapped away from native thumb position: {before} -> {after}"
+        )
+
+
 def check_native_thumb_release_telemetry(page, level: str) -> None:
     """Record native position immediately before/after release on real Chromium.
 
@@ -771,6 +864,7 @@ def check_isolated_dynamic_thumb_modes(page, thread_id: str, messages: int) -> N
         check_dynamic_thumb_under_heavy_dom(page, level)
         check_native_thumb_track_stability(page, level)
         check_native_thumb_live_follow(page, level)
+        check_native_thumb_drift_release(page, level)
         check_native_thumb_release_telemetry(page, level)
 
 
