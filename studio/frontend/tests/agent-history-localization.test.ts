@@ -12,15 +12,19 @@ const locales = [
 test("the virtual-history jump label exists exactly once in every locale", () => {
   for (const locale of locales) {
     const source = readSrc(`i18n/locales/${locale}.ts`);
-    const declarations = source.match(/^\\s+agentHistoryJumpToLatest: ".+",$/gm) ?? [];
+    const declarations = source.split("\n").filter((line) =>
+      line.includes("agentHistoryJumpToLatest:"));
     assert.equal(declarations.length, 1, `${locale}: missing or duplicated jump label`);
+    assert.ok(declarations[0].includes('agentHistoryJumpToLatest: "'));
   }
 });
 
 test("the visible virtual-history jump button uses the shared translation key", () => {
   const source = readSrc("components/assistant-ui/agent-history-scroll-messages.tsx");
-  assert.match(source, /import \\{ useT \\} from "@\\/i18n";/);
-  assert.match(source, /const t = useT\\(\\);/);
-  assert.match(source, /onClick=\\{backToLatest\\}>\\{t\\("settings\\.chat\\.agentHistoryJumpToLatest"\\)\\}<\\/button>/);
-  assert.doesNotMatch(source, />Zur neuesten Ausgabe<\\/button>/);
+  assert.ok(source.includes('import { useT } from "@/i18n";'));
+  assert.ok(source.includes("const t = useT();"));
+  assert.ok(source.includes(
+    'onClick={backToLatest}>{t("settings.chat.agentHistoryJumpToLatest")}</button>',
+  ));
+  assert.ok(!source.includes(">Zur neuesten Ausgabe</button>"));
 });
