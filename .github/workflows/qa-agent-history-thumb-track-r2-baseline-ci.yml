@@ -6,6 +6,7 @@ on:
       - qa/agent-history-thumb-track-r2-baseline-ci-20261015
 permissions:
   contents: read
+jobs:
   browser:
     name: Focused browser (${{ matrix.suite }})
     runs-on: ubuntu-latest
