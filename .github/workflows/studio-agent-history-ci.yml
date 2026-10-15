@@ -11,6 +11,7 @@ on:
       - 'tests/studio/playwright_agent_history_*.py'
       - 'tests/studio/studiobench/runtime/**'
       - '.github/actions/install-unsloth-local/**'
+      - '.github/scripts/retry-with-apt-lock.sh'
       - '.github/scripts/boot-studio-api-only.sh'
       - '.github/scripts/wait-for-health.sh'
       - '.github/workflows/studio-agent-history-ci.yml'
