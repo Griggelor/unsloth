@@ -42,6 +42,7 @@ from core.inference.context_window import (
 )
 from core.inference.instruction_pin import is_substantive
 from utils.current_date_prompt_settings import strip_current_date_update_note
+from utils.context_latency_trace import trace_call
 
 # "checkpoint" resets the epoch; "rolling" is the pre-existing window, byte for byte, and is both the A/B arm and the
 # escape hatch for a template family that misbehaves.
@@ -529,7 +530,7 @@ def fit_checkpoint_context(
         return messages, None
 
     prompt_target = prompt_budget(context_length, max_tokens)
-    initial_tokens = count_tokens(list(messages))
+    initial_tokens = trace_call("checkpoint.initial_exact_count", count_tokens, list(messages))
     if initial_tokens <= prompt_target and sticky_dropped <= 0 and not force_reset:
         return messages, None
 
@@ -594,7 +595,7 @@ def fit_checkpoint_context(
             dropped = replayed
 
     projected, block = _project(fitted)
-    current_tokens = count_tokens(projected)
+    current_tokens = trace_call("checkpoint.replay_exact_count", count_tokens, projected)
     # What `current_tokens` prices, tracked separately because `projected` is rebound below on a path that does not
     # re-count. The refusal reports the pair together.
     measured = projected
@@ -622,7 +623,7 @@ def fit_checkpoint_context(
             dropped = reset_dropped
             is_new_epoch = True
             projected, block = _project(fitted)
-            current_tokens = count_tokens(projected)
+            current_tokens = trace_call("checkpoint.reset_exact_count", count_tokens, projected)
             measured = projected
             if current_tokens <= hold_target:
                 break
@@ -640,7 +641,7 @@ def fit_checkpoint_context(
         if block:
             projected = _without_block(fitted)
             block = ""
-            current_tokens = count_tokens(projected)
+            current_tokens = trace_call("checkpoint.no_carry_exact_count", count_tokens, projected)
             measured = projected
     if current_tokens > prompt_target:
         # let the rolling fit retry from the originals; any projection made here would be discarded by `_fit_context`

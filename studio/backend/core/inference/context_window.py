@@ -10,6 +10,7 @@ import os
 import re
 from collections.abc import Callable
 from typing import Any, Optional
+from utils.context_latency_trace import trace_call
 
 _OMITTED_TOOL_EXCHANGE = "[Earlier tool exchange omitted from the rolling context window.]"
 _UNPRICED_MEDIA_TYPES = frozenset(
@@ -845,7 +846,7 @@ def fit_rolling_context(
 
     prompt_target = prompt_budget(context_length, max_tokens)
     fitted = list(messages)
-    initial_tokens = count_tokens(fitted)
+    initial_tokens = trace_call("rolling.exact_count", count_tokens, fitted)
     current_tokens = initial_tokens
     dropped_total = 0
 
@@ -862,7 +863,7 @@ def fit_rolling_context(
         if dropped:
             fitted = candidate
             dropped_total = dropped
-            current_tokens = count_tokens(fitted)
+            current_tokens = trace_call("rolling.exact_count", count_tokens, fitted)
 
     # Phase two: take a chunk out rather than skimming to the brim, so the boundary can stay put.
     trim_target = prompt_target
@@ -892,7 +893,7 @@ def fit_rolling_context(
             break
         fitted = candidate
         dropped_total += dropped
-        current_tokens = count_tokens(fitted)
+        current_tokens = trace_call("rolling.exact_count", count_tokens, fitted)
 
     if current_tokens > prompt_target:
         # Strictly under on both sides (llama-server refuses at `n_ctx` exactly), but not under by one token, which

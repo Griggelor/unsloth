@@ -22,6 +22,7 @@ import bisect
 import json
 import re
 from typing import Optional
+from utils.context_latency_trace import trace_phase
 
 from storage import rag_db
 
@@ -358,6 +359,7 @@ def can_archive(thread_id: Optional[str]) -> bool:
         return False
 
 
+@trace_phase("conversation_archive.archive_turns")
 def archive_turns(
     thread_id: str,
     evicted: list[dict],

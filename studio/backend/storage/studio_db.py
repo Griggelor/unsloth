@@ -45,6 +45,7 @@ from utils.paths.sensitive import (
     contains_sensitive_path_component as _shared_contains_sensitive_path_component,
 )
 from utils.training_runs import extract_project_name
+from utils.context_latency_trace import trace_phase
 
 
 def _extract_project_name_from_config_json(config_json: Optional[str]) -> Optional[str]:
@@ -4129,6 +4130,7 @@ def _ensure_chat_attachment_inventory_current(conn: sqlite3.Connection) -> None:
         raise
 
 
+@trace_phase("db.upsert_chat_message")
 def upsert_chat_message(
     message: dict,
     *,
@@ -4240,6 +4242,7 @@ def upsert_chat_message(
         conn.close()
 
 
+@trace_phase("db.sync_chat_messages")
 def sync_chat_messages(
     thread_id: str,
     messages: list[dict],
@@ -4835,6 +4838,7 @@ def fork_counts_for_thread(thread_id: str) -> dict[str, int]:
         conn.close()
 
 
+@trace_phase("db.list_chat_messages")
 def list_chat_messages(thread_id: str) -> list[dict]:
     conn = get_connection()
     try:
@@ -5243,6 +5247,7 @@ def delete_chat_attachment(message_id: str, attachment_id: str) -> bool:
         conn.close()
 
 
+@trace_phase("db.count_chat_messages_for_threads")
 def count_chat_messages_for_threads(thread_ids: list[str]) -> dict[str, int]:
     """User and assistant messages per thread on its newest branch, without reading bodies.
 

@@ -1804,6 +1804,10 @@ from auth.x_api_key import XApiKeyMiddleware  # noqa: E402
 # Added last so it is outermost: every Authorization reader below sees the rewritten header.
 app.add_middleware(XApiKeyMiddleware)
 
+# Opt-in content-free ASGI timing for long-history performance reproduction.
+from utils.context_latency_trace import ContextLatencyMiddleware  # noqa: E402
+app.add_middleware(ContextLatencyMiddleware)
+
 app.include_router(auth_router, prefix = "/api/auth", tags = ["auth"])
 app.include_router(
     __import__("routes.accounts", fromlist = ["router"]).router,
