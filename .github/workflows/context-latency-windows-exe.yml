@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: Context Latency Windows QA EXE
+on:
+  push:
+    branches:
+      - experiment/context-latency-attribution-20261016
+    paths:
+      - '.github/workflows/context-latency-windows-exe.yml'
+      - '.github/scripts/context-latency-qa/**'
+      - 'studio/backend/**'
+      - 'studio/frontend/**'
+      - 'studio/src-tauri/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: context-latency-windows-qa-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-qa-exe:
+    runs-on: windows-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 3
+          persist-credentials: false
+      - name: Assert exact checkout and unchanged diagnostic baseline
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw 'Incorrect QA checkout SHA' }
+          if ((git rev-parse HEAD^).Trim() -ne '912e7c7561b6516af58e52f182b9f8e7dfe895e2') { throw 'Unexpected QA source parent' }
+          git cat-file -e '983226fa739a3d00836d4d77b94390bebe144781^{commit}' 2>$null
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline is not in history' }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: 'false'
+          workspaces: studio/src-tauri -> target
+      - name: Privacy and transparent-ASGI unit tests on Windows
+        run: python -m unittest discover -s studio/backend/tests/context_perf -p 'test_context_latency_trace.py' -v
+      - name: Parse QA PowerShell script syntax
+        shell: pwsh
+        run: |
+          Get-ChildItem .github/scripts/context-latency-qa/*.ps1 | ForEach-Object {
+            $tok = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tok, [ref]$errors) | Out-Null
+            if ($errors) { throw "QA PowerShell parse failure in $($_.Name): $errors" }
+          }
+      - name: Supply chain lockfile audit
+        run: python scripts/lockfile_supply_chain_audit.py
+      - name: Build frontend assets
+        working-directory: studio/frontend
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+      - name: Install pinned Tauri CLI
+        run: npm ci --prefix studio --no-fund --no-audit
+      - name: Build Windows QA EXE, unsigned and without installer
+        run: npx --prefix studio tauri build --debug --no-bundle
+      - name: Stage matching baseline and diagnostic backend code
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = 'qa-context-latency-windows'
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          $exe = 'studio/src-tauri/target/debug/unsloth-studio.exe'
+          if (-not (Test-Path -LiteralPath $exe)) { throw 'Tauri did not produce QA executable' }
+          Copy-Item -LiteralPath $exe -Destination (Join-Path $stage 'unsloth-studio-CONTEXT-QA-UNSIGNED.exe')
+          Copy-Item -Recurse -Force '.github/scripts/context-latency-qa/*' -Destination $stage
+          $baseline = @('studio/backend/main.py','studio/backend/core/inference/checkpoint.py','studio/backend/core/inference/context_window.py','studio/backend/core/rag/conversation_archive.py','studio/backend/storage/studio_db.py')
+          $patch = @($baseline + 'studio/backend/utils/context_latency_trace.py')
+          git archive --format=zip --output=qa-baseline.zip 983226fa739a3d00836d4d77b94390bebe144781 -- $baseline
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to export pristine backend baseline' }
+          git archive --format=zip --output=qa-patch.zip HEAD -- $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to export matching QA backend patch' }
+          Expand-Archive -LiteralPath qa-baseline.zip -DestinationPath (Join-Path $stage 'qa-backend-baseline')
+          Expand-Archive -LiteralPath qa-patch.zip -DestinationPath (Join-Path $stage 'qa-backend-patch')
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $stage 'unsloth-studio-CONTEXT-QA-UNSIGNED.exe')).Hash.ToLowerInvariant()
+          $manifest = [ordered]@{
+            build_kind = 'UNSIGNED_CONTEXT_LATENCY_QA_EXE_WITH_GUARDED_BACKEND_PATCH'
+            source_commit = $env:GITHUB_SHA
+            baseline_upstream = '983226fa739a3d00836d4d77b94390bebe144781'
+            workflow_run_id = $env:GITHUB_RUN_ID
+            executable_name = 'unsloth-studio-CONTEXT-QA-UNSIGNED.exe'
+            executable_sha256 = $hash
+            backend_patch_requires_exact_baseline = $true
+            telemetry_opt_in = 'UNSLOTH_CONTEXT_LATENCY_TRACE=1'
+          }
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'QA_MANIFEST.json') -Encoding utf8
+          Write-Host "QA EXE SHA256: $hash"
+      - name: Upload diagnostic Windows QA executable and guarded backend patch
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: context-latency-windows-qa-unsigned-exe
+          path: qa-context-latency-windows/*
+          retention-days: 7
+          if-no-files-found: error
