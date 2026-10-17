@@ -551,6 +551,13 @@ fn powershell_exe() -> PathBuf {
 /// Dev mode: repo root script + --tauri --local
 /// Production: bundled resource + --tauri
 fn resolve_install_script(app: &AppHandle) -> Result<(PathBuf, Vec<String>), String> {
+    #[cfg(feature = "context-portable-qa")]
+    {
+        let _ = app;
+        return Err("Installer disabled for isolated context-latency QA build".into());
+    }
+    #[cfg(not(feature = "context-portable-qa"))]
+    {
     let mut args = vec!["--tauri".to_string()];
 
     if cfg!(debug_assertions) {
@@ -584,6 +591,7 @@ fn resolve_install_script(app: &AppHandle) -> Result<(PathBuf, Vec<String>), Str
             .map_err(|e| format!("Failed to resolve bundled {}: {}", name, e))?;
         info!("Production: using bundled script at {}", script.display());
         Ok((script, args))
+    }
     }
 }
 

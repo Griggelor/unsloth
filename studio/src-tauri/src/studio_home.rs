@@ -10,6 +10,14 @@ use std::path::{Path, PathBuf};
 
 const POINTER_FILE: &str = "desktop_studio_home";
 
+// This private QA-only Cargo feature forces every lookup onto a directory
+// relative to the EXE. Never consult a real user's root or pointer file.
+#[cfg(feature = "context-portable-qa")]
+fn qa_root() -> Option<PathBuf> {
+    Some(std::env::current_exe().ok()?.parent()?.join("qa-runtime").join("studio"))
+}
+
+
 pub(crate) const STUDIO_HOME_ENV: &str = "UNSLOTH_STUDIO_HOME";
 
 /// Marks UNSLOTH_STUDIO_HOME as the desktop's choice; install.ps1 --tauri refuses any other.
@@ -25,6 +33,13 @@ fn pointer_path(home: &Path) -> PathBuf {
 
 /// A missing, empty or relative pointer falls back to the default root.
 pub(crate) fn chosen_root_for_home(home: &Path) -> Option<PathBuf> {
+    #[cfg(feature = "context-portable-qa")]
+    {
+        let _ = home;
+        return qa_root();
+    }
+    #[cfg(not(feature = "context-portable-qa"))]
+    {
     let text = fs::read_to_string(pointer_path(home)).ok()?;
     let root = PathBuf::from(text.trim());
     if root.as_os_str().is_empty() || !root.is_absolute() {
@@ -34,6 +49,7 @@ pub(crate) fn chosen_root_for_home(home: &Path) -> Option<PathBuf> {
         return None;
     }
     Some(root)
+    }
 }
 
 pub(crate) fn studio_root_for_home(home: &Path) -> PathBuf {
@@ -121,6 +137,13 @@ pub(crate) fn validate_root(root: &Path) -> Result<(), String> {
 
 /// Written to a temporary file and renamed; the default root removes the pointer instead.
 pub(crate) fn write_choice_for_home(home: &Path, root: &Path) -> Result<(), String> {
+    #[cfg(feature = "context-portable-qa")]
+    {
+        let _ = (home, root);
+        return Err("Portable context QA cannot change desktop install location".into());
+    }
+    #[cfg(not(feature = "context-portable-qa"))]
+    {
     let pointer = pointer_path(home);
     if same_path(root, &default_root_for_home(home)) {
         return match fs::remove_file(&pointer) {
@@ -141,6 +164,7 @@ pub(crate) fn write_choice_for_home(home: &Path, root: &Path) -> Result<(), Stri
             let _ = fs::remove_file(&temp);
             format!("Could not save the install location: {error}")
         })
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -158,7 +182,7 @@ fn location_for_home(home: &Path) -> StudioInstallLocation {
             .unwrap_or_else(|| default_root_for_home(home))
             .to_string_lossy()
             .into_owned(),
-        can_change: cfg!(windows),
+        can_change: cfg!(windows) && !cfg!(feature = "context-portable-qa"),
     }
 }
 

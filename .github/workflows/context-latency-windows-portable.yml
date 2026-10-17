@@ -1,0 +1,157 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: Context Latency Windows Portable QA (isolated backend)
+on:
+  push:
+    branches:
+      - experiment/context-latency-portable-qa-20261017
+    paths:
+      - 'studio/backend/**'
+      - 'studio/src-tauri/**'
+      - '.github/workflows/context-latency-windows-portable.yml'
+      - '.github/scripts/context-latency-qa/portable/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: context-qa-portable-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-portable:
+    runs-on: windows-latest
+    timeout-minutes: 110
+    env:
+      UNSLOTH_NO_TORCH: '1'
+      UNSLOTH_SKIP_AUTOSTART: '1'
+      UNSLOTH_ISOLATE_UV_CACHE: '1'
+      UNSLOTH_PORTABLE: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Assert checked-out source
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw 'Wrong portable QA source commit' }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: 'false'
+          workspaces: studio/src-tauri -> target
+      - name: QA privacy and PowerShell syntax tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s studio/backend/tests/context_perf -p 'test_context_latency_trace.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Python diagnostic tests failed' }
+          Get-ChildItem .github/scripts/context-latency-qa/portable/*.ps1 | ForEach-Object {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors) { throw "PowerShell parse error: $errors" }
+          }
+      - name: Verify source dependency lockfiles
+        run: python scripts/lockfile_supply_chain_audit.py
+      - name: Build frontend
+        working-directory: studio/frontend
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+      - name: Install pinned Tauri CLI
+        run: npm ci --prefix studio --no-fund --no-audit
+      - name: Build portable-only desktop executable with separate application identifier
+        run: npx --prefix studio tauri build --debug --no-bundle --features context-portable-qa --config studio/src-tauri/tauri.context-qa.conf.json
+      - name: Provision independent backend on clean CI runner (no PyTorch)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'qa-context-portable'
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          $env:UNSLOTH_STUDIO_HOME = Join-Path $stage 'qa-runtime\studio'
+          $env:UNSLOTH_HOME = Join-Path $stage 'qa-runtime'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 --local --no-torch --skip-autostart --isolated-uv-cache
+          if ($LASTEXITCODE -ne 0) { throw "Isolated Unsloth backend provisioning failed ($LASTEXITCODE)" }
+          $venv = Join-Path $env:UNSLOTH_STUDIO_HOME 'unsloth_studio'
+          $py = Join-Path $venv 'Scripts\python.exe'
+          if (-not (Test-Path $py)) { throw 'Independent QA Python missing' }
+          # The source checkout is editable during --local installation. Replace it with
+          # an immutable non-editable wheel so no wheel code can refer to CI's workspace.
+          New-Item -ItemType Directory -Force qa-source-wheel | Out-Null
+          python -m pip wheel . --no-deps -w qa-source-wheel
+          if ($LASTEXITCODE -ne 0) { throw 'Source wheel build failed' }
+          $wheel = @(Get-ChildItem qa-source-wheel/unsloth-*.whl)
+          if ($wheel.Count -ne 1) { throw 'Expected precisely one locally built unsloth wheel' }
+          python -m pip --python $py install --no-deps --force-reinstall $wheel[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Replacing editable install with frozen source wheel failed' }
+          $mod = Join-Path $venv 'Lib\site-packages\studio\backend\utils\context_latency_trace.py'
+          if (-not (Test-Path $mod)) { throw 'The built wheel did not include the instrumentation' }
+          $source = Join-Path $env:GITHUB_WORKSPACE 'studio\backend\utils\context_latency_trace.py'
+          if ((Get-FileHash -Algorithm SHA256 $mod).Hash -ne (Get-FileHash -Algorithm SHA256 $source).Hash) {
+            throw 'Bundled diagnostic Python bytes do not match exact commit'
+          }
+          $base = @(Get-ChildItem (Join-Path $env:UNSLOTH_STUDIO_HOME 'python') -Recurse -File -Filter python.exe | Where-Object { $_.FullName -notlike '*\Scripts\*' })
+          if ($base.Count -ne 1) { throw 'Base CPython must be shipped inside portable QA root' }
+          if (-not (Test-Path (Join-Path $stage 'qa-runtime\llama.cpp'))) { throw 'Private llama.cpp runtime missing' }
+      - name: Relocation smoke test without host Python fallback
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'qa-context-portable'
+          $runtime = Join-Path $stage 'qa-runtime'
+          $moved = Join-Path $env:RUNNER_TEMP 'qa-context-relocation-smoke'
+          if (Test-Path $moved) { throw 'Unexpected existing relocation directory' }
+          Move-Item -LiteralPath $runtime -Destination $moved
+          try {
+            $studio = Join-Path $moved 'studio'
+            $venv = Join-Path $studio 'unsloth_studio'
+            $py = Join-Path $venv 'Scripts\python.exe'
+            $cfg = Join-Path $venv 'pyvenv.cfg'
+            $base = @(Get-ChildItem (Join-Path $studio 'python') -Recurse -File -Filter python.exe | Where-Object { $_.FullName -notlike '*\Scripts\*' })
+            if ($base.Count -ne 1) { throw 'Relocated private base CPython not found' }
+            $text = [IO.File]::ReadAllText($cfg)
+            if ($text -notmatch '(?m)^home\s*=') { throw 'Python venv relocation not supported' }
+            $text = [Text.RegularExpressions.Regex]::Replace($text, '(?m)^home\s*=.*$', 'home = ' + $base[0].DirectoryName.Replace('$','$$'))
+            [IO.File]::WriteAllText($cfg, $text, [Text.UTF8Encoding]::new($false))
+            $script = 'import sys, pathlib; v=pathlib.Path(sys.prefix).resolve(); b=pathlib.Path(sys.base_prefix).resolve(); s=pathlib.Path(sys.argv[1]).resolve(); assert v==s/"unsloth_studio"; assert s in b.parents; import studio.backend.utils.context_latency_trace as m; assert s in pathlib.Path(m.__file__).resolve().parents'
+            & $py -I -c $script $studio
+            if ($LASTEXITCODE -ne 0) { throw 'Relocated Python verification failed' }
+          } finally { Move-Item -LiteralPath $moved -Destination $runtime }
+      - name: Prepare portable ZIP payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'qa-context-portable'
+          Copy-Item -LiteralPath 'studio/src-tauri/target/debug/unsloth-studio.exe' -Destination (Join-Path $stage 'Unsloth-Context-QA-Portable.exe')
+          Copy-Item .github/scripts/context-latency-qa/portable/* $stage -Force
+          # Remove transient source and download caches, without disturbing installed wheels.
+          foreach ($path in @('qa-runtime\studio\uv-cache','qa-runtime\studio\cache\uv','qa-runtime\studio\logs')) {
+            $target = Join-Path $stage $path
+            if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+          }
+          $exe = Join-Path $stage 'Unsloth-Context-QA-Portable.exe'
+          $manifest = [ordered]@{
+            kind = 'ISOLATED_WINDOWS_X64_CONTEXT_LATENCY_QA_PORTABLE'
+            source_sha = $env:GITHUB_SHA
+            workflow_run_id = $env:GITHUB_RUN_ID
+            exe_sha256 = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+            runtime = 'qa-runtime/studio/unsloth_studio/Scripts/python.exe'
+            mode = 'NO_TORCH_GGUF_CHAT_CPU_CAPABILITY_TO_BE_VERIFIED'
+            no_system_backend_patch = $true
+            updater_disabled = $true
+          }
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'QA_MANIFEST.json') -Encoding utf8
+          $files = @(Get-ChildItem -LiteralPath $stage -Recurse -File)
+          Write-Host "Portable QA files=$($files.Count) totalBytes=$(($files | Measure-Object Length -Sum).Sum)"
+      - name: Upload private-backend portable Windows QA package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: context-latency-windows-portable-own-backend
+          path: qa-context-portable/**
+          retention-days: 7
+          compression-level: 6
+          if-no-files-found: error

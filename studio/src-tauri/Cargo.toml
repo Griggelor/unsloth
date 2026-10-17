@@ -93,3 +93,5 @@ tauri-build = { version = "~2.7.0", features = [] }
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+# Diagnostic-only build. Never enable in a released binary.
+context-portable-qa = []

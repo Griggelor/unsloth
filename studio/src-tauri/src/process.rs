@@ -3773,6 +3773,23 @@ pub fn start_backend(
         cmd.env(crate::studio_home::STUDIO_HOME_ENV, root);
     }
 
+    #[cfg(feature = "context-portable-qa")]
+    {
+        // Hardcoded EXE-relative root: ignore all inherited global cache / llama
+        // paths, disable local account discovery, and emit content-free traces.
+        let root = crate::studio_home::studio_root()
+            .ok_or_else(|| "Portable QA runtime root unavailable".to_string())?;
+        let master = root.parent().ok_or("Portable QA root has no parent")?;
+        cmd.env("UNSLOTH_HOME", master);
+        cmd.env("UNSLOTH_STUDIO_HOME", &root);
+        cmd.env("UNSLOTH_PORTABLE", "1");
+        cmd.env("UNSLOTH_LLAMA_CPP_PATH", master.join("llama.cpp"));
+        cmd.env("HF_HOME", master.join("hf-cache"));
+        cmd.env("UNSLOTH_CONTEXT_LATENCY_TRACE", "1");
+        cmd.env("UNSLOTH_STUDIO_PROJECTS_HOME", root.join("projects"));
+        cmd.env("UNSLOTH_STUDIO_SANDBOX_HOME", root.join("sandboxes"));
+    }
+
     // read_output_stream decodes as UTF-8; without these, Python encodes its
     // redirected streams with the locale code page and non-ASCII lands as U+FFFD.
     // The backend gets UTF-8 from -X utf8 in its argv; these reach it too now

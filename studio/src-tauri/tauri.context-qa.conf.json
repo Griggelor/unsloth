@@ -1,0 +1,12 @@
+{
+  "productName": "Unsloth Context QA Portable",
+  "identifier": "ai.unsloth.context-latency-portable-qa",
+  "plugins": {
+    "updater": {
+      "endpoints": []
+    }
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false
+  }
+}
