@@ -195,6 +195,9 @@ pub(crate) struct DesktopUpdateBundleStatus {
 /// with no reaper for its children.
 #[tauri::command]
 pub(crate) async fn resume_desktop_update_cleanup() -> Result<(), String> {
+    #[cfg(feature = "context-portable-qa")]
+    { return Ok(()); }
+
     // Both halves of what the pre-exit hook consumed: the exit guard it spent, so a
     // retry actually reaps the backend again, and kill-on-close itself.
     crate::reset_termination_cleanup();
@@ -208,6 +211,9 @@ pub(crate) async fn resume_desktop_update_cleanup() -> Result<(), String> {
 /// Whether crash cleanup is armed right now, for a UI that has just remounted.
 #[tauri::command]
 pub(crate) async fn desktop_update_cleanup_armed() -> Result<bool, String> {
+    #[cfg(feature = "context-portable-qa")]
+    { return Ok(false); }
+
     #[cfg(windows)]
     {
         crate::windows_job::kill_on_close_armed().map_err(|error| error.to_string())
@@ -223,6 +229,9 @@ pub(crate) async fn check_desktop_update(
     webview: tauri::Webview,
     state: tauri::State<'_, DesktopUpdateState>,
 ) -> Result<Option<DesktopUpdateMetadata>, String> {
+    #[cfg(feature = "context-portable-qa")]
+    { return Err("Updates and installers are disabled in isolated portable QA".into()); }
+
     let app = webview.app_handle().clone();
     let builder = webview.updater_builder().on_before_exit(move || {
         #[cfg(windows)]
@@ -279,6 +288,9 @@ pub(crate) async fn download_desktop_update(
     app: AppHandle,
     state: tauri::State<'_, DesktopUpdateState>,
 ) -> Result<(), String> {
+    #[cfg(feature = "context-portable-qa")]
+    { return Err("Updates and installers are disabled in isolated portable QA".into()); }
+
     let update = {
         let mut guard = state.lock().map_err(|error| error.to_string())?;
         let Some(update) = guard.update.clone() else {
@@ -339,6 +351,9 @@ pub(crate) async fn download_desktop_update(
 pub(crate) async fn install_desktop_update(
     state: tauri::State<'_, DesktopUpdateState>,
 ) -> Result<(), String> {
+    #[cfg(feature = "context-portable-qa")]
+    { return Err("Updates and installers are disabled in isolated portable QA".into()); }
+
     let (update, path) = {
         let mut guard = state.lock().map_err(|error| error.to_string())?;
         let Some(update) = guard.update.clone() else {

@@ -803,10 +803,15 @@ fn setup_logging() {
     ));
 
     // Try to set up file logging to ~/.unsloth/studio/tauri.log (a chosen root once it exists).
-    if let Some(home) = dirs::home_dir() {
-        let log_dir = studio_home::chosen_root_for_home(&home)
+    #[cfg(feature = "context-portable-qa")]
+    let qa_log_dir = studio_home::studio_root().filter(|root| root.is_dir());
+    #[cfg(not(feature = "context-portable-qa"))]
+    let qa_log_dir = dirs::home_dir().map(|home| {
+        studio_home::chosen_root_for_home(&home)
             .filter(|root| root.is_dir())
-            .unwrap_or_else(|| studio_home::default_root_for_home(&home));
+            .unwrap_or_else(|| studio_home::default_root_for_home(&home))
+    });
+    if let Some(log_dir) = qa_log_dir {
         if fs::create_dir_all(&log_dir).is_ok() {
             let log_path = log_dir.join("tauri.log");
             let rotated_path = log_dir.join("tauri.log.1");
@@ -2184,6 +2189,13 @@ fn extend_csp_with_hf_endpoints<R: tauri::Runtime>(context: &mut tauri::Context<
 }
 
 fn main() {
+    // Fail before logging, cache plugins or OS registration if somebody starts
+    // the debug QA EXE directly instead of the verifying portable launcher.
+    #[cfg(feature = "context-portable-qa")]
+    if std::env::var("UNSLOTH_CONTEXT_QA_VALIDATED").as_deref() != Ok("1") {
+        eprintln!("Portable Context QA must be started via Start-Portable-QA.cmd after private Python verification.");
+        std::process::exit(2);
+    }
     #[cfg(target_os = "linux")]
     if let Some(result) = debian_update::run_installer() {
         match result {

@@ -131,6 +131,14 @@ jobs:
           $original = Join-Path $runtime 'studio/unsloth_studio/Scripts/python.exe'
           $binHash = (Get-FileHash -Algorithm SHA256 $original).Hash
           Write-Host "Portable Python SHA256=$binHash"
+      - name: Direct QA EXE launch must fail closed before native UI initialization
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = 'studio/src-tauri/target/debug/unsloth-studio.exe'
+          Remove-Item Env:UNSLOTH_CONTEXT_QA_VALIDATED -ErrorAction SilentlyContinue
+          $proc = Start-Process -FilePath (Resolve-Path $exe) -PassThru -Wait -NoNewWindow
+          if ($proc.ExitCode -ne 2) { throw "Ungated QA EXE did not fail closed ($($proc.ExitCode))" }
       - name: Test desktop portable resolver negative cases (Rust)
         shell: pwsh
         run: |

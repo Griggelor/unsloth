@@ -53,7 +53,10 @@ pub(crate) fn chosen_root_for_home(home: &Path) -> Option<PathBuf> {
 }
 
 pub(crate) fn studio_root_for_home(home: &Path) -> PathBuf {
-    chosen_root_for_home(home).unwrap_or_else(|| default_root_for_home(home))
+    #[cfg(feature = "context-portable-qa")]
+    { let _ = home; qa_root().expect("Portable QA EXE path missing; refusing normal user root") }
+    #[cfg(not(feature = "context-portable-qa"))]
+    { chosen_root_for_home(home).unwrap_or_else(|| default_root_for_home(home)) }
 }
 
 pub(crate) fn studio_root() -> Option<PathBuf> {

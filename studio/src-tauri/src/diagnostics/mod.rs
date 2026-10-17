@@ -55,14 +55,23 @@ pub(crate) fn new_id(prefix: &str) -> String {
 
 /// A chosen root only once it exists: creating it here would stop install.ps1 claiming it.
 pub fn studio_dir() -> PathBuf {
+    #[cfg(feature = "context-portable-qa")]
+    { return crate::studio_home::studio_root().expect("Portable QA diagnostics root unavailable"); }
+    #[cfg(not(feature = "context-portable-qa"))]
+    {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     crate::studio_home::chosen_root_for_home(&home)
         .filter(|root| root.is_dir())
         .unwrap_or_else(|| crate::studio_home::default_root_for_home(&home))
+    }
 }
 
 /// Plus the default root while a chosen one is in use: a first install logs there until it exists.
 pub fn log_roots() -> Vec<PathBuf> {
+    #[cfg(feature = "context-portable-qa")]
+    { return vec![studio_dir()]; }
+    #[cfg(not(feature = "context-portable-qa"))]
+    {
     let current = studio_dir();
     let mut roots = vec![current.clone()];
     if let Some(home) = dirs::home_dir() {
@@ -72,6 +81,7 @@ pub fn log_roots() -> Vec<PathBuf> {
         }
     }
     roots
+    }
 }
 
 pub fn logs_dir() -> PathBuf {
