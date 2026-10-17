@@ -175,6 +175,11 @@ jobs:
           $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'QA_MANIFEST.json') -Encoding utf8
           $files = @(Get-ChildItem -LiteralPath $stage -Recurse -File)
           Write-Host "Portable QA files=$($files.Count) totalBytes=$(($files | Measure-Object Length -Sum).Sum)"
+      - name: Relocate entire QA package, manifest, private backend health and synthetic host canary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .github/scripts/context-latency-qa/portable/Smoke-Relocated-Backend.ps1 -PackageRoot (Join-Path $env:GITHUB_WORKSPACE 'qa-context-portable') -SourceSHA $env:GITHUB_SHA
       - name: Upload private-backend portable Windows QA package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
