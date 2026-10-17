@@ -16,6 +16,7 @@ import stat
 import sys
 import tempfile
 from datetime import datetime, timezone
+from contextlib import closing
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -116,11 +117,11 @@ def import_snapshot(source: Path, qa_package: Path, *, replace: bool = False) ->
     os.close(file_descriptor)
     staging = Path(temporary)
     try:
-        with _open_ro(source) as original:
+        with closing(_open_ro(source)) as original:
             source_counts = _verify_chat_snapshot(original)
-            with sqlite3.connect(staging) as output:
+            with closing(sqlite3.connect(staging)) as output:
                 original.backup(output, pages=256, sleep=0.05)
-        with sqlite3.connect(staging) as output:
+        with closing(sqlite3.connect(staging)) as output:
             copied_counts = _verify_chat_snapshot(output)
             if copied_counts != source_counts:
                 raise RuntimeError("Backup row counts do not match the source snapshot")
@@ -132,10 +133,10 @@ def import_snapshot(source: Path, qa_package: Path, *, replace: bool = False) ->
             backup = backups / ("studio-before-import-" + stamp + ".db")
             if backup.exists():
                 raise FileExistsError("QA backup name collision; retry later")
-            with _open_ro(destination) as old:
-                with sqlite3.connect(backup) as out:
+            with closing(_open_ro(destination)) as old:
+                with closing(sqlite3.connect(backup)) as out:
                     old.backup(out)
-            with sqlite3.connect(backup) as out:
+            with closing(sqlite3.connect(backup)) as out:
                 if out.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                     raise RuntimeError("Backup of prior QA database is invalid")
         attachments, _ = _copy_originals(source.parent / "chat-originals", studio / "chat-originals")

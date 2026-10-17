@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import closing
 import os
 from pathlib import Path
 import shutil
@@ -45,21 +46,21 @@ class LocalChatImportTest(unittest.TestCase):
                 digest = hashlib.sha256(data).hexdigest()
                 (originals / digest).write_bytes(data)
                 cmd = [sys.executable, "-I", "-B", str(qa / "Import-Chat-Database.py"), "--source", str(original_db)]
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                self.assertEqual(result.returncode, 0, result.stderr)
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+                self.assertEqual(result.returncode, 0, f"stdout={result.stdout}; stderr={result.stderr}")
                 self.assertNotIn("fake user data", result.stdout)
                 self.assertEqual(hashlib.sha256(original_db.read_bytes()).hexdigest(), before_hash)
                 copied_db = qa / "qa-runtime" / "studio" / "studio.db"
-                with sqlite3.connect(copied_db) as copied:
+                with closing(sqlite3.connect(copied_db)) as copied:
                     self.assertEqual(copied.execute("SELECT count(*) FROM chat_threads").fetchone()[0], 1)
                     self.assertEqual(copied.execute("SELECT content_json FROM chat_messages").fetchone()[0], "fake user data")
                 self.assertEqual((copied_db.parent / "chat-originals" / digest).read_bytes(), data)
-                duplicate = subprocess.run(cmd, capture_output=True, text=True)
+                duplicate = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
                 self.assertNotEqual(duplicate.returncode, 0, "Must refuse unintended overwrite")
-                replace = subprocess.run(cmd + ["--replace"], capture_output=True, text=True)
+                replace = subprocess.run(cmd + ["--replace"], capture_output=True, text=True, encoding="utf-8", errors="replace")
                 self.assertEqual(replace.returncode, 0, replace.stderr)
                 self.assertEqual(len(list((copied_db.parent / "import-backups").glob("*.db"))), 1)
-                private_source = subprocess.run(cmd[:-1] + [str(copied_db), "--replace"], capture_output=True, text=True)
+                private_source = subprocess.run(cmd[:-1] + [str(copied_db), "--replace"], capture_output=True, text=True, encoding="utf-8", errors="replace")
                 self.assertNotEqual(private_source.returncode, 0, "Must refuse self-import")
                 self.assertEqual(conn.execute("SELECT count(*) FROM chat_threads").fetchone()[0], 1)
             finally:
