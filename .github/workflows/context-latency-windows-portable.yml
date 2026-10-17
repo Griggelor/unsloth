@@ -136,7 +136,7 @@ jobs:
         run: |
           Push-Location studio/src-tauri
           try {
-            cargo test --features context-portable-qa portable_qa_backend_fail_closed_even_when_other_backends_exist -- --exact --nocapture
+            cargo test --features context-portable-qa portable_qa_backend_fail_closed_even_when_other_backends_exist -- --nocapture
             if ($LASTEXITCODE -ne 0) { throw 'Desktop fail-closed resolver test failed' }
           } finally { Pop-Location }
       - name: Prepare portable ZIP payload
