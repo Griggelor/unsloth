@@ -48,7 +48,7 @@ try {
     foreach ($key in @('STUDIO_HOME','STUDIO_LOCAL_REPO','PYTHONHOME','PYTHONPATH','HF_TOKEN','HUGGING_FACE_HUB_TOKEN')) {
         Remove-Item "Env:$key" -ErrorAction SilentlyContinue
     }
-    $pathCheck = 'import os,pathlib; from studio.backend.utils.paths import storage_roots as p; r=pathlib.Path(os.environ["UNSLOTH_HOME"]).resolve(); names=("studio_root","studio_db_path","rag_db_path","auth_db_path","project_workspaces_root","outputs_root","exports_root"); paths=[getattr(p,x)().resolve() for x in names]; assert all(q.is_relative_to(r) for q in paths),paths; assert p.studio_root()==pathlib.Path(os.environ["UNSLOTH_STUDIO_HOME"]).resolve(); print("QA_STORAGE_PATHS_PRIVATE")'
+    $pathCheck = 'import os,pathlib; import sys; sys.path.insert(0,str(pathlib.Path(sys.prefix)/"Lib/site-packages/studio/backend")); from utils.paths import storage_roots as p; r=pathlib.Path(os.environ["UNSLOTH_HOME"]).resolve(); names=("studio_root","studio_db_path","rag_db_path","auth_db_path","project_workspaces_root","outputs_root","exports_root"); paths=[getattr(p,x)().resolve() for x in names]; assert all(q.is_relative_to(r) for q in paths),paths; assert p.studio_root()==pathlib.Path(os.environ["UNSLOTH_STUDIO_HOME"]).resolve(); print("QA_STORAGE_PATHS_PRIVATE")'
     & $py -I -c $pathCheck
     if ($LASTEXITCODE -ne 0) { throw 'Python chat/RAG/auth database private-root assertions failed' }
 
