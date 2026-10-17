@@ -19,3 +19,11 @@ To revert, shut down the portable QA app and delete its extracted directory. It 
 Content-free timing logs use `UNSLOTH_CONTEXT_LATENCY_TRACE=1`, injected into only the portable backend child. Do not share unrelated application logs without checking them.
 
 **Limitations:** The Windows artifact is not accepted as functional until the CI verifies Python relocation, module import, successful Tauri compilation and build artifact creation. Large synthetic CI runs do not reproduce the user's full 16:29 pre-inference stall. Portable executable/venv packaging can be large.
+
+## Import your normal Windows chat database (explicit, local-only)
+
+For a real-world performance reproduction, **before the first portable launch**, double-click `Import-Chat-Database.cmd`, select the normal install's original `studio.db`, verify source/target paths, and type `IMPORT`. Typical original path: `%USERPROFILE%\\.unsloth\\studio\\studio.db`; custom installs may differ. SQLite's online backup API makes a consistent snapshot even with WAL; it only opens the selected source database read-only. Original files in the source directory's `chat-originals/` are also copied by verified SHA-256. No chat data is transmitted or uploaded.
+
+The importer refuses overwriting a preexisting portable `studio.db`. For deliberate replacement after the QA app is stopped, run `Import-Chat-Database.cmd -Replace`; the previous QA database is backed up locally under `qa-runtime/studio/import-backups/`. The importer aborts if there are destination SQLite WAL/journal sidecars. Prefer a **new extraction** for an uncontaminated baseline.
+
+**Scope and caution:** The entire `studio.db` is copied (including chat settings/app settings and old absolute project/model path strings), **not** just one chat. Model weights, external project workspaces, RAG uploads, separate auth.db and other caches are not copied. Embedded source paths can still refer to host directories, and existing thread settings may allow tools. Use `ask` or `off` tool permissions and avoid automatic tool execution on the QA copy. Open the problem chat, then **fork it inside QA** for experiments. Don't share original chat contents, QA ZIP folders or unredacted logs. Normal Unsloth chats are never processed by CI.

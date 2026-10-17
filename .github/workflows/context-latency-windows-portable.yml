@@ -55,6 +55,11 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors) { throw "PowerShell parse error: $errors" }
           }
+      - name: Synthetic read-only host chat database import regression
+        shell: pwsh
+        run: |
+          python .github/scripts/context-latency-qa/tests/test_import_chat_database.py
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic QA chat import tests failed' }
       - name: Verify source dependency lockfiles
         run: python scripts/lockfile_supply_chain_audit.py
       - name: Build frontend
@@ -168,6 +173,7 @@ jobs:
             runtime = 'qa-runtime/studio/unsloth_studio/Scripts/python.exe'
             python_sha256 = (Get-FileHash -Algorithm SHA256 (Join-Path $stage 'qa-runtime/studio/unsloth_studio/Scripts/python.exe')).Hash.ToLowerInvariant()
             diagnostic_sha256 = (Get-FileHash -Algorithm SHA256 (Join-Path $stage 'qa-runtime/studio/unsloth_studio/Lib/site-packages/studio/backend/utils/context_latency_trace.py')).Hash.ToLowerInvariant()
+            importer_sha256 = (Get-FileHash -Algorithm SHA256 (Join-Path $stage 'Import-Chat-Database.py')).Hash.ToLowerInvariant()
             mode = 'NO_TORCH_GGUF_CHAT_CPU_CAPABILITY_TO_BE_VERIFIED'
             no_system_backend_patch = $true
             updater_disabled = $true

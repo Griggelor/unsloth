@@ -26,12 +26,22 @@ try {
         'Unsloth-Context-QA-Portable.exe' = $manifest.exe_sha256
         'qa-runtime\studio\unsloth_studio\Scripts\python.exe' = $manifest.python_sha256
         'qa-runtime\studio\unsloth_studio\Lib\site-packages\studio\backend\utils\context_latency_trace.py' = $manifest.diagnostic_sha256
+        'Import-Chat-Database.py' = $manifest.importer_sha256
     }
     foreach ($entry in $expectedHash.GetEnumerator()) {
         $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $moved $entry.Key)).Hash
         if ($hash -ne $entry.Value) { throw "Relocated manifest digest mismatch: $($entry.Key)" }
     }
     & (Join-Path $moved 'Assert-Portable-Python.ps1') -RuntimeRoot $runtime
+    # Exercise this exact shipped importer with relocated private Python, on fake chats only.
+    $env:UNSLOTH_QA_TEST_IMPORTER = Join-Path $moved 'Import-Chat-Database.py'
+    try {
+        & $py -I (Join-Path $env:GITHUB_WORKSPACE '.github/scripts/context-latency-qa/tests/test_import_chat_database.py')
+        if ($LASTEXITCODE -ne 0) { throw 'Relocated importer synthetic WAL regression failed' }
+    } finally {
+        Remove-Item Env:UNSLOTH_QA_TEST_IMPORTER -ErrorAction SilentlyContinue
+    }
+
 
     # Poison a synthetic normal profile. Resolved database/auth paths must stay private.
     $env:USERPROFILE = $hostProfile
