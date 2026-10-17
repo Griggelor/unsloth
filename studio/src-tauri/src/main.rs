@@ -374,6 +374,10 @@ fn get_launch_at_login(app: tauri::AppHandle) -> Result<bool, String> {
 
 #[tauri::command]
 fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    #[cfg(feature = "context-portable-qa")]
+    { let _ = (app, enabled); return Err("Portable QA does not modify login startup".into()); }
+    #[cfg(not(feature = "context-portable-qa"))]
+    {
     use tauri_plugin_autostart::ManagerExt;
     let autolaunch = app.autolaunch();
     let result = if enabled {
@@ -389,6 +393,7 @@ fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<bool, Str
     // a stored `false` is what stops the restore from arguing with someone turning this off.
     store_launch_at_login_preference(&app, enabled);
     autostart_enabled(&app)
+    }
 }
 
 fn harden_autostart_entry(app: &tauri::AppHandle) {
@@ -2398,18 +2403,21 @@ fn main() {
             }
 
             initialize_close_to_tray(app.handle());
-            reconcile_autostart_entry(app.handle());
-            if let Err(error) = process::with_studio_runtime_launch_guard(|| {
-                staged_update::reconcile_legacy_at_launch(&diagnostics::studio_dir());
-                Ok(())
-            }) {
-                warn!("Legacy staged update cleanup deferred: {error}");
+            #[cfg(not(feature = "context-portable-qa"))]
+            {
+                reconcile_autostart_entry(app.handle());
+                if let Err(error) = process::with_studio_runtime_launch_guard(|| {
+                    staged_update::reconcile_legacy_at_launch(&diagnostics::studio_dir());
+                    Ok(())
+                }) {
+                    warn!("Legacy staged update cleanup deferred: {error}");
+                }
             }
             // Recover legacy desktop installs before the first preflight.
             if let Err(error) = desktop_backend_owner::ensure_installed_studio_root_id() {
                 warn!("Desktop backend ownership id unavailable: {error}");
             }
-            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            #[cfg(all(not(feature = "context-portable-qa"), any(target_os = "linux", all(debug_assertions, windows))))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 if let Err(error) = app.deep_link().register_all() {

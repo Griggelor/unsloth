@@ -57,11 +57,17 @@ pub(crate) fn studio_root_for_home(home: &Path) -> PathBuf {
 }
 
 pub(crate) fn studio_root() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| studio_root_for_home(&home))
+    #[cfg(feature = "context-portable-qa")]
+    { return qa_root(); }
+    #[cfg(not(feature = "context-portable-qa"))]
+    { dirs::home_dir().map(|home| studio_root_for_home(&home)) }
 }
 
 pub(crate) fn chosen_root() -> Option<PathBuf> {
-    dirs::home_dir().and_then(|home| chosen_root_for_home(&home))
+    #[cfg(feature = "context-portable-qa")]
+    { return qa_root(); }
+    #[cfg(not(feature = "context-portable-qa"))]
+    { dirs::home_dir().and_then(|home| chosen_root_for_home(&home)) }
 }
 
 fn same_path(left: &Path, right: &Path) -> bool {

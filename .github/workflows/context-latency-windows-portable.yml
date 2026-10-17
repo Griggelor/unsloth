@@ -97,30 +97,48 @@ jobs:
           $base = @(Get-ChildItem (Join-Path $env:UNSLOTH_STUDIO_HOME 'python') -Recurse -File -Filter python.exe | Where-Object { $_.FullName -notlike '*\Scripts\*' })
           if ($base.Count -ne 1) { throw 'Base CPython must be shipped inside portable QA root' }
           if (-not (Test-Path (Join-Path $stage 'qa-runtime\llama.cpp'))) { throw 'Private llama.cpp runtime missing' }
-      - name: Relocation smoke test without host Python fallback
+          # The uv Scripts/python.exe is an ABSOLUTE trampoline, not a relocatable CPython
+          # launcher. Rebuild its script interpreter with the private CPython stdlib venv
+          # launcher, while preserving all third-party wheels installed in Lib/site-packages.
+          $basePython = $base[0].FullName
+          & $basePython -m venv --without-pip $venv
+          if ($LASTEXITCODE -ne 0) { throw 'Private standard-library venv rebuild failed' }
+          & $py -I -c 'import studio.backend.utils.context_latency_trace; import unsloth_cli'
+          if ($LASTEXITCODE -ne 0) { throw 'Private CPython venv rebuild broke installed backend' }
+      - name: Relocation, Unicode path, and negative private runtime tests
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $stage = Join-Path $env:GITHUB_WORKSPACE 'qa-context-portable'
           $runtime = Join-Path $stage 'qa-runtime'
-          $moved = Join-Path $env:RUNNER_TEMP 'qa-context-relocation-smoke'
+          $helper = '.github/scripts/context-latency-qa/portable/Assert-Portable-Python.ps1'
+          $moved = Join-Path $env:RUNNER_TEMP 'QA mit Leerzeichen Ü ö'
           if (Test-Path $moved) { throw 'Unexpected existing relocation directory' }
           Move-Item -LiteralPath $runtime -Destination $moved
           try {
-            $studio = Join-Path $moved 'studio'
-            $venv = Join-Path $studio 'unsloth_studio'
-            $py = Join-Path $venv 'Scripts\python.exe'
-            $cfg = Join-Path $venv 'pyvenv.cfg'
-            $base = @(Get-ChildItem (Join-Path $studio 'python') -Recurse -File -Filter python.exe | Where-Object { $_.FullName -notlike '*\Scripts\*' })
-            if ($base.Count -ne 1) { throw 'Relocated private base CPython not found' }
-            $text = [IO.File]::ReadAllText($cfg)
-            if ($text -notmatch '(?m)^home\s*=') { throw 'Python venv relocation not supported' }
-            $text = [Text.RegularExpressions.Regex]::Replace($text, '(?m)^home\s*=.*$', 'home = ' + $base[0].DirectoryName.Replace('$','$$'))
-            [IO.File]::WriteAllText($cfg, $text, [Text.UTF8Encoding]::new($false))
-            $script = 'import sys, pathlib; v=pathlib.Path(sys.prefix).resolve(); b=pathlib.Path(sys.base_prefix).resolve(); s=pathlib.Path(sys.argv[1]).resolve(); assert v==s/"unsloth_studio"; assert s in b.parents; import studio.backend.utils.context_latency_trace as m; assert s in pathlib.Path(m.__file__).resolve().parents'
-            & $py -I -c $script $studio
-            if ($LASTEXITCODE -ne 0) { throw 'Relocated Python verification failed' }
+            & $helper -RuntimeRoot $moved
+            $py = Join-Path $moved 'studio/unsloth_studio/Scripts/python.exe'
+            $backup = "$py.private-test"
+            Move-Item -LiteralPath $py -Destination $backup
+            try {
+              $failed = $false
+              try { & $helper -RuntimeRoot $moved } catch { $failed = $true }
+              if (-not $failed) { throw 'NEGATIVE TEST FAILED: missing interpreter did not fail closed' }
+            } finally { Move-Item -LiteralPath $backup -Destination $py }
+            & $helper -RuntimeRoot $moved
           } finally { Move-Item -LiteralPath $moved -Destination $runtime }
+          & $helper -RuntimeRoot $runtime
+          $original = Join-Path $runtime 'studio/unsloth_studio/Scripts/python.exe'
+          $binHash = (Get-FileHash -Algorithm SHA256 $original).Hash
+          Write-Host "Portable Python SHA256=$binHash"
+      - name: Test desktop portable resolver negative cases (Rust)
+        shell: pwsh
+        run: |
+          Push-Location studio/src-tauri
+          try {
+            cargo test --features context-portable-qa portable_qa_backend_fail_closed_even_when_other_backends_exist -- --exact --nocapture
+            if ($LASTEXITCODE -ne 0) { throw 'Desktop fail-closed resolver test failed' }
+          } finally { Pop-Location }
       - name: Prepare portable ZIP payload
         shell: pwsh
         run: |
@@ -140,6 +158,8 @@ jobs:
             workflow_run_id = $env:GITHUB_RUN_ID
             exe_sha256 = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
             runtime = 'qa-runtime/studio/unsloth_studio/Scripts/python.exe'
+            python_sha256 = (Get-FileHash -Algorithm SHA256 (Join-Path $stage 'qa-runtime/studio/unsloth_studio/Scripts/python.exe')).Hash.ToLowerInvariant()
+            diagnostic_sha256 = (Get-FileHash -Algorithm SHA256 (Join-Path $stage 'qa-runtime/studio/unsloth_studio/Lib/site-packages/studio/backend/utils/context_latency_trace.py')).Hash.ToLowerInvariant()
             mode = 'NO_TORCH_GGUF_CHAT_CPU_CAPABILITY_TO_BE_VERIFIED'
             no_system_backend_patch = $true
             updater_disabled = $true

@@ -1998,6 +1998,15 @@ fn is_inside_windows_dir(path: &std::path::Path, windirs: &[std::path::PathBuf])
 /// keep resolving where they did and only the login start moves. Resolved per call
 /// so a late-mounting profile recovers, and never falls back to a temp dir.
 pub(crate) fn managed_cli_working_dir() -> Result<std::path::PathBuf, String> {
+    #[cfg(feature = "context-portable-qa")]
+    {
+        let root = crate::studio_home::studio_root()
+            .ok_or_else(|| "Portable QA working directory missing".to_string())?;
+        if !root.is_dir() { return Err("Portable QA runtime directory missing; refusing host home".into()); }
+        return Ok(root);
+    }
+    #[cfg(not(feature = "context-portable-qa"))]
+    {
     let windirs = windows_roots();
     let appdir = std::env::var_os("APPDIR").map(std::path::PathBuf::from);
     if let Ok(cwd) = std::env::current_dir() {
@@ -2006,6 +2015,7 @@ pub(crate) fn managed_cli_working_dir() -> Result<std::path::PathBuf, String> {
         }
     }
     managed_cli_working_dir_from(dirs::home_dir(), &windirs)
+    }
 }
 
 /// The directories the CLI guard refuses to run from, and only those. The rest of
@@ -3583,7 +3593,31 @@ mod tests {
 /// In dev mode (debug builds), checks for a local .venv in the repo first.
 /// Falls back to find_unsloth_binary() which checks ~/.unsloth/studio/unsloth_studio/
 /// (new layout) then ~/.unsloth/studio/.venv/ (old layout).
+#[cfg(feature = "context-portable-qa")]
+fn portable_backend_binary_at(studio: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let venv = studio.join("unsloth_studio");
+    let python = venv.join("Scripts").join("python.exe");
+    let cli = venv.join("Scripts").join("unsloth.exe");
+    let instrumented = venv.join("Lib").join("site-packages").join("studio")
+        .join("backend").join("utils").join("context_latency_trace.py");
+    for (name, path) in [("private Python", &python), ("private CLI", &cli),
+        ("instrumented backend", &instrumented)] {
+        if !path.is_file() {
+            return Err(format!("Portable QA missing {name} at {}; external backends are forbidden", path.display()));
+        }
+    }
+    Ok(cli)
+}
+
 pub(crate) fn resolve_backend_binary() -> Result<std::path::PathBuf, String> {
+    #[cfg(feature = "context-portable-qa")]
+    {
+        let root = crate::studio_home::studio_root()
+            .ok_or_else(|| "Portable QA EXE-relative Studio root unavailable".to_string())?;
+        return portable_backend_binary_at(&root);
+    }
+    #[cfg(not(feature = "context-portable-qa"))]
+    {
     // In dev mode, check for local repo venv first
     #[cfg(debug_assertions)]
     {
@@ -3610,6 +3644,32 @@ pub(crate) fn resolve_backend_binary() -> Result<std::path::PathBuf, String> {
 
     find_unsloth_binary()
         .ok_or_else(|| "Unsloth binary not found. Please install Unsloth first.".to_string())
+    }
+}
+
+#[cfg(all(test, feature = "context-portable-qa"))]
+mod portable_qa_backend_resolver_tests {
+    use super::*;
+    #[test]
+    fn portable_qa_backend_fail_closed_even_when_other_backends_exist() {
+        let root = std::env::temp_dir().join(format!("unsloth-portable-negative-{}", std::process::id()));
+        let venv = root.join("unsloth_studio");
+        let scripts = venv.join("Scripts");
+        let module = venv.join("Lib/site-packages/studio/backend/utils/context_latency_trace.py");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::create_dir_all(module.parent().unwrap()).unwrap();
+        // A full fake host installation must never be selected on QA.
+        assert!(portable_backend_binary_at(&root).is_err());
+        std::fs::write(scripts.join("unsloth.exe"), b"synthetic").unwrap();
+        assert!(portable_backend_binary_at(&root).is_err());
+        std::fs::write(scripts.join("python.exe"), b"synthetic").unwrap();
+        assert!(portable_backend_binary_at(&root).is_err());
+        std::fs::write(&module, b"synthetic").unwrap();
+        assert_eq!(portable_backend_binary_at(&root).unwrap(), scripts.join("unsloth.exe"));
+        std::fs::remove_file(&module).unwrap();
+        assert!(portable_backend_binary_at(&root).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 fn backend_args(port: u16) -> Vec<String> {
@@ -3780,6 +3840,18 @@ pub fn start_backend(
         let root = crate::studio_home::studio_root()
             .ok_or_else(|| "Portable QA runtime root unavailable".to_string())?;
         let master = root.parent().ok_or("Portable QA root has no parent")?;
+        // Do not inherit alternate cache, code, auth or model paths from a real account.
+        // Even an -I Python child can otherwise follow inherited HF/llama roots.
+        for key in RELATIVE_PATH_ENV {
+            cmd.env_remove(key);
+        }
+        for key in ["PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV", "HF_TOKEN",
+                    "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN",
+                    "UNSLOTH_AUTH_TOKEN", "UNSLOTH_API_KEY", "OPENAI_API_KEY",
+                    "STUDIO_LOCAL_REPO"] {
+            cmd.env_remove(key);
+        }
+        cmd.env("PYTHONNOUSERSITE", "1");
         cmd.env("UNSLOTH_HOME", master);
         cmd.env("UNSLOTH_STUDIO_HOME", &root);
         cmd.env("UNSLOTH_PORTABLE", "1");
