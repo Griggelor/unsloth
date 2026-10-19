@@ -133,6 +133,9 @@ jobs:
             & $helper -RuntimeRoot $moved
           } finally { Move-Item -LiteralPath $moved -Destination $runtime }
           & $helper -RuntimeRoot $runtime
+          # Reproduce installations retaining both uv's minor alias and exact CPython patch.
+          & .github/scripts/context-latency-qa/portable/Test-Dual-Private-Python.ps1 -RuntimeRoot $runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Dual CPython portable QA regression failed' }
           $original = Join-Path $runtime 'studio/unsloth_studio/Scripts/python.exe'
           $binHash = (Get-FileHash -Algorithm SHA256 $original).Hash
           Write-Host "Portable Python SHA256=$binHash"
