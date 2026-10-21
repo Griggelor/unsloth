@@ -482,6 +482,7 @@ def archive_turns(
         max_chunks = _archive_embed_max_chunks()
         pending = []
         pending_chunks = 0
+        prep_budget_exhausted = False
         for group, span in groups:
             # Chat Stop must also interrupt the CPU tokenizer/chunking phase.
             # An individual large turn remains atomic; it cannot be interrupted
@@ -516,6 +517,11 @@ def archive_turns(
                 )
                 _widen_span(conn, scope, digest, span)
                 continue
+            # Even after the cap, inspect old archive rows and restamp their
+            # branch positions. PR #14546 did this before its late cap; a hard
+            # loop break would silently skip that consistency maintenance.
+            if prep_budget_exhausted:
+                continue
             if chunk_limit is None:
                 chunk_limit = embeddings.chunk_tokens(model)
             chunks = chunk_pages(
@@ -535,7 +541,8 @@ def archive_turns(
                         "prepared_chunks=%s cap=%s deferred_next_group_chunks=%s",
                         thread_id, pending_chunks, max_chunks, need,
                     )
-                    break
+                    prep_budget_exhausted = True
+                    continue
                 pending.append((group, span, digest, chunks, seats, budget))
                 pending_chunks += need
                 if pending_chunks >= max_chunks:
@@ -544,7 +551,7 @@ def archive_turns(
                         "prepared_chunks=%s cap=%s",
                         thread_id, pending_chunks, max_chunks,
                     )
-                    break
+                    prep_budget_exhausted = True
         if not pending:
             return 0
 
