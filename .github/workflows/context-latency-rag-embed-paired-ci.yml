@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Synthetic, no private chats, no user backend or files.
+name: QA paired MAIN vs LEGACY archive embeddings CPU
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/rag-mainline-embedding-hotpath-20261021
+    paths:
+      - '.github/workflows/context-latency-rag-embed-paired-ci.yml'
+permissions:
+  contents: read
+concurrency:
+  group: paired-rag-embeddings-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  paired-archive-bert:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: '1'
+      TOKENIZERS_PARALLELISM: 'false'
+      OMP_NUM_THREADS: '4'
+      MKL_NUM_THREADS: '4'
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+    steps:
+      - name: Checkout frozen upstream mainline QA snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checkout successful previous QA source at frozen SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: 822631c340e54f50c2028110da3d253b4b48a978
+          path: legacy-source
+      - name: Check exact source revisions and benchmark identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $old = (git -C legacy-source rev-parse HEAD).Trim()
+          if ($old -ne '822631c340e54f50c2028110da3d253b4b48a978') { throw "Wrong old source: $old" }
+          $mainbase = (git rev-parse HEAD^).Trim()
+          if ($mainbase -ne '3888ce49bda5b473e58d41f9dd4ca9af413cd0f3') { throw "Wrong mainline benchmark parent: $mainbase" }
+          $file = 'studio/backend/tests/context_perf/test_archive_embedding_hotpath_ci.py'
+          $oldHash = (Get-FileHash -Algorithm SHA256 (Join-Path 'legacy-source' $file)).Hash
+          $newHash = (Get-FileHash -Algorithm SHA256 $file).Hash
+          if ($oldHash -ne $newHash) { throw "Benchmark files differ" }
+          Write-Host "Verified byte-identical benchmark SHA256 $oldHash"
+          Write-Host "Mainline's upstream parent: 36497673f7d55053e7f343834da195a5faa6466e"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Provision shared CPU-only Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw 'pip upgrade failed' }
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple 'torch>=2.7,<2.11'
+          if ($LASTEXITCODE -ne 0) { throw 'CPU torch install failed' }
+          python -m pip install -r studio/backend/requirements/studio.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Studio dependencies failed' }
+          python -m pip install 'transformers>=5.0,<5.18' 'sentence-transformers>=6.0,<7' 'numpy<3' pytest pytest-asyncio httpx python-multipart aiofiles sqlalchemy cryptography psutil pyyaml jinja2
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic embedder dependencies failed' }
+      - name: Run paired ABBA benchmarks in separate clean processes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:GITHUB_WORKSPACE
+          $metricRoot = Join-Path $root 'qa-compare-metrics'
+          $specs = @(
+            @('legacy_1', 'legacy-source/studio/backend'),
+            @('main_1', 'studio/backend'),
+            @('main_2', 'studio/backend'),
+            @('legacy_2', 'legacy-source/studio/backend')
+          )
+          foreach ($spec in $specs) {
+            $tag = $spec[0]
+            $folder = Join-Path $root $spec[1]
+            $env:RAG_QA_METRICS_DIR = Join-Path $metricRoot $tag
+            New-Item -ItemType Directory -Force $env:RAG_QA_METRICS_DIR | Out-Null
+            Write-Host "BEGIN PAIRED RUN: $tag"
+            Push-Location $folder
+            try {
+              python -m pytest -q -s --tb=short tests/context_perf/test_archive_embedding_hotpath_ci.py
+              if ($LASTEXITCODE -ne 0) { throw "FAILED PAIRED RUN $tag" }
+            } finally { Pop-Location }
+            Write-Host "END PAIRED RUN: $tag"
+          }
+      - name: Display numeric-only paired report
+        if: always()
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:GITHUB_WORKSPACE 'qa-compare-metrics'
+          if (-not (Test-Path $root)) { Write-Host 'No completed synthetic results'; exit 0 }
+          Get-ChildItem -Path $root -Filter '*.json' -Recurse | Sort-Object FullName | ForEach-Object {
+            $item = Get-Content $_.FullName -Raw | ConvertFrom-Json
+            Write-Host ("{0}: turns={1} total_ms={2} chunks={3} chunking_ms={4} embedding_ms={5} repeated_ms={6}" -f $_.Directory.Name,$item.turns,$item.first_wall_ms,($item.embedding_batch_chunks -join ','),$item.stage_timings.chunk_pages.wall_ms,$item.stage_timings.'SentenceTransformer.encode'.wall_ms,$item.repeat_wall_ms)
+          }
+      - name: Upload 8 paired synthetic performance observations
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: synthetic-rag-archive-paired-mainline-vs-legacy
+          path: qa-compare-metrics/**/*.json
+          retention-days: 14
+          if-no-files-found: warn
