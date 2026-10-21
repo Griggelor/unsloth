@@ -41,8 +41,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $old = (git -C legacy-source rev-parse HEAD).Trim()
           if ($old -ne '822631c340e54f50c2028110da3d253b4b48a978') { throw "Wrong old source: $old" }
-          $mainbase = (git rev-parse HEAD^).Trim()
-          if ($mainbase -ne '3888ce49bda5b473e58d41f9dd4ca9af413cd0f3') { throw "Wrong mainline benchmark parent: $mainbase" }
+          $archiveBlob = (git hash-object studio/backend/core/rag/conversation_archive.py).Trim()
+          if ($archiveBlob -ne '417585ddd35a923b26cb6c51b0414a54048b2d35') { throw "Wrong frozen mainline archive source: $archiveBlob" }
           $file = 'studio/backend/tests/context_perf/test_archive_embedding_hotpath_ci.py'
           $oldHash = (Get-FileHash -Algorithm SHA256 (Join-Path 'legacy-source' $file)).Hash
           $newHash = (Get-FileHash -Algorithm SHA256 $file).Hash
