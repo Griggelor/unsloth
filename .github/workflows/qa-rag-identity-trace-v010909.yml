@@ -43,7 +43,7 @@ jobs:
         shell: pwsh
         working-directory: studio/backend
         run: |
-          python -m pytest -q -s --tb=short tests/context_perf/test_archive_prompt_cycle_repro.py
+          python -m pytest -q -s --tb=short -o log_cli=true --log-cli-level=WARNING tests/context_perf/test_archive_prompt_cycle_repro.py
           if ($LASTEXITCODE -ne 0) { throw 'Prompt-cycle QA failed' }
       - name: Show privacy-safe numeric phase counters
         shell: pwsh
