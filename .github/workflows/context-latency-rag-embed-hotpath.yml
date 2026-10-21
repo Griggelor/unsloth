@@ -48,7 +48,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Torch CPU install failed' }
           python -m pip install -r studio/backend/requirements/studio.txt
           if ($LASTEXITCODE -ne 0) { throw 'Studio dependencies failed' }
-          python -m pip install 'transformers>=4.57,<5' 'sentence-transformers>=5,<6' 'numpy<3' pytest pytest-asyncio httpx python-multipart aiofiles sqlalchemy cryptography psutil pyyaml jinja2
+          python -m pip install 'transformers>=5.0,<5.18' 'sentence-transformers>=6.0,<7' 'numpy<3' pytest pytest-asyncio httpx python-multipart aiofiles sqlalchemy cryptography psutil pyyaml jinja2
           if ($LASTEXITCODE -ne 0) { throw 'CPU embedding dependencies failed' }
       - name: Real CPU SentenceTransformer with synthetic long tool chats
         shell: pwsh
