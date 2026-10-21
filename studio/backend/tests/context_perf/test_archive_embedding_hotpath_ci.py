@@ -107,7 +107,7 @@ def test_archive_real_cpu_bert_hotpath(turns, rag_conn, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CHUNK_OVERLAP", 16)
     monkeypatch.setattr(
         embeddings, "embedding_identity",
-        lambda model_name=None: "qa-generated-bert-128"
+        lambda model_name=None: config.embedding_identity("sentence-transformers", model_name or "qa-generated-bert")
     )
 
     m = Metrics()
