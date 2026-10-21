@@ -305,3 +305,120 @@ def test_identity_oscillation_reembeds_same_turns_every_prompt(isolated_archive,
     assert fourth.get("embedding_chunks",0)==0
     assert fourth["stored_docs_after"]==n
     _record("identity_oscillation_repeat",[first,second,third,fourth])
+
+
+def test_trace_classifies_identity_change_and_cached_reuse(
+    isolated_archive, monkeypatch, caplog,
+):
+    """Trace reveals the EXACT branch without exposing chat or local model paths."""
+    import logging
+    monkeypatch.setenv("RAG_ARCHIVE_TRACE", "1")
+    thread_id = "qa-identity-trace-no-public-thread-names"
+    _append(thread_id, sum((_cycle(i) for i in range(8)), []))
+    wire = _wire(thread_id)
+    live, _ = truncate_oldest_messages(wire, 0.43)
+    evicted = evicted_messages(wire, live)
+    assert evicted
+
+    with caplog.at_level(logging.WARNING, logger="core.rag.conversation_archive"):
+        assert conversation_archive.archive_turns(
+            thread_id, evicted, live=live, branch=wire
+        ) > 0
+        first_events = [
+            json.loads(record.message.split("RAG_ARCHIVE_TRACE ", 1)[1])
+            for record in caplog.records if "RAG_ARCHIVE_TRACE " in record.message
+        ]
+        assert {"begin", "prepared", "embed_start", "embed_done", "end"} <= {
+            e["event"] for e in first_events
+        }
+        first = next(e for e in first_events if e["event"] == "end")
+        assert first["new"] > 0 and first["identity_mismatch"] == 0
+        assert first["new_commits"] > 0
+        assert first["chunks"] > 0
+
+        caplog.clear()
+        assert conversation_archive.archive_turns(
+            thread_id, evicted, live=live, branch=wire
+        ) == 0
+        repeats = [
+            json.loads(record.message.split("RAG_ARCHIVE_TRACE ", 1)[1])
+            for record in caplog.records if "RAG_ARCHIVE_TRACE " in record.message
+        ]
+        repeat = next(e for e in repeats if e["event"] == "end")
+        assert repeat["hits"] > 0 and repeat["chunks"] == 0
+
+        original_identity = embeddings.embedding_identity
+        monkeypatch.setattr(
+            embeddings, "embedding_identity",
+            lambda model_name=None: "st:qa-alternate-vector-space",
+        )
+        caplog.clear()
+        assert conversation_archive.archive_turns(
+            thread_id, evicted, live=live, branch=wire
+        ) > 0
+        mismatched_events = [
+            json.loads(record.message.split("RAG_ARCHIVE_TRACE ", 1)[1])
+            for record in caplog.records if "RAG_ARCHIVE_TRACE " in record.message
+        ]
+        mismatch = next(e for e in mismatched_events if e["event"] == "end")
+        assert mismatch["identity_mismatch"] > 0
+        assert mismatch["replacement_commits"] > 0
+        assert mismatch["stored_identity_sample"]
+        # Never expose the model path, chat text, or thread ID in diagnostics.
+        visible = "\\n".join(str(e) for e in mismatched_events)
+        assert thread_id not in visible
+        assert "synthetic_" not in visible
+        assert "qa-alternate-vector-space" not in visible
+        monkeypatch.setattr(
+            embeddings, "embedding_identity", original_identity,
+        )
+
+
+def test_trace_reports_db_write_failure_and_retry(
+    isolated_archive, monkeypatch, caplog,
+):
+    """A failed SQLite write AFTER embedding is visible as db_write, and retry re-embeds."""
+    import logging
+    import sqlite3
+
+    monkeypatch.setenv("RAG_ARCHIVE_TRACE", "1")
+    tid = "qa-db-write-failure"
+    _append(tid, sum((_cycle(i) for i in range(8)), []))
+    wire = _wire(tid)
+    live, _ = truncate_oldest_messages(wire, 0.43)
+    evicted = evicted_messages(wire, live)
+    assert evicted
+    real_add_chunks = store.add_chunks
+
+    def force_write_fail(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(store, "add_chunks", force_write_fail)
+    with caplog.at_level(logging.WARNING, logger="core.rag.conversation_archive"):
+        assert conversation_archive.archive_turns(
+            tid, evicted, live=live, branch=wire
+        ) == 0
+        first = [
+            json.loads(rec.message.split("RAG_ARCHIVE_TRACE ", 1)[1])
+            for rec in caplog.records if "RAG_ARCHIVE_TRACE " in rec.message
+        ]
+        assert "embed_done" in {e["event"] for e in first}
+        fault = next(e for e in first if e["event"] == "error")
+        assert fault["stage"] == "db_write"
+        assert fault["type"] == "OperationalError"
+        end = next(e for e in first if e["event"] == "end")
+        assert end["written"] == 0
+        assert end["new_commits"] == 0
+
+        monkeypatch.setattr(store, "add_chunks", real_add_chunks)
+        caplog.clear()
+        assert conversation_archive.archive_turns(
+            tid, evicted, live=live, branch=wire,
+        ) > 0
+        retry = [
+            json.loads(rec.message.split("RAG_ARCHIVE_TRACE ", 1)[1])
+            for rec in caplog.records if "RAG_ARCHIVE_TRACE " in rec.message
+        ]
+        assert "embed_start" in {e["event"] for e in retry}
+        recovered = next(e for e in retry if e["event"] == "end")
+        assert recovered["new_commits"] > 0
