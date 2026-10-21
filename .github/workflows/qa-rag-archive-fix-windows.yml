@@ -53,6 +53,12 @@ jobs:
         run: |
           python -m pytest -q -s --tb=short tests/test_conversation_archive.py -k 'test_archive_embed_honors_cancel_between_batches or test_archive_embed_caps_chunks_per_call or test_a_first_compaction_embeds_its_turns_in_one_pass'
           if ($LASTEXITCODE -ne 0) { throw 'PR regression tests failed' }
+      - name: Full conversation archive regression suite (real DB, mocked embeddings)
+        shell: pwsh
+        working-directory: studio/backend
+        run: |
+          python -m pytest -q --tb=short tests/test_conversation_archive.py
+          if ($LASTEXITCODE -ne 0) { throw 'Full archive regression suite failed' }
       - name: Real CPU BERT long-chat batch and deferred-work benchmark
         shell: pwsh
         working-directory: studio/backend
