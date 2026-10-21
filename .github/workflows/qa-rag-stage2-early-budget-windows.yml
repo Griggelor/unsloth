@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: QA STAGE2 early archive budget Windows CPU
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/rag-archive-stage2-early-budget-20261021]
+    paths:
+      - '.github/workflows/qa-rag-stage2-early-budget-windows.yml'
+      - 'studio/backend/core/rag/conversation_archive.py'
+      - 'studio/backend/core/inference/llama_cpp.py'
+      - 'studio/backend/tests/test_conversation_archive.py'
+      - 'studio/backend/tests/context_perf/test_archive_fix_hotpath_ci.py'
+permissions:
+  contents: read
+jobs:
+  qa-pr14546:
+    runs-on: windows-latest
+    timeout-minutes: 65
+    env:
+      PYTHONUTF8: '1'
+      TOKENIZERS_PARALLELISM: 'false'
+      OMP_NUM_THREADS: '4'
+      MKL_NUM_THREADS: '4'
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+      RAG_QA_METRICS_DIR: ${{ github.workspace }}/rag-fix-metrics
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Check patched production and test syntax
+        shell: pwsh
+        run: |
+          python -m py_compile studio/backend/core/rag/conversation_archive.py studio/backend/core/inference/llama_cpp.py studio/backend/tests/test_conversation_archive.py studio/backend/tests/context_perf/test_archive_fix_hotpath_ci.py
+          if ($LASTEXITCODE -ne 0) { throw 'QA source failed syntax check' }
+      - name: Install independent CPU-only Python test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw 'pip upgrade failed' }
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple 'torch>=2.7,<2.11'
+          if ($LASTEXITCODE -ne 0) { throw 'CPU torch install failed' }
+          python -m pip install -r studio/backend/requirements/studio.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Studio deps failed' }
+          python -m pip install 'transformers>=5.0,<5.18' 'sentence-transformers>=6.0,<7' 'numpy<3' pytest pytest-asyncio httpx python-multipart aiofiles sqlalchemy cryptography psutil pyyaml jinja2
+          if ($LASTEXITCODE -ne 0) { throw 'Embedding dependencies failed' }
+      - name: PR cancellation / capping / single-pass regression tests
+        shell: pwsh
+        working-directory: studio/backend
+        run: |
+          python -m pytest -q -s --tb=short tests/test_conversation_archive.py -k 'test_archive_embed_honors_cancel_between_batches or test_archive_embed_caps_chunks_per_call or test_a_first_compaction_embeds_its_turns_in_one_pass'
+          if ($LASTEXITCODE -ne 0) { throw 'PR regression tests failed' }
+      - name: Full conversation archive regression suite (real DB, mocked embeddings)
+        shell: pwsh
+        working-directory: studio/backend
+        run: |
+          python -m pytest -q --tb=short tests/test_conversation_archive.py
+          if ($LASTEXITCODE -ne 0) { throw 'Full archive regression suite failed' }
+      - name: Real CPU BERT long-chat batch and deferred-work benchmark
+        shell: pwsh
+        working-directory: studio/backend
+        run: |
+          python -m pytest -q -s --tb=short tests/context_perf/test_archive_fix_hotpath_ci.py
+          if ($LASTEXITCODE -ne 0) { throw 'CPU BERT regression failed' }
+      - name: Show numeric-only measurements
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path $env:RAG_QA_METRICS_DIR) {
+            Get-ChildItem $env:RAG_QA_METRICS_DIR -Filter *.json | ForEach-Object { Get-Content $_.FullName }
+          }
+      - name: Upload private-free synthetic numbers
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qa-stage2-synthetic-cpu-metrics
+          path: ${{ github.workspace }}/rag-fix-metrics/*.json
+          retention-days: 14
+          if-no-files-found: warn

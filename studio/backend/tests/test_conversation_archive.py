@@ -1739,13 +1739,10 @@ def test_archive_embed_honors_cancel_between_batches(conn, monkeypatch):
         evicted.append({"role": "user", "content": f"cancel question {index} unique {index}"})
         evicted.append({"role": "assistant", "content": f"cancel answer {index} unique {index}"})
 
-    # Calls: 1 = pre-encode guard, 2 = before batch 0, 3 = before batch 1.
-    # Allow the first encode batch, then cancel so later groups stay unindexed.
-    state = {"n": 0}
-
+    # Cancel only once an actual embedding batch has completed, regardless
+    # of additional per-group cancellation polls during preparation.
     def cancel_check():
-        state["n"] += 1
-        return state["n"] > 2
+        return bool(calls)
 
     written = conversation_archive.archive_turns(thread_id, evicted, cancel_check = cancel_check)
     assert 0 < written < 8
@@ -1787,6 +1784,71 @@ def test_archive_embed_caps_chunks_per_call(conn, monkeypatch):
     assert (first, rest, final) == (4, 4, 2)
     assert len(calls) == 3 and all(batch <= 4 for batch in calls)
     assert conversation_archive.archive_turns(thread_id, evicted) == 0
+
+
+def test_stage2_cap_stops_chunk_preparation_early(conn, monkeypatch):
+    """A 4-chunk cap must not tokenize all 12 eligible one-chunk turns."""
+    from core.rag import embeddings
+
+    thread_id = "stage2-preparation-budget"
+    _save_thread(thread_id, _turn("hello", "hi"), append = True)
+    monkeypatch.setenv("RAG_ARCHIVE_EMBED_MAX_CHUNKS", "4")
+    orig = conversation_archive.chunk_pages
+    seen = []
+
+    def counted(*args, **kwargs):
+        seen.append(1)
+        return orig(*args, **kwargs)
+
+    monkeypatch.setattr(conversation_archive, "chunk_pages", counted)
+    evicted = []
+    for index in range(12):
+        evicted.extend([
+            {"role": "user", "content": f"stage2 question {index} unique"},
+            {"role": "assistant", "content": f"stage2 answer {index} unique"},
+        ])
+
+    writes = [conversation_archive.archive_turns(thread_id, evicted) for _ in range(3)]
+    assert writes == [4, 4, 4]
+    assert len(seen) == 12, "deferred turns must not be re-chunked before their request"
+    assert conversation_archive.archive_turns(thread_id, evicted) == 0
+
+
+def test_stage2_stop_during_chunk_preparation(conn, monkeypatch):
+    """Stop during preparation must suppress the full embedding pass."""
+    from core.rag import embeddings
+
+    thread_id = "stage2-preparation-stop"
+    _save_thread(thread_id, _turn("hello", "hi"), append = True)
+    orig = conversation_archive.chunk_pages
+    original_encode = embeddings.encode_with_identity
+    state = {"chunks": 0, "embeds": 0}
+
+    def counted_chunk(*args, **kwargs):
+        state["chunks"] += 1
+        return orig(*args, **kwargs)
+
+    def counted_encode(*args, **kwargs):
+        state["embeds"] += 1
+        return original_encode(*args, **kwargs)
+
+    monkeypatch.setattr(conversation_archive, "chunk_pages", counted_chunk)
+    monkeypatch.setattr(embeddings, "encode_with_identity", counted_encode)
+    evicted = []
+    for index in range(8):
+        evicted.extend([
+            {"role": "user", "content": f"stage2 cancel question {index}"},
+            {"role": "assistant", "content": f"stage2 cancel answer {index}"},
+        ])
+
+    written = conversation_archive.archive_turns(
+        thread_id, evicted,
+        cancel_check = lambda: state["chunks"] >= 2,
+    )
+    assert written == 0
+    assert state["chunks"] == 2
+    assert state["embeds"] == 0
+    assert conversation_archive.archive_turns(thread_id, evicted) == 8
 
 
 # --- The subject of a conversation must not be the least findable thing in its archive ---

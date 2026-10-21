@@ -476,8 +476,22 @@ def archive_turns(
 
         # Chunk everything first, then embed it in ONE pass. Per group, a first compaction of a long chat ran dozens
         # of one-item embedding jobs back to back before the reply could start, and both backends serialise them.
+        # Stage 2: enforce the chunk budget DURING preparation, not after
+        # every evicted group has been tokenized. This prevents the first
+        # compaction from preparing hundreds of chunks it cannot embed.
+        max_chunks = _archive_embed_max_chunks()
         pending = []
+        pending_chunks = 0
         for group, span in groups:
+            # Chat Stop must also interrupt the CPU tokenizer/chunking phase.
+            # An individual large turn remains atomic; it cannot be interrupted
+            # inside chunk_pages without changing chunk offsets or content.
+            if cancel_check is not None and cancel_check():
+                logger.info(
+                    "conversation_archive.prepare_cancelled thread_id=%s prepared_chunks=%s",
+                    thread_id, pending_chunks,
+                )
+                return 0
             text = render_turn(group)
             if not text:
                 continue
@@ -511,7 +525,26 @@ def archive_turns(
                 count = count,
             )
             if chunks:
+                need = len(chunks)
+                # A turn is atomic: do not store a prefix of its chunks.
+                # As in PR #14546, one individually oversized turn is allowed
+                # through so it cannot starve forever under the cap.
+                if pending and pending_chunks + need > max_chunks:
+                    logger.info(
+                        "conversation_archive.prepare_budget_reached thread_id=%s "
+                        "prepared_chunks=%s cap=%s deferred_next_group_chunks=%s",
+                        thread_id, pending_chunks, max_chunks, need,
+                    )
+                    break
                 pending.append((group, span, digest, chunks, seats, budget))
+                pending_chunks += need
+                if pending_chunks >= max_chunks:
+                    logger.info(
+                        "conversation_archive.prepare_budget_reached thread_id=%s "
+                        "prepared_chunks=%s cap=%s",
+                        thread_id, pending_chunks, max_chunks,
+                    )
+                    break
         if not pending:
             return 0
 
@@ -523,38 +556,8 @@ def archive_turns(
             )
             return 0
 
-        # Bound first-compaction work on the generation path (#14519). Deferred groups stay
-        # unindexed and are archived on a later request (idempotent by digest).
-        max_chunks = _archive_embed_max_chunks()
-        chunk_total = sum(len(entry[3]) for entry in pending)
-        if chunk_total > max_chunks:
-            kept, used = [], 0
-            for entry in pending:
-                need = len(entry[3])
-                if used and used + need > max_chunks:
-                    break
-                if need > max_chunks and not kept:
-                    # A single oversized turn: still archive it (one encode), never stall forever
-                    # on dozens of siblings behind it.
-                    kept.append(entry)
-                    used += need
-                    break
-                kept.append(entry)
-                used += need
-            deferred = len(pending) - len(kept)
-            logger.info(
-                "conversation_archive.embed_capped thread_id=%s groups=%s chunks=%s "
-                "cap=%s deferred_groups=%s",
-                thread_id,
-                len(pending),
-                chunk_total,
-                max_chunks,
-                deferred,
-            )
-            pending = kept
-            if not pending:
-                return 0
-
+        # The chunk cap has already been applied incrementally during the
+        # loop above. Do not perform a second pass over pending chunks.
         texts = [chunk.text for entry in pending for chunk in entry[3]]
         started = time.monotonic()
         logger.info(

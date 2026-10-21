@@ -170,6 +170,9 @@ def test_archive_real_cpu_bert_hotpath(turns, rag_conn, tmp_path, monkeypatch):
     assert deferred.get("SentenceTransformer.encode", {}).get("calls", 0) == (0 if turns == 8 else 1)
     assert written + deferred_written == turns * 2
     assert all(batch <= 64 for batch in counts["batch_chunks"])
+    if turns == 40:
+        assert counts["chunk_calls"] == 80, "early cap should avoid re-chunking deferred groups"
+        assert counts["token_counts"] == 21880
 
     baseline = len(m.events)
     repeated_start = time.perf_counter()
@@ -187,7 +190,7 @@ def test_archive_real_cpu_bert_hotpath(turns, rag_conn, tmp_path, monkeypatch):
     assert disabled == 0 and m.summarize(baseline).get("SentenceTransformer.encode", {}).get("calls", 0) == 0
 
     report = {
-        "scenario": "synthetic long chat PR14546 -> real batched bounded CPU archive",
+        "scenario": "synthetic long chat PR14546 + stage2 early budget CPU archive",
         "limitations": "No HTTP/real model/GUI cancellation, generated small BERT, transcript mapping bypassed",
         "python": os.sys.version.split()[0], "turns": turns,
         "messages": len(messages), "torch_threads": torch.get_num_threads(),
