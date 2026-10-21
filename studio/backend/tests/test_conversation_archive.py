@@ -1781,7 +1781,12 @@ def test_archive_embed_caps_chunks_per_call(conn, monkeypatch):
     assert 0 < first < 10
     assert calls and calls[0] <= 4
     rest = conversation_archive.archive_turns(thread_id, evicted)
-    assert first + rest == 10
+    # With a cap of four chunks per request, ten one-chunk turns require
+    # three requests (4 + 4 + 2). Two requests cannot complete this budget.
+    final = conversation_archive.archive_turns(thread_id, evicted)
+    assert (first, rest, final) == (4, 4, 2)
+    assert len(calls) == 3 and all(batch <= 4 for batch in calls)
+    assert conversation_archive.archive_turns(thread_id, evicted) == 0
 
 
 # --- The subject of a conversation must not be the least findable thing in its archive ---
