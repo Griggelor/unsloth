@@ -20,7 +20,9 @@ import hashlib
 import logging
 import bisect
 import json
+import os
 import re
+import time
 from typing import Optional
 
 from storage import rag_db
@@ -30,6 +32,23 @@ from .chunking import chunk_pages
 from .parsers import Page
 
 logger = logging.getLogger(__name__)
+
+def _rag_archive_trace(event: str, metrics: dict) -> None:
+    """Opt-in, metadata-only diagnostics: no message text, thread ID or model path."""
+    try:
+        logger.warning(
+            "RAG_ARCHIVE_TRACE %s",
+            json.dumps({"event": event, **metrics}, sort_keys = True),
+        )
+    except Exception:
+        # Diagnostic output can never break chat generation or archival.
+        pass
+
+
+def _rag_trace_sig(value) -> str:
+    """Stable pseudonym for comparing identities without exposing local paths."""
+    return hashlib.sha256(str(value).encode("utf-8", "replace")).hexdigest()[:16]
+
 
 # Instructions, not conversation. An archived system prompt could come back quoted as an "earlier turn" and read as
 # user-authored text.
@@ -401,6 +420,30 @@ def archive_turns(
 
     model = config.effective_embedding_model()
     scope = store.conversation_archive_scope(thread_id)
+    # Disabled by default. When enabled, one invocation emits bounded structured
+    # metadata at the actual decision points, so the repeated 16-minute path can
+    # be attributed to a new turn, mismatched identity or failed prior commit.
+    trace = os.environ.get("RAG_ARCHIVE_TRACE", "0") == "1"
+    trace_id = format(time.monotonic_ns(), "x") if trace else ""
+    trace_start = time.perf_counter() if trace else 0.0
+    trace_stage = "transcript_positions"
+    trace_data = {
+        "run": trace_id,
+        "groups": len(groups),
+        "hits": 0,
+        "new": 0,
+        "identity_mismatch": 0,
+        "copy_shortage": 0,
+        "pending": 0,
+        "chunks": 0,
+        "new_commits": 0,
+        "replacement_commits": 0,
+        "stored_identity_sample": [],
+    } if trace else {}
+    if trace:
+        _rag_archive_trace("begin", {
+            "run": trace_id, "groups": len(groups), "model_fp": _rag_trace_sig(model),
+        })
     # Conversation order from the persisted thread, not arrival order (`_transcript_positions`).
     positions = _transcript_positions(thread_id, branch or live)
     live_positions = _live_positions(live)
@@ -413,6 +456,9 @@ def archive_turns(
         # What the query side will ask for. Only a prediction until the encode reports what it actually used, so the
         # authoritative check happens under the write lock.
         expected_identity = embeddings.embedding_identity(model)
+        if trace:
+            trace_data["expected_fp"] = _rag_trace_sig(expected_identity)
+            trace_stage = "precheck_chunking"
 
         # Chunk everything first, then embed it in ONE pass. Per group, a first compaction of a long chat ran dozens
         # of one-item embedding jobs back to back before the reply could start, and both backends serialise them.
@@ -424,7 +470,33 @@ def archive_turns(
             digest = hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
             seats = _occurrences(positions, group)
             budget = _write_budget(positions, seats, live_positions, group)
-            if _archived_under(conn, scope, digest, expected_identity, occurrences = budget):
+            is_archived = _archived_under(
+                conn, scope, digest, expected_identity, occurrences = budget,
+            )
+            if trace:
+                if is_archived:
+                    trace_data["hits"] += 1
+                else:
+                    # Extra indexed SELECT only in explicitly enabled diagnostics.
+                    copies_probe = store.documents_by_hash(conn, scope, digest)
+                    if not copies_probe:
+                        trace_data["new"] += 1
+                    elif any(
+                        not config.embedding_identity_matches(
+                            c.get("embedding_model"), expected_identity,
+                        ) for c in copies_probe
+                    ):
+                        trace_data["identity_mismatch"] += 1
+                        for c in copies_probe:
+                            sample = _rag_trace_sig(c.get("embedding_model"))
+                            if (
+                                sample not in trace_data["stored_identity_sample"]
+                                and len(trace_data["stored_identity_sample"]) < 4
+                            ):
+                                trace_data["stored_identity_sample"].append(sample)
+                    else:
+                        trace_data["copy_shortage"] += 1
+            if is_archived:
                 # Commit here: this path holds no transaction of its own and can return before reaching the write
                 # lock, the ordinary case on a re-compacted thread, so it is the only chance an upgraded archive has
                 # to converge.
@@ -452,16 +524,42 @@ def archive_turns(
             )
             if chunks:
                 pending.append((group, span, digest, chunks, seats, budget))
+                if trace:
+                    trace_data["pending"] += 1
+                    trace_data["chunks"] += len(chunks)
+        if trace:
+            _rag_archive_trace("prepared", {
+                **trace_data,
+                "elapsed_ms": round(1000 * (time.perf_counter() - trace_start), 1),
+            })
         if not pending:
             return 0
 
         # Identity from the encode that produced these vectors: a concurrent embedder swap would otherwise label them
         # with a space they were never in.
+        trace_stage = "embedding"
+        if trace:
+            _rag_archive_trace("embed_start", {
+                "run": trace_id, "chunks": trace_data["chunks"],
+                "expected_fp": trace_data.get("expected_fp"),
+            })
+        embed_start = time.perf_counter() if trace else 0.0
         vectors, identity = embeddings.encode_with_identity(
             [chunk.text for entry in pending for chunk in entry[3]],
             model_name = model,
             normalize = True,
         )
+        if trace:
+            trace_data["actual_fp"] = _rag_trace_sig(identity)
+            _rag_archive_trace("embed_done", {
+                "run": trace_id,
+                "chunks": trace_data["chunks"],
+                "embed_ms": round(1000 * (time.perf_counter() - embed_start), 1),
+                "expected_fp": trace_data.get("expected_fp"),
+                "actual_fp": trace_data["actual_fp"],
+                "predicted_actual_differ": expected_identity != identity,
+            })
+        trace_stage = "db_write"
         offset = 0
         for group, span, digest, chunks, seats, budget in pending:
             group_vectors = vectors[offset : offset + len(chunks)]
@@ -562,6 +660,8 @@ def archive_turns(
                 _restamp(conn, scope, digest, seats, skip_null = True)
             conn.commit()
             written += 1
+            if trace:
+                trace_data["replacement_commits" if stale is not None else "new_commits"] += 1
             # A REPLACEMENT is not an addition: the re-embed branch swaps one copy's vectors and keeps the count, so a
             # repeat evicted while the embedder identity changed was never written at all. Top the copies up to the
             # budget here, reusing the vectors already in hand. Only where the budget counts EVICTED occurrences,
@@ -593,8 +693,19 @@ def archive_turns(
                 globals()["_INGEST_FAILED"] = False
     except embeddings.EmbeddingModelDownloadRequiredError as exc:
         globals()["_INGEST_FAILED"] = True
+        if trace:
+            trace_data["error_kind"] = type(exc).__name__
+            _rag_archive_trace("error", {
+                "run": trace_id, "stage": trace_stage, "type": type(exc).__name__,
+            })
         _log_embedder_pending(model, exc)
-    except Exception:
+    except Exception as exc:
+        if trace:
+            trace_data["error_kind"] = type(exc).__name__
+            _rag_archive_trace("error", {
+                "run": trace_id, "stage": trace_stage, "type": type(exc).__name__,
+                "sqlite_code": getattr(exc, "sqlite_errorname", None),
+            })
         # A chat that cannot archive still beats one that raises. Whatever was written before the failure stays
         # searchable.
         globals()["_INGEST_FAILED"] = True
@@ -605,6 +716,13 @@ def archive_turns(
                 conn.close()
             except Exception:
                 pass
+        if trace:
+            _rag_archive_trace("end", {
+                **trace_data,
+                "written": written,
+                "last_stage": trace_stage,
+                "total_ms": round(1000 * (time.perf_counter() - trace_start), 1),
+            })
 
     # Cancellation is cooperative, and chunking plus embedding is the slowest stretch of this function. A delete
     # landing in that window sweeps the archive scope BEFORE this commit puts rows back, stranding deleted content in
