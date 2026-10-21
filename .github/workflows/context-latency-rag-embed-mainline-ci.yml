@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Isolated QA; never accesses a production install, chat history or database.
+name: QA MAINLINE synthetic archive CPU embeddings
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/rag-mainline-embedding-hotpath-20261021
+    paths:
+      - 'studio/backend/tests/context_perf/test_archive_embedding_hotpath_ci.py'
+      - '.github/workflows/context-latency-rag-embed-mainline-ci.yml'
+permissions:
+  contents: read
+concurrency:
+  group: qa-archive-embed-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  synthetic-archive-bert:
+    runs-on: windows-latest
+    timeout-minutes: 55
+    env:
+      PYTHONUTF8: '1'
+      TOKENIZERS_PARALLELISM: 'false'
+      OMP_NUM_THREADS: '4'
+      MKL_NUM_THREADS: '4'
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+      RAG_QA_METRICS_DIR: ${{ github.workspace }}/rag-hotpath-metrics
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Print upstream mainline snapshot
+        shell: pwsh
+        run: |
+          Write-Host "Frozen upstream-main base: 36497673f7d55053e7f343834da195a5faa6466e"
+          Write-Host "Benchmark commit: $env:GITHUB_SHA"
+      - name: Validate independent QA source
+        shell: pwsh
+        run: |
+          python -m py_compile studio/backend/tests/context_perf/test_archive_embedding_hotpath_ci.py
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic QA syntax error' }
+          if ($env:GITHUB_REPOSITORY -ne 'Griggelor/unsloth') { throw 'Wrong repository for synthetic QA' }
+      - name: Install independent CPU-only Python test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw 'pip upgrade failed' }
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple 'torch>=2.7,<2.11'
+          if ($LASTEXITCODE -ne 0) { throw 'Torch CPU install failed' }
+          python -m pip install -r studio/backend/requirements/studio.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Studio dependencies failed' }
+          python -m pip install 'transformers>=5.0,<5.18' 'sentence-transformers>=6.0,<7' 'numpy<3' pytest pytest-asyncio httpx python-multipart aiofiles sqlalchemy cryptography psutil pyyaml jinja2
+          if ($LASTEXITCODE -ne 0) { throw 'CPU embedding dependencies failed' }
+      - name: Real CPU SentenceTransformer with synthetic long tool chats
+        shell: pwsh
+        working-directory: studio/backend
+        run: |
+          python -m pytest -q -s --tb=short tests/context_perf/test_archive_embedding_hotpath_ci.py
+          if ($LASTEXITCODE -ne 0) { throw 'Hotpath QA test failed' }
+      - name: Summarize safe numeric-only metrics
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path $env:RAG_QA_METRICS_DIR) {
+            Get-ChildItem $env:RAG_QA_METRICS_DIR -Filter *.json | ForEach-Object {
+              Get-Content $_.FullName
+            }
+          } else {
+            Write-Host 'Metrics absent: installation or test failed before completion'
+          }
+      - name: Upload safe synthetic metrics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mainline-synthetic-rag-archive-bert-cpu-metrics
+          path: ${{ github.workspace }}/rag-hotpath-metrics/*.json
+          if-no-files-found: warn
+          retention-days: 14
