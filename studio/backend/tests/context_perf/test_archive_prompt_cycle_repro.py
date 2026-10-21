@@ -277,3 +277,31 @@ def test_changed_embedding_identity_intentionally_recomputes(isolated_archive, m
     assert changed.get("precheck_misses",0) > 0
     monkeypatch.setattr(embeddings,"embedding_identity",actual_identity)
     _record("identity_change", [{"phase":"intentional_identity_change",**changed}])
+
+
+def test_identity_oscillation_reembeds_same_turns_every_prompt(isolated_archive, monkeypatch):
+    """Model/backend identity toggles make completed archive work repeat forever."""
+    conn = isolated_archive
+    tid = "qa-agent-identity-oscillates"
+    counts = Counters(monkeypatch)
+    _append(tid, sum((_cycle(i) for i in range(10)), []))
+    _append(tid, [{"role":"user","content":[{"type":"text","text":"Prompt 1 QA"}]}])
+    first = _execute(counts,conn,tid,"initial_st_archive")
+    assert first["stored_docs_after"] > 0
+    n=first["stored_docs_after"]
+    first_identity=embeddings.embedding_identity("qa")
+    # Deliberately mimic switching vector spaces on successive requests.
+    other_identity="llama-server:qa-synthetic-other-pooling"
+    assert other_identity!=first_identity
+    monkeypatch.setattr(embeddings,"embedding_identity",lambda model_name=None: other_identity)
+    second=_execute(counts,conn,tid,"same_turns_different_backend_identity")
+    assert second.get("embedding_chunks",0)>0
+    assert second["stored_docs_after"]==n
+    monkeypatch.setattr(embeddings,"embedding_identity",lambda model_name=None: first_identity)
+    third=_execute(counts,conn,tid,"same_turns_original_backend_identity")
+    assert third.get("embedding_chunks",0)>0
+    assert third["stored_docs_after"]==n
+    fourth=_execute(counts,conn,tid,"same_identity_stable")
+    assert fourth.get("embedding_chunks",0)==0
+    assert fourth["stored_docs_after"]==n
+    _record("identity_oscillation_repeat",[first,second,third,fourth])
