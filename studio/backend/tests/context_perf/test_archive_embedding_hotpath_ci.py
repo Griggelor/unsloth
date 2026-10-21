@@ -103,7 +103,8 @@ def test_archive_real_cpu_bert_hotpath(turns, rag_conn, tmp_path, monkeypatch):
         embeddings, "_get_backend",
         lambda model_name=None: embeddings._SentenceTransformersBackend()
     )
-    monkeypatch.setattr(embeddings, "chunk_tokens", lambda model_name=None: 96)
+    monkeypatch.setattr(config, "CHUNK_TOKENS", 96)
+    monkeypatch.setattr(config, "CHUNK_OVERLAP", 16)
     monkeypatch.setattr(
         embeddings, "embedding_identity",
         lambda model_name=None: "qa-generated-bert-128"
