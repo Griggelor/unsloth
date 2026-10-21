@@ -1851,6 +1851,33 @@ def test_stage2_stop_during_chunk_preparation(conn, monkeypatch):
     assert conversation_archive.archive_turns(thread_id, evicted) == 8
 
 
+def test_stage2_budget_still_restamps_previously_archived_later_turns(conn, monkeypatch):
+    """A preparation cap must not suppress cheap branch-position maintenance."""
+    thread_id = "stage2-restamp-after-cap"
+    _save_thread(thread_id, _turn("hello", "hi"), append = True)
+    archived = _turn("earlier third turn", "already indexed answer")
+    assert conversation_archive.archive_turns(thread_id, archived) == 1
+
+    monkeypatch.setenv("RAG_ARCHIVE_EMBED_MAX_CHUNKS", "1")
+    calls = []
+    real = conversation_archive._restamp
+
+    def observed(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(conversation_archive, "_restamp", observed)
+    evicted = (
+        _turn("new first turn", "first answer")
+        + _turn("new second turn", "second answer")
+        + archived
+    )
+    assert conversation_archive.archive_turns(thread_id, evicted) == 1
+    assert calls, "the already-archived later group must be restamped even after the cap"
+    assert conversation_archive.archive_turns(thread_id, evicted) == 1
+    assert conversation_archive.archive_turns(thread_id, evicted) == 0
+
+
 # --- The subject of a conversation must not be the least findable thing in its archive ---
 #
 # Measured on the pre-fix build with `scripts/fact_update/retrieval_probe.py`: a variable
