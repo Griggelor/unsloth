@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: QA v0.1.909 archive identity decision trace
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/rag-identity-trace-v010909-20261021]
+    paths:
+      - '.github/workflows/qa-rag-identity-trace-v010909.yml'
+      - 'studio/backend/tests/context_perf/test_archive_prompt_cycle_repro.py'
+permissions:
+  contents: read
+jobs:
+  multi-prompt-reproduction:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      PYTHONUTF8: '1'
+      TOKENIZERS_PARALLELISM: 'false'
+      RAG_ARCHIVE_TRACE: '1'
+      RAG_CYCLE_METRICS_DIR: ${{ github.workspace }}/rag-cycle-metrics
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Compile synthetic test
+        shell: pwsh
+        run: |
+          python -m py_compile studio/backend/core/rag/conversation_archive.py studio/backend/tests/context_perf/test_archive_prompt_cycle_repro.py
+          if ($LASTEXITCODE -ne 0) { throw 'syntax check failed' }
+      - name: Install same environment as prior QA
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw 'pip failed' }
+          python -m pip install -r studio/backend/requirements/studio.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Studio dependencies failed' }
+          python -m pip install pytest pytest-asyncio httpx python-multipart aiofiles sqlalchemy cryptography psutil pyyaml jinja2
+          if ($LASTEXITCODE -ne 0) { throw 'QA dependencies failed' }
+      - name: Two prompts / agent tool refill / archive repeats
+        shell: pwsh
+        working-directory: studio/backend
+        run: |
+          python -m pytest -q -s --tb=short tests/context_perf/test_archive_prompt_cycle_repro.py
+          if ($LASTEXITCODE -ne 0) { throw 'Prompt-cycle QA failed' }
+      - name: Show privacy-safe numeric phase counters
+        shell: pwsh
+        if: always()
+        run: |
+          if (Test-Path $env:RAG_CYCLE_METRICS_DIR) {
+            Get-ChildItem $env:RAG_CYCLE_METRICS_DIR -Filter *.json | ForEach-Object { Get-Content $_.FullName }
+          }
+      - name: Upload per-prompt no-content metrics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: v010909-rag-identity-decision-trace-metrics
+          path: ${{ github.workspace }}/rag-cycle-metrics/*.json
+          if-no-files-found: warn
+          retention-days: 14
