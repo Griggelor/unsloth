@@ -241,6 +241,29 @@ jobs:
             New-Item -ItemType Directory -Force (Split-Path $originalTrace) | Out-Null
             Copy-Item -LiteralPath $traceSaved -Destination $originalTrace
           }
+          # Final wheel payload scan exposed two frontend dotfiles as missing,
+          # even though they remain in the wheel RECORD. Restore ONLY these two
+          # from the SHA-pinned upstream source, refusing unexpected contents.
+          foreach ($entry in @(
+            @{ name = '.gitignore'; digest = '972fc714ebeb4e40e61f335fdf43d6e5e07ba237d06a9dadc467528293167ac8' },
+            @{ name = '.gitkeep'; digest = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }
+          )) {
+            $original = Join-Path (Join-Path $repo 'studio/frontend') $entry.name
+            $destDir = Join-Path $site 'studio/frontend'
+            $dest = Join-Path $destDir $entry.name
+            if (!(Test-Path -LiteralPath $original -PathType Leaf)) { throw "Missing pinned source dotfile $($entry.name)" }
+            if ((Get-FileHash -LiteralPath $original -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.digest) {
+              throw "Pinned source SHA-256 mismatch for $($entry.name)"
+            }
+            if (!(Test-Path -LiteralPath $dest -PathType Leaf)) {
+              if (!(Test-Path -LiteralPath $destDir -PathType Container)) { throw "Wheel frontend directory missing" }
+              Copy-Item -LiteralPath $original -Destination $dest
+            }
+            if ((Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.digest) {
+              throw "Installed wheel source dotfile inconsistent: $($entry.name)"
+            }
+            Write-Host "VERIFIED_MAINLINE_FRONTEND_DOTFILE $($entry.name)"
+          }
           $archiveSrc = Join-Path $repo 'studio\backend\core\rag\conversation_archive.py'
           $archivePkg = Join-Path $site 'studio\backend\core\rag\conversation_archive.py'
           if ((Get-FileHash -Algorithm SHA256 $archiveSrc).Hash -ne (Get-FileHash -Algorithm SHA256 $archivePkg).Hash) {
