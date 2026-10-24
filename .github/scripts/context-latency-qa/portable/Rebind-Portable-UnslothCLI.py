@@ -57,7 +57,7 @@ def main() -> None:
     # the shebang. Preserve size using a formally valid ZIP archive comment.
     if len(patched) < len(data):
         deficit = len(data) - len(patched)
-        eocd = patched.rfind(b"PK\\x05\\x06")
+        eocd = patched.rfind(b"PK\x05\x06")
         if eocd < 0 or eocd + 22 > len(patched):
             raise RuntimeError("ZIP central-directory end marker is missing")
         previous_comment = int.from_bytes(patched[eocd + 20:eocd + 22], "little")
