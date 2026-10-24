@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - experiment/context-latency-portable-qa-20261017
+      - qa/mainline-portable-20261024
     paths:
       - 'studio/backend/**'
       - 'studio/src-tauri/**'
@@ -186,6 +187,82 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           & .github/scripts/context-latency-qa/portable/Smoke-Relocated-Backend.ps1 -PackageRoot (Join-Path $env:GITHUB_WORKSPACE 'qa-context-portable') -SourceSHA $env:GITHUB_SHA
+      - name: Integrate PINNED current upstream mainline into completely built portable runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pin = '76e94d5650e4aa9c5ffd8c81bde32c5a07f2587b'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'qa-context-portable'
+          $studio = Join-Path $stage 'qa-runtime\studio'
+          $py = Join-Path $studio 'unsloth_studio\Scripts\python.exe'
+          $site = Join-Path $studio 'unsloth_studio\Lib\site-packages'
+          $srcZip = Join-Path $env:RUNNER_TEMP "unsloth-mainline-$pin.zip"
+          $unpacked = Join-Path $env:RUNNER_TEMP "unsloth-mainline-$pin-source"
+          Invoke-WebRequest -Uri "https://codeload.github.com/unslothai/unsloth/zip/$pin" -OutFile $srcZip
+          Expand-Archive -LiteralPath $srcZip -DestinationPath $unpacked
+          $repo = Join-Path $unpacked "unsloth-$pin"
+          if (!(Test-Path (Join-Path $repo 'studio\backend\core\rag\conversation_archive.py'))) { throw 'Pinned upstream source missing' }
+          $originalTrace = Join-Path $site 'studio\backend\utils\context_latency_trace.py'
+          $traceSaved = Join-Path $env:RUNNER_TEMP 'qa_tracer_original.py'
+          Copy-Item -LiteralPath $originalTrace -Destination $traceSaved
+          Push-Location (Join-Path $repo 'studio\frontend')
+          try {
+            npm ci --no-fund --no-audit
+            if ($LASTEXITCODE -ne 0) { throw 'Mainline npm ci failed' }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw 'Mainline frontend build failed' }
+          } finally { Pop-Location }
+          $wheels = Join-Path $env:RUNNER_TEMP "mainline-wheel-$pin"
+          New-Item -ItemType Directory -Force $wheels | Out-Null
+          python -m pip wheel $repo --no-deps -w $wheels
+          if ($LASTEXITCODE -ne 0) { throw 'Mainline source wheel build failed' }
+          $whls = @(Get-ChildItem -LiteralPath $wheels -Filter 'unsloth-*.whl' -File)
+          if ($whls.Count -ne 1) { throw 'Expected exactly one source wheel' }
+          python -m pip --python $py install --no-deps --force-reinstall $whls[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Mainline wheel install failed' }
+          if (!(Test-Path $originalTrace)) {
+            New-Item -ItemType Directory -Force (Split-Path $originalTrace) | Out-Null
+            Copy-Item -LiteralPath $traceSaved -Destination $originalTrace
+          }
+          $archiveSrc = Join-Path $repo 'studio\backend\core\rag\conversation_archive.py'
+          $archivePkg = Join-Path $site 'studio\backend\core\rag\conversation_archive.py'
+          if ((Get-FileHash -Algorithm SHA256 $archiveSrc).Hash -ne (Get-FileHash -Algorithm SHA256 $archivePkg).Hash) {
+            throw 'The packaged RAG archive does not match pinned upstream source'
+          }
+          foreach ($needle in @('_ARCHIVE_EMBED_MAX_CHUNKS_DEFAULT','def _prewarm_jobs(','def hold_inference(')) {
+            if (!(Select-String -LiteralPath $archivePkg -Pattern $needle -SimpleMatch -Quiet)) {
+              throw "Merged fix marker missing: $needle"
+            }
+          }
+          $frontendSrc = Join-Path $repo 'studio\frontend\dist'
+          $frontendPkg = Join-Path $site 'studio\frontend\dist'
+          if (!(Test-Path (Join-Path $frontendSrc 'index.html'))) { throw 'Mainline frontend dist missing' }
+          if (Test-Path $frontendPkg) { Remove-Item -LiteralPath $frontendPkg -Recurse -Force }
+          Copy-Item -LiteralPath $frontendSrc -Destination $frontendPkg -Recurse
+          $verify = "import importlib.util as u, pathlib; s=u.find_spec('studio.backend.core.rag.conversation_archive'); print('MAINLINE_MODULE='+str(s.origin)); assert pathlib.Path(s.origin).resolve()==pathlib.Path(r'$($archivePkg.Replace('\','/'))').resolve()"
+          & $py -I -c $verify
+          if ($LASTEXITCODE -ne 0) { throw 'Private interpreter uses a different backend' }
+          $meta = [ordered]@{
+            kind = 'WINDOWS_PORTABLE_MAINLINE_QA'
+            upstream_sha = $pin
+            base_fork_source_sha = $env:GITHUB_SHA
+            archive_sha256 = (Get-FileHash -Algorithm SHA256 $archivePkg).Hash.ToLowerInvariant()
+            frontend_index_sha256 = (Get-FileHash -Algorithm SHA256 (Join-Path $frontendPkg 'index.html')).Hash.ToLowerInvariant()
+            mainline_wheel = $whls[0].Name
+            runtime = 'qa-runtime/studio/unsloth_studio/Scripts/python.exe'
+            no_production_files_included = $true
+            test_status = 'pending relocated smoke'
+          }
+          $meta | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'UPSTREAM_MAINLINE_QA_MANIFEST.json') -Encoding UTF8
+      - name: Re-run Windows relocation, private backend health and synthetic host canary AFTER mainline integration
+        shell: pwsh
+        run: |
+          & .github/scripts/context-latency-qa/portable/Smoke-Relocated-Backend.ps1 -PackageRoot (Join-Path $env:GITHUB_WORKSPACE 'qa-context-portable') -SourceSHA $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Updated mainline portable runtime smoke failed' }
+          $manifest = Join-Path $env:GITHUB_WORKSPACE 'qa-context-portable\UPSTREAM_MAINLINE_QA_MANIFEST.json'
+          $x = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
+          $x.test_status = 'relocation and liveness passed'
+          $x | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifest -Encoding UTF8
       - name: Upload private-backend portable Windows QA package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
