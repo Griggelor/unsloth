@@ -23,6 +23,15 @@ foreach ($key in @('STUDIO_HOME', 'STUDIO_LOCAL_REPO', 'PYTHONPATH', 'PYTHONHOME
 $env:VIRTUAL_ENV = Join-Path $studio 'unsloth_studio'
 & (Join-Path $here 'Assert-Portable-Python.ps1') -RuntimeRoot $root
 if ($LASTEXITCODE -ne 0) { throw 'Portable Python integrity check failed' }
+# Console-script stubs embed an ABSOLUTE Python path and must be rebound after
+# every ZIP extraction/relocation, independently of pyvenv.cfg. Never fall back.
+$privatePy = Join-Path $studio 'unsloth_studio\Scripts\python.exe'
+$cliBinder = Join-Path $here 'Rebind-Portable-UnslothCLI.py'
+if (-not (Test-Path -LiteralPath $cliBinder -PathType Leaf)) {
+    throw 'Portable CLI launcher rebinder missing; refusing desktop startup'
+}
+& $privatePy -I -B $cliBinder $here
+if ($LASTEXITCODE -ne 0) { throw 'Private Unsloth CLI launcher invalid or still bound to build machine' }
 $env:UNSLOTH_CONTEXT_QA_VALIDATED = '1'
 $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $root 'webview2-private'
 Write-Host "Starting isolated context-latency QA: $here"
