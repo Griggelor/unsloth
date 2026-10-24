@@ -52,6 +52,23 @@ def main() -> None:
         print("QA_CLI_ALREADY_BOUND", flush=True)
         return
     patched = data[:match.start()] + ('#!"' + str(py) + '"\n').encode("utf-8") + data[match.end():]
+    # Deep Unsloth wheel integrity checks refuse a console executable shorter
+    # than the originally installed RECORD size. A moved install can shorten
+    # the shebang. Preserve size using a formally valid ZIP archive comment.
+    if len(patched) < len(data):
+        deficit = len(data) - len(patched)
+        eocd = patched.rfind(b"PK\\x05\\x06")
+        if eocd < 0 or eocd + 22 > len(patched):
+            raise RuntimeError("ZIP central-directory end marker is missing")
+        previous_comment = int.from_bytes(patched[eocd + 20:eocd + 22], "little")
+        if eocd + 22 + previous_comment != len(patched) or previous_comment + deficit > 65535:
+            raise RuntimeError("Unexpected ZIP comment layout")
+        patched = (
+            patched[:eocd + 20]
+            + (previous_comment + deficit).to_bytes(2, "little")
+            + patched[eocd + 22:]
+            + (b" " * deficit)
+        )
     valid_zip_exe(patched)
     backup = scripts / "unsloth.exe.before-portable-cli-rebind.bak"
     if backup.exists():
