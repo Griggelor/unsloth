@@ -289,6 +289,11 @@ jobs:
           $studio = Join-Path $runtime 'studio'
           $py = Join-Path $studio 'unsloth_studio/Scripts/python.exe'
           $cli = Join-Path $studio 'unsloth_studio/Scripts/unsloth.exe'
+          # Smoke-Relocated-Backend moves the runtime to a Unicode-path test
+          # directory then restores it; the copied venv retains that base path.
+          # Rebind to the private staged CPython BEFORE the next pip invocation.
+          & .github/scripts/context-latency-qa/portable/Assert-Portable-Python.ps1 -RuntimeRoot $runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Private Python post-smoke rebind failed before requirements install' }
           # A wheel-only upgrade is not an installer pass. Reconcile new pinned
           # runtime requirements before certifying this venv for the desktop.
           python -m pip --python $py install --no-deps certifi==2026.10.19 spandrel==0.4.2
