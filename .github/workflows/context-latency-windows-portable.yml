@@ -134,6 +134,18 @@ jobs:
             & $helper -RuntimeRoot $moved
           } finally { Move-Item -LiteralPath $moved -Destination $runtime }
           & $helper -RuntimeRoot $runtime
+          # Regression: extra private CPython versions are legal. Select the one in pyvenv.cfg;
+          # never treat a second unrelated CPython as ambiguity or fall back to host.
+          $decoy = Join-Path $runtime 'studio/python/cpython-0.0.0-windows-x86_64-none'
+          if (Test-Path -LiteralPath $decoy) { throw 'Synthetic second-Python folder unexpectedly exists' }
+          New-Item -ItemType Directory -Force -Path $decoy | Out-Null
+          [IO.File]::WriteAllBytes((Join-Path $decoy 'python.exe'), [byte[]]@(0))
+          try {
+            & $helper -RuntimeRoot $runtime
+            if ($LASTEXITCODE -ne 0) { throw 'Two-version private CPython resolution failed' }
+          } finally {
+            Remove-Item -LiteralPath $decoy -Recurse -Force
+          }
           $original = Join-Path $runtime 'studio/unsloth_studio/Scripts/python.exe'
           $binHash = (Get-FileHash -Algorithm SHA256 $original).Hash
           Write-Host "Portable Python SHA256=$binHash"
