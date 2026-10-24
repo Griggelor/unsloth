@@ -2,6 +2,7 @@
 """QA-only relocation of distlib/uv Windows console launcher to private Python."""
 from __future__ import annotations
 
+import csv
 import io
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ import shutil
 import sys
 import tempfile
 import zipfile
-from importlib.metadata import entry_points
+from importlib.metadata import distribution, entry_points
 
 
 def valid_zip_exe(blob: bytes) -> None:
@@ -48,15 +49,28 @@ def main() -> None:
     if not old.casefold().endswith(r"\unsloth_studio\scripts\python.exe"):
         raise RuntimeError("Unexpected console interpreter: " + old)
     print("QA_CLI_ORIGINAL_INTERPRETER", old, flush=True)
-    if old.casefold() == str(py).casefold():
-        print("QA_CLI_ALREADY_BOUND", flush=True)
+    # Wheel RECORD is the authoritative byte-size minimum for deep verify-install.
+    # Rebinding to a shorter path must not invalidate that claim, even if the
+    # new interpreter is already local (e.g. prior buggy repair left it short).
+    wheel = distribution("unsloth")
+    record = wheel.read_text("RECORD")
+    if not record:
+        raise RuntimeError("Installed unsloth wheel RECORD is absent")
+    rows = [r for r in csv.reader(io.StringIO(record))
+            if r and r[0].replace("\\", "/") == "../../Scripts/unsloth.exe"]
+    if len(rows) != 1 or len(rows[0]) < 3 or not rows[0][2].isdigit():
+        raise RuntimeError("No unique launcher size in installed wheel RECORD")
+    expected_size = int(rows[0][2])
+    locally_bound = old.casefold() == str(py).casefold()
+    if locally_bound and len(data) >= expected_size:
+        print("QA_CLI_ALREADY_BOUND_AND_RECORD_LENGTH_OK", flush=True)
         return
-    patched = data[:match.start()] + ('#!"' + str(py) + '"\n').encode("utf-8") + data[match.end():]
-    # Deep Unsloth wheel integrity checks refuse a console executable shorter
-    # than the originally installed RECORD size. A moved install can shorten
-    # the shebang. Preserve size using a formally valid ZIP archive comment.
-    if len(patched) < len(data):
-        deficit = len(data) - len(patched)
+    patched = (data if locally_bound else
+               data[:match.start()] + ('#!"' + str(py) + '"\n').encode("utf-8") + data[match.end():])
+    # Preserve BOTH the previous payload size and wheel RECORD minimum.
+    minimum_size = max(len(data), expected_size)
+    if len(patched) < minimum_size:
+        deficit = minimum_size - len(patched)
         eocd = patched.rfind(b"PK\x05\x06")
         if eocd < 0 or eocd + 22 > len(patched):
             raise RuntimeError("ZIP central-directory end marker is missing")
@@ -70,6 +84,8 @@ def main() -> None:
             + (b" " * deficit)
         )
     valid_zip_exe(patched)
+    if len(patched) < expected_size:
+        raise RuntimeError("Rebound launcher shorter than installed wheel RECORD")
     backup = scripts / "unsloth.exe.before-portable-cli-rebind.bak"
     if backup.exists():
         # Repeated relocation is allowed only when the old backup is a valid console EXE.
