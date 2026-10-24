@@ -63,6 +63,9 @@ def main():
     proposal = im.verify_install(root=venv, req_root=im.requirements_root(), manifest=proposed, deep=True)
     print('PROPOSED_FINAL_STATE', proposal, flush=True)
     if not proposal['ok']:
+        damage = im.damaged_payload_files('unsloth', limit=30, budget_seconds=0, companion_names=('unsloth-zoo',))
+        for index, entry in enumerate(damage, start=1):
+            print('DAMAGED_WHEEL_PAYLOAD_%02d: %s' % (index, entry), flush=True)
         abort('Actual package dependencies or wheel payload are incomplete; refusing metadata rewrite')
     path = im.manifest_path(venv)
     original = path.read_bytes()
