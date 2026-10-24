@@ -331,6 +331,11 @@ jobs:
           Remove-Item Env:STUDIO_HOME -ErrorAction SilentlyContinue
           & $py -I -B .github/scripts/context-latency-qa/portable/Finalize-Mainline-Install.py $stage '76e94d5650e4aa9c5ffd8c81bde32c5a07f2587b'
           if ($LASTEXITCODE -ne 0) { throw 'Mainline completion manifest failed deep install verification' }
+          # Runtime and Python venv move safely, but uv/distlib unsloth.exe embeds
+          # a CI-runner ABSOLUTE interpreter. Rebind it before testing Desktop.
+          $cliBinder = Join-Path $stage 'Rebind-Portable-UnslothCLI.py'
+          & $py -I -B $cliBinder $stage
+          if ($LASTEXITCODE -ne 0) { throw 'Portable CLI executable still embeds build-machine interpreter' }
           $capLines = @(& $cli studio desktop-capabilities --json)
           if ($LASTEXITCODE -ne 0 -or $capLines.Count -lt 1) { throw 'Desktop manageability probe failed' }
           $cap = ($capLines | Select-Object -Last 1) | ConvertFrom-Json
