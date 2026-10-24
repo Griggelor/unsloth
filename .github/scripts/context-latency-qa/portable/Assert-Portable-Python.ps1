@@ -12,11 +12,25 @@ foreach ($file in @($py, $cfg, $trace)) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Portable QA component missing: $file" }
 }
 if (-not (Test-Path -LiteralPath $llama -PathType Container)) { throw 'Private llama.cpp runtime missing' }
-$base = @(Get-ChildItem -LiteralPath (Join-Path $studio 'python') -Recurse -File -Filter python.exe |
-    Where-Object { $_.FullName -notlike '*\Scripts\*' })
-if ($base.Count -ne 1) { throw 'Ambiguous or missing private CPython; no host fallback allowed' }
+# The portable may carry several CPython patch versions. Only the exact
+# version recorded by this private venv is a valid base for this launcher.
+$pythonRoot = Join-Path $studio 'python'
+if (-not (Test-Path -LiteralPath $pythonRoot -PathType Container)) { throw 'Private CPython directory missing' }
+$content = [System.IO.File]::ReadAllText($cfg)
+$match = [regex]::Match($content, '(?m)^version\s*=\s*(\d+\.\d+\.\d+)\s*$')
+if (-not $match.Success) { throw 'Private venv has no exact Python patch version; refusing to guess' }
+$version = $match.Groups[1].Value
+$prefix = "cpython-$version-"
+$all = @(Get-ChildItem -LiteralPath $pythonRoot -Recurse -File -Filter python.exe |
+    Where-Object { $_.FullName -notlike '*\\Scripts\\*' })
+$base = @($all | Where-Object { $_.Directory.Name.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+if ($base.Count -ne 1) {
+    $found = @($all | ForEach-Object { $_.FullName }) -join '; '
+    throw "Ambiguous or missing PRIVATE CPython $version (matches=$($base.Count), found=$found); no host fallback allowed"
+}
 $baseExe = $base[0].FullName
 $baseDir = $base[0].DirectoryName
+Write-Host "Private CPython selected: $version ($baseDir)"
 $content = [System.IO.File]::ReadAllText($cfg)
 if ($content -notmatch '(?m)^home\s*=') { throw 'No Python venv base runtime declaration' }
 $content = [Text.RegularExpressions.Regex]::Replace($content, '(?m)^home\s*=.*$', ('home = ' + $baseDir.Replace('$', '$$')))
