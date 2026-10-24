@@ -196,6 +196,11 @@ jobs:
           $studio = Join-Path $stage 'qa-runtime\studio'
           $py = Join-Path $studio 'unsloth_studio\Scripts\python.exe'
           $site = Join-Path $studio 'unsloth_studio\Lib\site-packages'
+          # Earlier smoke-test temporarily relocates the private venv to a Unicode path.
+          # After it moves back, pyvenv.cfg can still refer to the temporary base Python.
+          # Rebind the venv to the staged PRIVATE CPython before pip --python uses it.
+          & .github/scripts/context-latency-qa/portable/Assert-Portable-Python.ps1 -RuntimeRoot (Join-Path $stage 'qa-runtime')
+          if ($LASTEXITCODE -ne 0) { throw 'Private Python rebind after relocation failed' }
           $srcZip = Join-Path $env:RUNNER_TEMP "unsloth-mainline-$pin.zip"
           $unpacked = Join-Path $env:RUNNER_TEMP "unsloth-mainline-$pin-source"
           Invoke-WebRequest -Uri "https://codeload.github.com/unslothai/unsloth/zip/$pin" -OutFile $srcZip
