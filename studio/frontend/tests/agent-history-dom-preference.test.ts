@@ -91,8 +91,9 @@ test("UI collapses legacy High/Low into three modes without changing persisted s
   assert.equal(agentHistoryStorageModeForUi("off"), "off");
 
   const global = readSrc("features/settings/tabs/chat-tab.tsx");
+  // Scope assertions to this row, not the rest of the evolving Chat settings page.
   const section = global.split('\n          label={t("settings.chat.agentHistoryGlobal")}')[1]
-    ?.split('\n          label={t("settings.chat.webSearch.images")}')[0] ?? "";
+    ?.split("</SettingsRow>")[0] ?? "";
   const options = [...section.matchAll(/<SelectItem value="([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(options, ["dynamic", "fixed", "off"]);
   assert.doesNotMatch(section, /<Switch/);
