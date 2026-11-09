@@ -4,6 +4,7 @@ name: R6V3 Windows unsigned frontend executable
 
 on:
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
     branches:
       - qa/r6v3-mainline-base-20261109
     paths:
@@ -15,8 +16,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   windows-unsigned:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: windows-latest
     timeout-minutes: 75
     steps:
@@ -44,9 +50,6 @@ jobs:
       - name: Install Tauri CLI
         run: npm ci --prefix studio --no-fund --no-audit
       - name: Build unsigned Windows executable
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ''
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         run: npx --prefix studio tauri build --no-bundle
       - name: Prepare exact binary and checksums
         shell: pwsh
