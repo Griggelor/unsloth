@@ -93,8 +93,7 @@ function scopeState(client: AssistantClient, key: string): unknown {
   return getState.call(methods);
 }
 
-// Rebuilt on every repository write, hidden branches included, but not when only the store rebuilds
-// `thread.messages` (the first keystroke after a run does).
+// Per repository write, hidden branches too; not when only the store rebuilds thread.messages.
 function repositoryRevision(client: AssistantClient): unknown {
   const thread = (client as unknown as Record<string, unknown>).thread;
   if (typeof thread !== "function") return UNKNOWN_REPOSITORY;
@@ -176,6 +175,8 @@ export function rowsToNotify(
 
 export interface RowNotificationGate {
   row(index: number): AssistantClient;
+  /** Release cached clients outside the mounted range, without disrupting live subscribers. */
+  pruneOutside(start: number, end: number): void;
 }
 
 function withSubscribe(
@@ -245,6 +246,18 @@ export function createRowNotificationGate(
   };
 
   return {
+    pruneOutside(start: number, end: number): void {
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start) {
+        throw new RangeError("Invalid row notification gate window");
+      }
+      // A client may still be subscribed during an unmount or transition. Keep it
+      // until a subsequent window change after the subscription is released.
+      const active = new Set<number>();
+      for (const entry of entries) active.add(entry.index);
+      for (const index of rows.keys()) {
+        if ((index < start || index >= end) && !active.has(index)) rows.delete(index);
+      }
+    },
     row(index: number): AssistantClient {
       let client = rows.get(index);
       if (client === undefined) {

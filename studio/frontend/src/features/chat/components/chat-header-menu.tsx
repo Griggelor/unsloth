@@ -6,6 +6,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuSub,
@@ -19,24 +21,23 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useChatFavoritesStore } from "@/features/library/chats/favorites-store";
+import { useAgentHistoryModeStore } from "../stores/agent-history-mode-store";
+import { agentHistoryLevelFor, agentHistoryStorageModeForUi, agentHistoryUiModeFor } from "../stores/agent-history-preference-policy";
 import { resumesThought } from "@/features/model-picker";
 import { useShortcutLabel } from "@/features/settings";
 import type { ShortcutId } from "@/features/settings";
 import { useT } from "@/i18n";
-import { StarPointedIcon } from "@/lib/hugeicons-derived";
+import { StarPointedIcon, TrashIcon } from "@/lib/hugeicons-derived";
 import { isDownloadCancelled } from "@/lib/native-files";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import {
-  Archive03Icon,
+  ArchiveIcon,
   BubbleChatTemporaryIcon,
   Cancel01Icon,
-  Copy01Icon,
-  Delete02Icon,
+  CollapseIcon,
   Download01Icon,
   Edit03Icon,
-  Folder02Icon,
-  FolderExportIcon,
   LayerIcon,
   MoreHorizontalIcon,
   PinIcon,
@@ -46,7 +47,10 @@ import {
   ViewIcon,
   ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons";
+import { FolderExportIcon } from "@/lib/folder-icons";
+import { Copy01Icon } from "@/lib/copy-icon";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { ProjectIcon } from "@/lib/project-icon";
 import { ForkIcon } from "@/lib/fork-icon";
 import { type ReactNode, useSyncExternalStore } from "react";
 import { useChatRuntimeStore } from "../stores/chat-runtime-store";
@@ -64,8 +68,6 @@ import {
   hasPreStreamRunReservation,
   subscribePreStreamRunReservations,
 } from "../utils/pre-stream-run-reservation";
-import { deriveContextUsageBar } from "../lib/context-usage-bar-state";
-import { UsageRing } from "./context-usage-bar";
 import {
   type ConversationExportFormat,
   chatExportOptions,
@@ -73,7 +75,12 @@ import {
   getSidebarItemThreadIds,
   regenerateChatTitleWithToast,
 } from "./chat-row-menu";
-import { OpenChatFolderItem, UploadToChatFolderItem } from "./open-chat-folder-item";
+import {
+  chatFolderSessionId,
+  OpenChatFolderItem,
+  UploadToChatFolderItem,
+} from "./open-chat-folder-item";
+import { ExportFormatItems } from "./export-format-items";
 
 const MENU = "library-actions-menu";
 const ICON = "size-icon";
@@ -143,7 +150,7 @@ function TemporaryChatButton({
           className={cn(
             "flex size-[calc(30px*var(--ui-space-scale,1))] cursor-pointer items-center justify-center rounded-[10px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             temporary
-              ? "bg-primary/10 text-primary hover:bg-primary/15"
+              ? "bg-wash-10 text-foreground hover:bg-wash-15"
               : "text-nav-fg hover:bg-nav-surface-hover hover:text-black dark:hover:text-white",
           )}
           aria-label={label}
@@ -178,16 +185,12 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
   const busy = useChatRuntimeStore((state) =>
     state.modelLoading || Boolean(state.runningByThreadId[menu.item.id]),
   ) || preStreamRunActive || liveRunActive;
-  const usedPercent = useChatRuntimeStore((state) => {
-    const usage =
-      state.activeThreadId === menu.item.id
-        ? state.contextUsage
-        : state.contextUsageByThreadId[menu.item.id];
-    return deriveContextUsageBar({
-      used: usage?.contextTokens ?? usage?.totalTokens ?? null,
-      total: state.loadedContextLength,
-    })?.percent ?? null;
-  });
+  const agentHistoryLevel = useAgentHistoryModeStore(
+    (state) => agentHistoryLevelFor(state, menu.item.id),
+  );
+  const explicitAgentHistoryLevel = useAgentHistoryModeStore(
+    (state) => state.domLevelByThreadId?.[menu.item.id],
+  );
   const compact = () => {
     const runtime = useChatRuntimeStore.getState();
     if (
@@ -244,6 +247,7 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
       >
         {t("library.menu.regenerateTitle")}
       </Item>
+      <DropdownMenuSeparator className="mx-3" />
       <Item
         icon={menu.pinned ? PinOffIcon : PinIcon}
         onSelect={menu.togglePin}
@@ -286,16 +290,52 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
       </Item>
       <DropdownMenuSeparator className="mx-3" />
       <Item
-        glyph={
-          <span className="flex [--track:color-mix(in_srgb,currentColor_30%,transparent)]">
-            <UsageRing percent={usedPercent} stroke="stroke-current" />
-          </span>
-        }
+        icon={CollapseIcon}
         onSelect={compact}
         disabled={menu.item.type !== "single" || busy}
       >
         {t("chatMenu.compact")}
       </Item>
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger data-test-id="agent-dom-level-trigger" disabled={busy} className="gap-2.5">
+          <HugeiconsIcon icon={LayerIcon} strokeWidth={1.75} className={ICON} />
+          {t("settings.chat.agentHistoryChatMode")}: {
+            t(agentHistoryUiModeFor(agentHistoryLevel) === "dynamic"
+              ? "settings.chat.agentHistoryBufferDynamic"
+              : agentHistoryUiModeFor(agentHistoryLevel) === "fixed"
+                ? "settings.chat.agentHistoryBufferFixed"
+                : "settings.chat.agentHistoryModeOff")
+          }
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className={cn(MENU, "w-60")}>
+          <DropdownMenuLabel className={LABEL}>{t("settings.chat.agentHistoryChatMode")}</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={explicitAgentHistoryLevel === undefined
+              ? "inherit" : agentHistoryUiModeFor(explicitAgentHistoryLevel)}
+            onValueChange={value => {
+              if (value === "inherit") {
+                useAgentHistoryModeStore.getState().setThreadDomLevel(menu.item.id, null);
+              } else if (value === "off" || value === "dynamic" || value === "fixed") {
+                useAgentHistoryModeStore.getState().setThreadDomLevel(
+                  menu.item.id, agentHistoryStorageModeForUi(value),
+                );
+              }
+            }}
+          >
+            {([
+              ["inherit", t("settings.chat.agentHistoryInherit")],
+              ["dynamic", t("settings.chat.agentHistoryBufferDynamic")],
+              ["fixed", t("settings.chat.agentHistoryBufferFixed")],
+              ["off", t("settings.chat.agentHistoryModeOff")],
+            ] as const).map(([value, label]) => (
+              <DropdownMenuRadioItem key={value} value={value}
+                data-test-id={`agent-dom-level-${value}`}>
+                {label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
       <Item
         glyph={<HugeiconsIcon icon={ForkIcon} strokeWidth={1.75} className={ICON} />}
         onSelect={menu.fork}
@@ -304,6 +344,7 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
       >
         {t("library.chats.menu.fork")}
       </Item>
+      <DropdownMenuSeparator className="mx-3" />
       <DropdownMenuSub>
         <DropdownMenuSubTrigger className="gap-2.5">
           <HugeiconsIcon
@@ -330,7 +371,7 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
               {menu.projects.map((entry) => (
                 <Item
                   key={entry.id}
-                  icon={Folder02Icon}
+                  icon={ProjectIcon}
                   onSelect={() => menu.moveToProject(entry.id)}
                 >
                   {entry.name}
@@ -402,30 +443,32 @@ function ChatMenuItems({ menu }: { menu: ActiveChatMenu }) {
           {t("common.export")}
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className={cn(MENU, "w-48")}>
-          {chatExportOptions().map(({ label: name, format }) => (
-            <DropdownMenuItem
-              key={format}
-              onSelect={() => void exportAs(format)}
-            >
-              {name}
-            </DropdownMenuItem>
-          ))}
+          <ExportFormatItems
+            options={chatExportOptions().map(({ label, format }) => ({
+              key: format,
+              label,
+            }))}
+            onSelect={(format) => void exportAs(format)}
+            subContentClassName={cn(MENU, "w-48")}
+          />
         </DropdownMenuSubContent>
       </DropdownMenuSub>
+      {/* Only with the folder items, or it doubles the next separator. */}
+      {chatFolderSessionId(menu.item) ? <DropdownMenuSeparator className="mx-3" /> : null}
       <OpenChatFolderItem item={menu.item} />
       <UploadToChatFolderItem item={menu.item} />
       <DropdownMenuSeparator className="mx-3" />
-      <Item icon={Archive03Icon} onSelect={menu.archive} shortcut="archiveChat">
+      <Item icon={ArchiveIcon} onSelect={menu.archive} shortcut="archiveChat">
         {t("settings.data.library.archive")}
       </Item>
-      <Item icon={Delete02Icon} onSelect={menu.remove} destructive={true}>
+      <Item icon={TrashIcon} onSelect={menu.remove} destructive={true}>
         {t("common.delete")}
       </Item>
     </>
   );
 }
 
-/** A saved chat's "…" menu, or the temporary toggle on a new chat. Turning a saved chat temporary is not offered: it would quietly stop saving a chat the user kept. */
+/** A saved chat's menu, or the temporary toggle on a new chat. Saved chats cannot turn temporary. */
 export function ChatHeaderMenu({
   temporary,
   onToggleTemporary,
@@ -449,6 +492,7 @@ export function ChatHeaderMenu({
             <button
               type="button"
               aria-label={label}
+              data-test-id="chat-header-more-menu-trigger"
               className={CHAT_MENU_TRIGGER}
             >
               <HugeiconsIcon

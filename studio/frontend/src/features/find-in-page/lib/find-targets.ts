@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 
-// Something besides the chat the find bar can search (the browser's page), doing its own matching.
-
-/** A target's answer for the current query. `count` is null when it can only step, not count. */
-export type FindTargetResult = { count: number | null; active: number };
+export type FindTargetResult = { count: number | null; active: number; capped?: boolean; truncated?: boolean };
 
 export type FindTarget = {
   id: string;
+  /** A chat target replaces DOM-only chat search; other targets remain selectable. */
+  kind?: "chat";
   available: () => boolean;
-  /** Whether `node` is inside it, so the chord opens the bar searching it from there. */
   contains: (node: Node) => boolean;
-  /** Searches for `query`; an empty one clears its highlights. Results arrive through `notify`. */
   search: (query: string) => void;
   step: (delta: -1 | 1) => void;
   result: () => FindTargetResult;
@@ -58,6 +55,20 @@ export function findTarget(id: string): FindTarget | undefined {
 
 export function availableFindTargets(): FindTarget[] {
   return [...targets.values()].filter((target) => target.available());
+}
+
+/** Resolve the Chat scope independently from the external-browser scope.
+ * Do not infer its type from an implementation-specific target id prefix. */
+export function resolveFindScopeTargets(
+  available: readonly FindTarget[],
+  scope: string | null,
+): { selected: FindTarget | undefined; external: FindTarget[] } {
+  return {
+    selected: scope === null
+      ? available.find((target) => target.kind === "chat")
+      : available.find((target) => target.id === scope),
+    external: available.filter((target) => target.kind !== "chat"),
+  };
 }
 
 export function findTargetHolding(node: Node | null): FindTarget | undefined {

@@ -60,14 +60,17 @@ FACTS_JS = """
   const api = window.__heavyThread;
   const target = api.actionButton("Copy");
   if (!window.__dismissProbeTarget) {
-    window.__dismissProbeTarget = { clicks: 0 };
+    window.__dismissProbeTarget = { clicks: 0, button: null };
+    // Keep the actual button from the pre-click hit test. React may re-render the
+    // action bar during onClick before the event reaches this bubble-phase listener.
     window.addEventListener("click", (event) => {
-      const copy = window.__heavyThread.actionButton("Copy");
-      if (copy && event.target instanceof Node && copy.contains(event.target)) {
+      const button = window.__dismissProbeTarget.button;
+      if (button && event.composedPath().includes(button)) {
         window.__dismissProbeTarget.clicks += 1;
       }
     });
   }
+  window.__dismissProbeTarget.button = target;
   const r = target ? target.getBoundingClientRect() : null;
   const x = r ? r.x + r.width / 2 : 0;
   const y = r ? r.y + r.height / 2 : 0;
@@ -246,12 +249,15 @@ async def one_case(
 ) -> dict:
     """Open the menu, attack the Copy button one way, report whether the click reached it."""
     await hover_last_assistant(page)
-    # Positive control: a direct click with no menu open must be counted, or a zero below would
-    # mean only that the counter cannot see clicks.
+    # Control: a click with no menu open must register, else zero means a blind counter.
     control = await page.evaluate(FACTS_JS)
     if not control["targetRect"]:
         return {"case": case, "error": "no Copy button"}
-    await page.mouse.click(control["targetRect"]["x"], control["targetRect"]["y"])
+    # Click the live, actionable element rather than stale coordinates from an earlier
+    # layout snapshot. Still a real browser pointer click, not a dispatched DOM event.
+    last_assistant = page.locator('[data-role="assistant"]').last
+    copy_button = last_assistant.get_by_role("button", name = "Copy", exact = True).first
+    await copy_button.click(timeout = 5000)
     await until(page, f"n => ({FACTS_JS})().targetClicks > n", 2000, arg = control["targetClicks"])
     counted = (await page.evaluate(FACTS_JS))["targetClicks"] - control["targetClicks"]
     if counted != 1:
@@ -349,10 +355,8 @@ async def one_case(
         before_space = await page.evaluate(FOCUS_FACTS_JS)
         await page.keyboard.press("Space")
     elif case == "dismiss_on_composer":
-        # Dismissing into the composer must preserve its caret. The click has to land on the
-        # composer itself: since #13615 the shorter More menu can open over the composer's middle,
-        # and a click there is a click IN the menu, which rightly does not dismiss it. So the spot
-        # is the first point across the composer's midline that hit-tests to the composer.
+        # Dismissing into the composer must preserve its caret; the click must land on the composer,
+        # not the menu, since PR/issue 13615 the menu can open over its middle.
         spot = await page.evaluate(
             """() => {
               const c = window.__heavyThread.composer();
@@ -554,10 +558,8 @@ async def one_case(
     else:
         return {"case": case, "error": f"unknown case {case}"}
 
-    # Wait for the menu's exit rather than a flat 1500 ms: same bound, but it returns as soon as
-    # the menu is gone. A case that leaves it open on purpose (Space reopening it) still waits the
-    # whole bound. Then a short observation window, because the verdict is mostly "no click
-    # reached Copy", and a click a touch gesture synthesizes can land after the menu has closed.
+    # Wait for the menu to close (1500 ms bound), then 300 ms: a touch click can land after it
+    # closes.
     await until(page, MENU_CLOSED, 1500)
     await page.wait_for_timeout(300)
     after = await page.evaluate(FACTS_JS)
