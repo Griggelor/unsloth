@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 
-// Settings > Chat owns composer preferences, followed by conversation and reply settings.
+// Settings > Chat: Chat defaults holds the everyday rows; the rest is split so no section runs long.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -31,27 +31,33 @@ const composerBody = (name: string): string => {
 };
 const composerLabels = labels;
 
-test("Chat defaults keeps scrolling and reply stats", () => {
+test("Chat defaults keeps the everyday rows: send and follow-up, scrolling, pastes, reply stats", () => {
   const defaults = section("settings.general.chatDefaults");
-  assert.deepEqual(labels(defaults), ["settings.chat.autoScroll"]);
+  assert.ok(defaults.indexOf("<ComposerSettings embedded={true} />") !== -1);
+  assert.deepEqual(labels(defaults), [
+    "settings.chat.autoScroll",
+    "settings.chat.pastedTextThreshold",
+  ]);
+  assert.ok(
+    defaults.indexOf("<ComposerSettings embedded={true} />") <
+      defaults.indexOf('label={t("settings.chat.autoScroll")}'),
+    "send shortcut and follow-up stay on top",
+  );
   assert.match(defaults, /<GenerationStatsUpdatesRow \/>\s+$/);
   assert.doesNotMatch(defaults, /isOwner/, "the owner limits sit in Replies");
-});
-
-test("Composer groups behavior, pasting, context and appearance in Chat", () => {
-  const settings = section("composerSettings.title");
-  assert.match(settings, /<ComposerSettings embedded=\{true\} \/>/);
-  assert.deepEqual(labels(settings), [
-    "settings.chat.pastedTextThreshold",
-    "settings.appearance.custom.chatWidth.label",
-    "settings.chat.composerPosition",
-    "settings.appearance.custom.sentAttachments.label",
-  ]);
   assert.deepEqual(composerLabels(composerBody("ComposerSettings")), [
     "composerSettings.sendShortcut",
     "composerSettings.followUp",
     "composerSettings.shareDraft",
   ]);
+});
+
+test("Plain text composer, Rich text paste and Context window usage sit in Display; no Message box section", () => {
+  assert.equal(tab.indexOf('t("settings.chat.groups.composer.title")'), -1);
+  assert.doesNotMatch(
+    readSrc("features/settings/settings-search.ts"),
+    /"settings\.chat\.groups\.composer\.title"/,
+  );
   assert.deepEqual(composerLabels(composerBody("ComposerFormatRows")), [
     "composerSettings.plainText",
     "composerSettings.richPaste",
@@ -60,10 +66,13 @@ test("Composer groups behavior, pasting, context and appearance in Chat", () => 
     composerBody("ContextWindowUsageRow"),
     /<SettingsRow label=\{t\("composerSettings\.showContext"\)\}>/,
   );
-  assert.match(settings, /<ContextWindowUsageRow \/>/);
-  assert.match(settings, /<ComposerFormatRows \/>/);
   const display = section("settings.chat.groups.display.title");
-  assert.doesNotMatch(display, /<ContextWindowUsageRow \/>|<ComposerFormatRows \/>/);
+  assert.match(display, /<ContextWindowUsageRow \/>/);
+  assert.match(
+    display,
+    /<ComposerFormatRows \/>\s+$/,
+    "the two message-box rows close Display",
+  );
   assert.equal(
     tab.match(/<ContextWindowUsageRow \/>|<ComposerFormatRows \/>/g)?.length,
     2,
@@ -106,6 +115,7 @@ test("Thinking and tools groups the visibility rows out of Display", () => {
     ],
   );
   assert.deepEqual(labels(section("settings.chat.groups.display.title")), [
+    "settings.chat.agentHistoryGlobal",
     "settings.chat.showLinkPreviews",
     "settings.chat.showResponseModel",
     "settings.chat.showReplyTimes",
@@ -115,10 +125,9 @@ test("Thinking and tools groups the visibility rows out of Display", () => {
   ]);
 });
 
-test("sections run composer, defaults, memory, conversations, replies, thinking and tools, display", () => {
-  const [composer, defaults, conversations, replies, thinkingTools, display, models] =
+test("sections run defaults, memory, conversations, replies, thinking and tools, display", () => {
+  const [defaults, conversations, replies, thinkingTools, display, models] =
     sectionOrder([
-      "composerSettings.title",
       "settings.general.chatDefaults",
       "settings.chat.groups.conversations.title",
       "settings.chat.groups.replies.title",
@@ -128,8 +137,7 @@ test("sections run composer, defaults, memory, conversations, replies, thinking 
     ]);
   const memory = tab.indexOf("<ChatMemorySection />");
   assert.ok(
-    composer < defaults &&
-      defaults < memory &&
+    defaults < memory &&
       memory < conversations &&
       conversations < replies &&
       replies < thinkingTools &&
