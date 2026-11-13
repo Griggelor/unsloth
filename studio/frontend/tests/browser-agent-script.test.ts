@@ -61,8 +61,11 @@ test("Run scripts Always allow executes browser_evaluate without asking", async 
     if (op.op === "evaluated") return { installed: true, result: { ok: true, pending: false, text: "42" } };
     return { installed: true, result: { ok: true, text: "page", links: [] } };
   };
-  const run = { runKey: "allow-run", userText: "open https://example.com/" };
-  await runBrowserAction({ id: "allow-nav", sessionId: "s", op: "navigate", url: "https://example.com/", direction: "down", policy }, run);
+  // Reuse the document the preceding regression test already navigated to.
+  // A second same-URL navigation can leave the mock tab loading for 60s, and
+  // masks whether script approval is actually bypassed.
+  assert.ok(agentChat(CHAT).tabId, "the first test must leave a live browser tab");
+  const run = { runKey: "allow-run", userText: "evaluate JavaScript on the existing page" };
   useBrowserAgentStore.setState({ scriptAccess: "allow" });
   await runBrowserAction({ id: "allow-eval", sessionId: "s", op: "evaluate", script: "return 42;", direction: "down", policy }, run);
   const result = posted.find((entry) => entry.action_id === "allow-eval")?.result;
