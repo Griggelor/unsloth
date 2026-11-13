@@ -1712,3 +1712,41 @@ def test_a_short_earlier_prompt_is_still_worth_searching_for(
     assert block is not None, "the nudge was searched for nothing at all"
     assert calls[0] == ("continue", ["Write a story about Mars"]), calls
     assert "Mars" in block["prefix"]
+
+
+def test_auto_recall_opt_out_keeps_archive_and_manual_search(archived, monkeypatch):
+    """No synthetic prompt injection/status, but evicted turns remain searchable."""
+    monkeypatch.setattr(conversation_archive.config, "CONVERSATION_AUTO_RECALL", False)
+    attempted = []
+    monkeypatch.setattr(
+        tools_mod,
+        "build_conversation_recall",
+        lambda *_args, **_kwargs: attempted.append(True),
+    )
+
+    before = _conversation() + [{"role": "user", "content": "an evicted instruction about backups"}]
+    after = _conversation()
+    result = llama_cpp._archive_and_recall(
+        after,
+        before,
+        thread_id = THREAD,
+        style = "tool",
+        recall_done = False,
+        recall_budget_tokens = 10_000,
+    )
+
+    assert result["conversation"] is after
+    assert result["events"] == []
+    assert result["recalled"] is False
+    assert result["counts"]["archived_messages"] >= 1
+    assert attempted == []
+    assert llama_cpp._conversation_recall_reserve(THREAD) == 0
+
+    # The manual tool is intentionally not disabled.
+    found = tools_mod.execute_tool(
+        "search_conversation",
+        {"query": "pelicans"},
+        thread_id = THREAD,
+        timeout = None,
+    )
+    assert "pelicans" in found
