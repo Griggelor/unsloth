@@ -43,3 +43,29 @@ test("a script approved after Run scripts was set to Never does not run", async 
   assert.match(posted.at(-1)?.result.error ?? "", /doesn't let the agent run scripts/);
   assert.ok(!sent.includes("evaluate"));
 });
+
+
+test("Run scripts Always allow executes browser_evaluate without asking", async () => {
+  const posted: { action_id: string; result: { ok: boolean; text?: string; error?: string } }[] = [];
+  globals.__authFetch = async (_url: string, init: { body: string }) => {
+    posted.push(JSON.parse(init.body));
+    return new Response(null, { status: 200 });
+  };
+  const sent: string[] = [];
+  globals.__frameAgent = async (_tabId: string, op: Record<string, unknown>) => {
+    sent.push(String(op.op));
+    if (op.op === "status") return { installed: true, result: { ok: true, quietMs: 1000, doc: "r1" } };
+    if (op.op === "evaluate") return { installed: true, result: { ok: true } };
+    if (op.op === "evaluated") return { installed: true, result: { ok: true, pending: false, text: "42" } };
+    return { installed: true, result: { ok: true, text: "page", links: [] } };
+  };
+  const run = { runKey: "allow-run", userText: "open https://example.com/" };
+  await runBrowserAction({ id: "allow-nav", sessionId: "s", op: "navigate", url: "https://example.com/", direction: "down", policy }, run);
+  useBrowserAgentStore.setState({ scriptAccess: "allow" });
+  await runBrowserAction({ id: "allow-eval", sessionId: "s", op: "evaluate", script: "return 42;", direction: "down", policy }, run);
+  const result = posted.find((entry) => entry.action_id === "allow-eval")?.result;
+  assert.equal(result?.ok, true, result?.error);
+  assert.ok(sent.includes("evaluate"));
+  assert.equal(agentChat(CHAT).question, null, "Always allow must not request script approval");
+  useBrowserAgentStore.setState({ scriptAccess: "ask" });
+});

@@ -3,11 +3,15 @@
 name: R6V3 Windows unsigned frontend executable
 
 on:
+  push:
+    branches:
+      - qa/r6v3-browser-scripts-always-20261113
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
     branches:
       - qa/r6v3-mainline-base-20261109
       - qa/r6v3-upstream-main-20261111
+      - qa/r6v3-upstream-main-20261113
     paths:
       - 'studio/frontend/**'
       - 'studio/src-tauri/**'
@@ -48,6 +52,9 @@ jobs:
       - name: Agent History targeted tests
         working-directory: studio/frontend
         run: node --experimental-strip-types --test tests/agent-history-*.test.ts
+      - name: Browser script permission regression tests
+        working-directory: studio/frontend
+        run: node --experimental-strip-types --test tests/browser-agent-gate.test.ts tests/browser-agent-script.test.ts
       - name: Install Tauri CLI
         run: npm ci --prefix studio --no-fund --no-audit
       - name: Build unsigned Windows executable
