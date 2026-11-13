@@ -141,7 +141,7 @@ export const de = {
       alwaysAllow: "Immer erlauben",
       never: "Nie",
       scripts: "Skripte ausführen",
-      scriptsDescription: "Lege fest, ob Modelle Skripte auf Seiten ausführen dürfen. Jedes Skript wird dir vorher angezeigt",
+      scriptsDescription: "Skripte einzeln freigeben, ohne Rückfrage immer erlauben oder vollständig sperren. Immer erlauben gibt Modellen direkten JavaScript-Zugriff auf Webseiten.",
       cursor: "Cursor anzeigen",
       cursorDescription: "Zeigt einen Zeiger dort, wo Modelle auf der Seite klicken, tippen und ziehen",
       askEveryTime: "Jedes Mal fragen",

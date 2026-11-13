@@ -138,7 +138,7 @@ export const en = {
       alwaysAllow: "Always allow",
       never: "Never",
       scripts: "Run scripts",
-      scriptsDescription: "Choose whether models can run scripts on pages. You see each script before it runs",
+      scriptsDescription: "Ask before every script, always allow scripts without approval, or block scripts entirely. Always allow gives models full page JavaScript access.",
       cursor: "Show cursor",
       cursorDescription: "Show a pointer where models click, type and drag on the page",
       askEveryTime: "Ask every time",

@@ -118,7 +118,7 @@ export const useBrowserAgentStore = create<BrowserAgentState>()(
         scriptAccess: state.scriptAccess,
         showCursor: state.showCursor,
       }),
-      // Checked on the way in: storage another build wrote must never read as "allow".
+      // Validate persisted choices. The opt-in "allow" is accepted only when explicitly stored.
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Record<string, unknown>;
         return {
@@ -126,7 +126,7 @@ export const useBrowserAgentStore = create<BrowserAgentState>()(
           enabled: saved.enabled === true,
           permissions: checkedPermissions(saved.permissions),
           historyAccess: saved.historyAccess === "allow" || saved.historyAccess === "never" ? saved.historyAccess : "ask",
-          scriptAccess: saved.scriptAccess === "never" ? "never" : "ask",
+          scriptAccess: saved.scriptAccess === "never" || saved.scriptAccess === "allow" ? saved.scriptAccess : "ask",
           showCursor: saved.showCursor !== false,
         };
       },
