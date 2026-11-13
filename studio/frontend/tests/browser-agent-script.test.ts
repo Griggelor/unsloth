@@ -7,7 +7,7 @@ import { test } from "node:test";
 
 register("./helpers/browser-executor-resolver.mjs", import.meta.url);
 const { runBrowserAction } = await import("../src/features/browser/agent/executor.ts");
-const { agentChat, answerQuestion, useBrowserAgentStore } = await import("../src/features/browser/agent/agent-store.ts");
+const { agentChat, answerQuestion, endBrowserAgentRun, useBrowserAgentStore } = await import("../src/features/browser/agent/agent-store.ts");
 // Actions without a scope act for the chat on screen.
 const CHAT = "new";
 
@@ -42,4 +42,36 @@ test("a script approved after Run scripts was set to Never does not run", async 
   assert.equal(posted.at(-1)?.result.ok, false);
   assert.match(posted.at(-1)?.result.error ?? "", /doesn't let the agent run scripts/);
   assert.ok(!sent.includes("evaluate"));
+  // A tool response is not the end of a model turn. End the simulated run before the next test.
+  endBrowserAgentRun(run.runKey);
+});
+
+
+test("Run scripts Always allow executes browser_evaluate without asking", async () => {
+  const posted: { action_id: string; result: { ok: boolean; text?: string; error?: string } }[] = [];
+  globals.__authFetch = async (_url: string, init: { body: string }) => {
+    posted.push(JSON.parse(init.body));
+    return new Response(null, { status: 200 });
+  };
+  const sent: string[] = [];
+  globals.__frameAgent = async (_tabId: string, op: Record<string, unknown>) => {
+    sent.push(String(op.op));
+    if (op.op === "status") return { installed: true, result: { ok: true, quietMs: 1000, doc: "r1" } };
+    if (op.op === "evaluate") return { installed: true, result: { ok: true } };
+    if (op.op === "evaluated") return { installed: true, result: { ok: true, pending: false, text: "42" } };
+    return { installed: true, result: { ok: true, text: "page", links: [] } };
+  };
+  // Reuse the document the preceding regression test already navigated to.
+  // A second same-URL navigation can leave the mock tab loading for 60s, and
+  // masks whether script approval is actually bypassed.
+  assert.ok(agentChat(CHAT).tabId, "the first test must leave a live browser tab");
+  const run = { runKey: "allow-run", userText: "evaluate JavaScript on the existing page" };
+  useBrowserAgentStore.setState({ scriptAccess: "allow" });
+  await runBrowserAction({ id: "allow-eval", sessionId: "s", op: "evaluate", script: "return 42;", direction: "down", policy }, run);
+  const result = posted.find((entry) => entry.action_id === "allow-eval")?.result;
+  assert.equal(result?.ok, true, result?.error);
+  assert.ok(sent.includes("evaluate"));
+  assert.equal(agentChat(CHAT).question, null, "Always allow must not request script approval");
+  endBrowserAgentRun(run.runKey);
+  useBrowserAgentStore.setState({ scriptAccess: "ask" });
 });

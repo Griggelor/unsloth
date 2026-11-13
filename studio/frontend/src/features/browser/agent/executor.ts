@@ -1463,18 +1463,32 @@ async function unchanged(tab: BrowserTab, point: { x: number; y: number }, hit: 
 const SCRIPT_WAIT_MS = 15_000;
 const SCRIPTS_OFF = "The user doesn't let the agent run scripts on pages.";
 
-/** A script bypasses every rule above, so it is shown verbatim and asked every time, whatever the site permissions. */
+/** Page scripts bypass ordinary interaction gates. The user explicitly chooses per-script approval or always-allow. */
 async function runScript(tab: BrowserTab, action: BrowserAction, context: Run, before: string): Promise<Result> {
   const { signal } = context;
   const script = action.script ?? "";
   if (!script.trim()) return { ok: false, error: "the script is empty." };
-  // The document the user sees as they approve: a reload or a page at the same address is another one.
+  // A reload or a page at the same address is another document, regardless of script policy.
   const doc = (await pageCall(tab, { op: "status" })).doc;
   if (!doc) return { ok: false, error: "the page is not answering; take a snapshot." };
-  const refused = await pass({ kind: "ask", ask: "script", host: siteOfUrl(before), name: "", detail: script, prompt: "" }, context);
-  if (refused) return { ok: false, error: refused };
+  const gate = { kind: "ask" as const, ask: "script" as const, host: siteOfUrl(before), name: "", detail: script, prompt: "" };
+  const initialAccess = useBrowserAgentStore.getState().scriptAccess;
+  if (initialAccess === "never") return { ok: false, error: SCRIPTS_OFF };
+  let approved = false;
+  if (initialAccess === "ask") {
+    const refused = await pass(gate, context);
+    if (refused) return { ok: false, error: refused };
+    approved = true;
+  }
   if (signal?.aborted) return { ok: false, error: STOPPED };
-  // Settings can change while the question is open.
+  // Recheck after async work: Never always blocks; switching Allow -> Ask requires approval.
+  const latestAccess = useBrowserAgentStore.getState().scriptAccess;
+  if (latestAccess === "never") return { ok: false, error: SCRIPTS_OFF };
+  if (!approved && latestAccess === "ask") {
+    const refused = await pass(gate, context);
+    if (refused) return { ok: false, error: refused };
+  }
+  if (signal?.aborted) return { ok: false, error: STOPPED };
   if (useBrowserAgentStore.getState().scriptAccess === "never") return { ok: false, error: SCRIPTS_OFF };
   const current = useBrowserStore.getState().tabs.find((candidate) => candidate.id === tab.id);
   if (!current || current.loading || tabUrl(current) !== before) {
