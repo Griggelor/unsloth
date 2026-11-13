@@ -284,6 +284,19 @@ def _fit_context(messages, **kwargs):
     force_reset = bool(kwargs.pop("force_reset", False))
     sticky_manual = bool(kwargs.pop("sticky_manual", False))
     replay_only = bool(kwargs.pop("replay_only", False))
+    if os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
+        logger.info(
+            "context_policy_diag requested=%s effective=%s can_reset=%s "
+            "sticky_dropped=%s sticky_is_checkpoint=%s manual=%s force_reset=%s headroom=%s",
+            requested_policy,
+            "checkpoint" if _request_uses_checkpoint(requested_policy) else "rolling",
+            can_reset,
+            kwargs.get("sticky_dropped"),
+            sticky_is_checkpoint,
+            sticky_manual,
+            force_reset,
+            kwargs.get("headroom_ratio"),
+        )
     if replay_only and int(kwargs.get("sticky_dropped") or 0) <= 0:
         return messages, None
     if kwargs.get("count_tokens") is not None:
@@ -436,6 +449,16 @@ def _fit_with_instruction_pins(
         and not int(truncation.get("dropped_messages") or 0)
     ):
         return _fit_context(messages, protected_message_ids = anchors or None, **kwargs)
+    if truncation and os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
+        logger.info(
+            "context_fit_diag checkpoint=%s checkpoint_started=%s dropped=%s "
+            "tokens_before=%s tokens_after=%s",
+            truncation.get("checkpoint"),
+            truncation.get("checkpoint_started"),
+            truncation.get("dropped_messages"),
+            truncation.get("prompt_tokens_before"),
+            truncation.get("prompt_tokens_after"),
+        )
     return fitted, truncation
 
 
