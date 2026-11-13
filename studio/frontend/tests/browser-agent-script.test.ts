@@ -7,7 +7,7 @@ import { test } from "node:test";
 
 register("./helpers/browser-executor-resolver.mjs", import.meta.url);
 const { runBrowserAction } = await import("../src/features/browser/agent/executor.ts");
-const { agentChat, answerQuestion, useBrowserAgentStore } = await import("../src/features/browser/agent/agent-store.ts");
+const { agentChat, answerQuestion, endBrowserAgentRun, useBrowserAgentStore } = await import("../src/features/browser/agent/agent-store.ts");
 // Actions without a scope act for the chat on screen.
 const CHAT = "new";
 
@@ -42,6 +42,8 @@ test("a script approved after Run scripts was set to Never does not run", async 
   assert.equal(posted.at(-1)?.result.ok, false);
   assert.match(posted.at(-1)?.result.error ?? "", /doesn't let the agent run scripts/);
   assert.ok(!sent.includes("evaluate"));
+  // A tool response is not the end of a model turn. End the simulated run before the next test.
+  endBrowserAgentRun(run.runKey);
 });
 
 
@@ -67,5 +69,6 @@ test("Run scripts Always allow executes browser_evaluate without asking", async 
   assert.equal(result?.ok, true, result?.error);
   assert.ok(sent.includes("evaluate"));
   assert.equal(agentChat(CHAT).question, null, "Always allow must not request script approval");
+  endBrowserAgentRun(run.runKey);
   useBrowserAgentStore.setState({ scriptAccess: "ask" });
 });
