@@ -1585,6 +1585,8 @@ def _conversation_recall_reserve(thread_id: Optional[str]) -> int:
         # Temporary chats are never archived, so do not reserve room for recall.
         if not conversation_archive.can_archive(thread_id):
             return 0
+        if not rag_config.CONVERSATION_AUTO_RECALL:
+            return 0
         # sqlite-vec may exist while the embedder fails; reserving then only loses history.
         if conversation_archive.degraded():
             return 0
@@ -2250,6 +2252,12 @@ def _archive_and_recall(
             else 0
         )
         counts = {"archived_messages": archived}
+
+        # Fastpath: keep indexing evicted turns and manual search_conversation,
+        # but do not synchronously search/inject four synthetic passages on each turn.
+        if not conversation_archive.config.CONVERSATION_AUTO_RECALL:
+            result["counts"] = counts
+            return result
 
         if recall_done or (cancel_check is not None and cancel_check()):
             result["counts"] = counts
@@ -38190,6 +38198,9 @@ class LlamaCppBackend:
             payload["stop"] = stop
         _apply_seeded_llama_request(payload, seed)
         payload["stream_options"] = {"include_usage": True}
+        if thread_id and os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
+            from core.inference.prompt_prefix_diagnostics import record_prefix
+            record_prefix(thread_id, payload["messages"], phase="plain")
 
         served_by = getattr(self, "_process", None)
         url = f"{self.base_url}/v1/chat/completions"
@@ -39225,6 +39236,10 @@ class LlamaCppBackend:
                         "tools": llama_grammar_tools(safe_tools),
                     }
                 _last_sent_tools = safe_tools
+
+            if thread_id and os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
+                from core.inference.prompt_prefix_diagnostics import record_prefix
+                record_prefix(thread_id, payload["messages"], payload.get("tools"), phase="agent")
             if thinking_budget_tokens is not None:
                 payload["thinking_budget_tokens"] = thinking_budget_tokens
             # Re-checked per iteration: once a tool result is appended the partial is
@@ -41829,6 +41844,9 @@ class LlamaCppBackend:
             stream_payload["stop"] = stop
         _apply_seeded_llama_request(stream_payload, seed, reuse_prompt_cache = _prompt_sent)
         stream_payload["stream_options"] = {"include_usage": True}
+        if thread_id and os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
+            from core.inference.prompt_prefix_diagnostics import record_prefix
+            record_prefix(thread_id, stream_payload["messages"], stream_payload.get("tools"), phase="final")
 
         # Progress events feed the first-token deadline; timings stay opt-in.
         stream_payload["return_progress"] = True
