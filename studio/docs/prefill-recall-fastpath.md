@@ -51,7 +51,10 @@ Rulith created its first checkpoint after an 8192-token prefill batch. In a
 `--checkpoint-min-step 2048`, keeping `--ctx-checkpoints 8`, and confirm
 the engine actually saves a checkpoint before each 2061–7089-token divergence.
 A smaller microbatch may reduce prefill throughput and may not affect every
-checkpoint policy. This is an experimental tradeoff, not a guaranteed fix.
+checkpoint policy. **Crucial:** a checkpoint at 2048 can at best reuse the
+initial 2k–7k matching tokens; it does NOT avoid re-evaluating the remaining
+120k–180k changed suffix. The primary fix still requires stabilizing the
+rendered prefix through context replay / tool-catalogue transitions.
 
 ## Acceptance checks
 1. Run full chat with same tool catalogue for 10+ user turns.
