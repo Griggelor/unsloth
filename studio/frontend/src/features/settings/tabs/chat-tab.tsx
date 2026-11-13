@@ -4,6 +4,8 @@
 import { LazyImportBoundary } from "@/components/lazy-import-boundary";
 import { SegmentedPill } from "@/components/segmented-control";
 import { Button } from "@/components/ui/button";
+import { useAgentHistoryModeStore } from "@/features/chat/stores/agent-history-mode-store";
+import { agentHistoryStorageModeForUi, agentHistoryUiModeFor } from "@/features/chat/stores/agent-history-preference-policy";
 import {
   Select,
   SelectContent,
@@ -56,12 +58,6 @@ import {
   toolResultLimitChoices,
   updateToolResultLimit,
 } from "../api/tool-result-limit";
-import {
-  ChatWidthSelect,
-  ComposerOutlineSliderRow,
-  ComposerPositionSliderRow,
-  SentAttachmentsSelect,
-} from "../components/appearance-custom-controls";
 import { ChatMenuOrderList } from "../components/chat-menu-order-list";
 import { FirstTokenTimeoutRow } from "../components/first-token-timeout-row";
 import { GenerationStatsUpdatesRow } from "../components/generation-stats-updates-row";
@@ -300,6 +296,9 @@ export function ChatTab() {
   const t = useT();
   const pillId = useId();
   const navigate = useNavigate();
+  const globalDomLevel = useAgentHistoryModeStore((state) => state.globalDomLevel);
+  const setGlobalDomLevel = useAgentHistoryModeStore((state) => state.setGlobalDomLevel);
+  const globalAgentEnabled = useAgentHistoryModeStore((state) => state.globalEnabled);
   const resetPlusMenu = usePlusMenuPrefsStore((state) => state.resetMenu);
   const plusMenuPristine = usePlusMenuPrefsStore((state) =>
     plusMenuAtDefaults(state.pins, state.order),
@@ -515,71 +514,8 @@ export function ChatTab() {
         </SettingsRow>
       </SettingsSection>
 
-      {/* Chat owns composer preferences; the in-composer popovers are shortcuts. */}
-      <SettingsSection title={t("composerSettings.title")}>
-        <ComposerSettings embedded={true} />
-        <ComposerFormatRows />
-        <SettingsRow
-          label={t("settings.chat.pastedTextThreshold")}
-          description={
-            pastedTextMinChars > 0
-              ? t("settings.chat.pastedTextShortDescription", {
-                  count: pastedTextMinChars.toLocaleString(),
-                })
-              : t("settings.chat.pastedTextOffDescription")
-          }
-          hint={t("settings.chat.pastedTextThresholdDescription", {
-            shortcut: plainPasteLabel,
-          })}
-        >
-          <Select
-            value={String(pastedTextMinChars)}
-            onValueChange={(value) => setPastedTextMinChars(Number(value))}
-          >
-            <SelectTrigger
-              className="w-36"
-              aria-label={t("settings.chat.pastedTextThreshold")}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PASTED_TEXT_THRESHOLD_CHOICES.map((choice) => (
-                <SelectItem key={choice} value={String(choice)}>
-                  {choice === 0
-                    ? t("settings.chat.pastedTextThresholdOff")
-                    : choice.toLocaleString()}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-        <ContextWindowUsageRow />
-        <SettingsRow
-          label={t("settings.appearance.custom.chatWidth.label")}
-          description={t("settings.appearance.custom.chatWidth.description")}
-        >
-          <ChatWidthSelect />
-        </SettingsRow>
-        <SettingsRow
-          label={t("settings.chat.composerPosition")}
-          description={t("settings.chat.composerPositionDescription")}
-        >
-          <ComposerPositionSliderRow />
-        </SettingsRow>
-        <SettingsRow label={t("chatBackground.outline")}>
-          <ComposerOutlineSliderRow />
-        </SettingsRow>
-        <SettingsRow
-          label={t("settings.appearance.custom.sentAttachments.label")}
-          description={t(
-            "settings.appearance.custom.sentAttachments.description",
-          )}
-        >
-          <SentAttachmentsSelect />
-        </SettingsRow>
-      </SettingsSection>
-
       <SettingsSection title={t("settings.general.chatDefaults")}>
+        <ComposerSettings embedded={true} />
         <SettingsRow
           label={t("settings.chat.autoScroll")}
           description={t("settings.chat.autoScrollDescription")}
@@ -613,6 +549,40 @@ export function ChatTab() {
               </button>
             ))}
           </div>
+        </SettingsRow>
+        <SettingsRow
+          label={t("settings.chat.pastedTextThreshold")}
+          description={
+            pastedTextMinChars > 0
+              ? t("settings.chat.pastedTextShortDescription", {
+                  count: pastedTextMinChars.toLocaleString(),
+                })
+              : t("settings.chat.pastedTextOffDescription")
+          }
+          hint={t("settings.chat.pastedTextThresholdDescription", {
+            shortcut: plainPasteLabel,
+          })}
+        >
+          <Select
+            value={String(pastedTextMinChars)}
+            onValueChange={(value) => setPastedTextMinChars(Number(value))}
+          >
+            <SelectTrigger
+              className="w-36"
+              aria-label={t("settings.chat.pastedTextThreshold")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PASTED_TEXT_THRESHOLD_CHOICES.map((choice) => (
+                <SelectItem key={choice} value={String(choice)}>
+                  {choice === 0
+                    ? t("settings.chat.pastedTextThresholdOff")
+                    : choice.toLocaleString()}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </SettingsRow>
         <GenerationStatsUpdatesRow />
       </SettingsSection>
@@ -814,6 +784,29 @@ export function ChatTab() {
 
       <SettingsSection title={t("settings.chat.groups.display.title")}>
         <SettingsRow
+          label={t("settings.chat.agentHistoryGlobal")}
+          description={t("settings.chat.agentHistoryGlobalDescription")}
+        >
+          <Select
+            value={globalAgentEnabled
+              ? agentHistoryUiModeFor(globalDomLevel ?? "legacy") : "off"}
+            onValueChange={(value) => {
+              if (value === "off" || value === "dynamic" || value === "fixed") {
+                setGlobalDomLevel(agentHistoryStorageModeForUi(value));
+              }
+            }}
+          >
+            <SelectTrigger className="w-60" aria-label={t("settings.chat.agentHistoryChatMode")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="dynamic">{t("settings.chat.agentHistoryBufferDynamic")}</SelectItem>
+              <SelectItem value="fixed">{t("settings.chat.agentHistoryBufferFixed")}</SelectItem>
+              <SelectItem value="off">{t("settings.chat.agentHistoryModeOff")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+        <SettingsRow
           label={t("settings.chat.showLinkPreviews")}
           description={t("settings.chat.showLinkPreviewsDescription")}
         >
@@ -853,6 +846,7 @@ export function ChatTab() {
             onCheckedChange={setShowGenerationDetails}
           />
         </SettingsRow>
+        <ContextWindowUsageRow />
         <SettingsRow
           label={t("settings.chat.inlineEditResponse")}
           description={t("settings.chat.inlineEditResponseDescription")}
@@ -873,6 +867,7 @@ export function ChatTab() {
             onCheckedChange={setShowTurnNavigation}
           />
         </SettingsRow>
+        <ComposerFormatRows />
       </SettingsSection>
 
       <SettingsSection title={t("settings.chat.modelSelection.title")}>
