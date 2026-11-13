@@ -24,6 +24,10 @@ Set the Windows user-level environment variable
 * Does **not** disable document RAG, manual search, or background archiving.
 
 The default is still `1`, preserving upstream behavior for every other user.
+These environment variables have no effect on an **unpatched** Unsloth backend.
+The frontend-only R6V3/browser EXE cannot deploy this Python/backend change.
+Verify `contextPolicy` in saved Studio chat settings: an explicit `rolling`
+setting overrides the Windows `UNSLOTH_CONTEXT_POLICY=checkpoint` variable.
 To compare against baseline, set the variable to `1` and restart.
 
 PowerShell (run once; applies to **new** processes):
@@ -38,6 +42,10 @@ When `UNSLOTH_PROMPT_PREFIX_DIAG=1`, the backend emits
 - Hashed thread identity, phase, and total serialized message length
 - Lower-bound common **character** prefix in 1024-character blocks
 - Boolean change of the tool catalogue
+
+The same optional diagnostic logs `context_policy_diag` (effective Checkpoint/Rolling,
+headroom, saved boundary) and `context_fit_diag` (real reset flag, evicted
+message count and before/after token counts), without message content.
 
 The first 131072 characters are hashed for comparison, not stored as text;
 the diagnostic keeps a maximum of 24 prior-thread digests in RAM. A character
