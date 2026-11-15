@@ -71,3 +71,20 @@ def test_two_real_token_sequences_log_lcp_without_content(monkeypatch, caplog):
     assert "SENSITIVE" not in caplog.text
     assert "tokens" not in records[1] or records[1]["prompt_tokens"] == 5
     assert all("http" not in str(r) for r in records)
+
+
+def test_production_log_emitter_receives_only_sanitized_data(monkeypatch):
+    monkeypatch.setenv("UNSLOTH_PROMPT_PREFIX_PROBE", "1")
+    probe._LAST.clear()
+    emitted = []
+    with patch.object(probe.httpx, "Client", FakeClient):
+        FakeClient.tokens = [3, 5]
+        probe.observe_chat_payload(
+            {"messages": [{"role": "user", "content": "NEVER_LOG_THIS"}]},
+            base_url="http://localhost:4444", headers={}, verify=True,
+            emit=emitted.append,
+        )
+    assert len(emitted) == 1
+    assert "NEVER_LOG_THIS" not in emitted[0]
+    assert emitted[0].startswith("prompt_prefix_probe ")
+    assert json.loads(emitted[0].split(" ", 1)[1])["status"] == "ok"
