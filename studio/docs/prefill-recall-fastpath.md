@@ -21,6 +21,9 @@ Set the Windows user-level environment variable
   explicit `search_conversation` tool when the model needs an older fact.
 * Stop emitting the corresponding `Recalling earlier conversation` status.
 * Remove the automatic recall-token reserve from the fit budget.
+* **Does not stop synchronous archiving** on eviction. `archive_turns` may still
+  calculate embeddings and delay a model request. Other `working`/compaction
+  status messages may therefore remain.
 * Does **not** disable document RAG, manual search, or background archiving.
 
 The default is still `1`, preserving upstream behavior for every other user.
@@ -39,19 +42,28 @@ PowerShell (run once; applies to **new** processes):
 ## Private-data-safe prompt diagnosis
 When `UNSLOTH_PROMPT_PREFIX_DIAG=1`, the backend emits
 `prompt_prefix_diag` lines for each GGUF model request, including:
-- Hashed thread identity, phase, and total serialized message length
-- Lower-bound common **character** prefix in 1024-character blocks
+- Hashed thread identity and request phase (`plain`, `agent`, `final`)
+- Lower-bound common **JSON character** prefix in 1024-character blocks,
+  compared only against the *same phase* of the previous call
+- Sample length and sample-capped flags (not total prompt length)
 - Boolean change of the tool catalogue
 
-The same optional diagnostic logs `context_policy_diag` (effective Checkpoint/Rolling,
-headroom, saved boundary) and `context_fit_diag` (real reset flag, evicted
-message count and before/after token counts), without message content.
+The same optional diagnostic logs `context_policy_diag` (requested/candidate
+Checkpoint/Rolling; the actual fit may fall back), `context_fit_diag`
+(compaction state and before/after token counts), and
+`conversation_archive_diag` with separate `evicted_archive` and `auto_recall`
+wall-clock durations and counts, without message content. The archive duration
+includes scheduling and synchronous embedding, not just database writes.
 
-The first 131072 characters are hashed for comparison, not stored as text;
-the diagnostic keeps a maximum of 24 prior-thread digests in RAM. A character
-boundary is **not** an engine token offset; compare with Rulith's `lcp` and
-checkpoint traces. Disable the flag after testing. No raw messages, retrieved
-passages, tool arguments, or page contents are logged by this diagnostic.
+The first 131072 JSON characters are hashed for comparison, not stored as text;
+the diagnostic keeps at most 72 prior thread/phase samples in RAM. Streaming
+JSON serialization stops once this sample cap is met (an unusually large single
+string may still be temporarily encoded by Python). A character boundary is
+**not** a GGUF token position and does not include all template-side changes.
+Tool definitions are hashed separately. Compare with Rulith's measured `lcp`
+and checkpoint traces before attributing a full-prefill to a specific cause.
+Disable the flag after testing. No raw messages, retrieved passages, tool
+arguments, or page contents are written to logs by this diagnostic.
 
 ## Additional engine-side A/B test (not applied automatically)
 Rulith created its first checkpoint after an 8192-token prefill batch. In a
@@ -67,10 +79,13 @@ rendered prefix through context replay / tool-catalogue transitions.
 ## Acceptance checks
 1. Run full chat with same tool catalogue for 10+ user turns.
 2. No synchronous forced conversation-recall status with auto recall disabled.
-3. `search_conversation` can still retrieve an evicted message.
-4. Compare `prompt_prefix_diag` and Rulith `lcp` across new user turns.
-5. Document the count and token cost of forced full-prefills before claiming
-   the original performance regression is fixed.
+3. `search_conversation` can still retrieve a *newly* evicted message.
+4. Verify `conversation_archive_diag` reports archive duration while no
+   `auto_recall` phase occurs when disabled. Check whether the UI's generic
+   `working` status still comes from compaction or archiving.
+5. Compare `prompt_prefix_diag` **same-phase** samples with Rulith `lcp`.
+6. Run the 10+ turn long-chat Rulith test (262k context) and document forced
+   full-prefill counts and token cost. Only then claim any performance fix.
 
 This patch is **QA-only** and independent of the virtualization/browser EXE
 branch. Do not overwrite a working deployment before test results exist.
