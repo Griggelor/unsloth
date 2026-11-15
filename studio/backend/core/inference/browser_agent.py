@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
+import time
 import re
 import sys
 import unicodedata
@@ -856,7 +858,10 @@ def execute_browser_tool(
     )
     from utils.account_context import current_account_id
 
+    _diag = os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1"
     if output_callback is None:
+        if _diag:
+            logger.info(f"browser_bridge_diag stage=unavailable tool={name} reason=missing_callback")
         return (
             "Error: the browser is only available in an Unsloth chat, where the browser panel runs "
             "these actions."
@@ -896,8 +901,21 @@ def execute_browser_tool(
         )
     except BaseException:
         discard_browser_action(action_id, slot)
+        if _diag:
+            logger.info(f"browser_bridge_diag stage=dispatch_failed tool={name}")
         raise
+    if _diag:
+        logger.info(f"browser_bridge_diag stage=queued tool={name} timeout_s={wait:.0f}")
+    started = time.monotonic()
     outcome, result = wait_browser_action(slot, action_id, cancel_event, wait)
+    if _diag:
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        state = outcome if outcome in ("answered", "expired", "cancelled") else "other"
+        success = isinstance(result, dict) and result.get("ok") is True
+        logger.info(
+            f"browser_bridge_diag stage=finished tool={name} outcome={state} "
+            f"result_ok={int(success)} wait_ms={elapsed_ms}"
+        )
     if outcome == "cancelled":
         return "Error: the browser action was stopped."
     if outcome == "expired" or result is None:

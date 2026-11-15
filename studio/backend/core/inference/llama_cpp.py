@@ -38246,6 +38246,13 @@ class LlamaCppBackend:
         if thread_id and os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
             from core.inference.prompt_prefix_diagnostics import record_prefix
             record_prefix(thread_id, payload["messages"], phase = "plain")
+            from core.inference.turn_transition_diagnostics import record_request_surface
+            record_request_surface(
+                thread_id, payload["messages"], phase = "plain",
+                tools = payload.get("tools"),
+                template_kwargs = payload.get("chat_template_kwargs"),
+                tool_choice = payload.get("tool_choice"),
+            )
 
         served_by = getattr(self, "_process", None)
         url = f"{self.base_url}/v1/chat/completions"
@@ -39285,6 +39292,13 @@ class LlamaCppBackend:
             if thread_id and os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
                 from core.inference.prompt_prefix_diagnostics import record_prefix
                 record_prefix(thread_id, payload["messages"], payload.get("tools"), phase = "agent")
+                from core.inference.turn_transition_diagnostics import record_request_surface
+                record_request_surface(
+                    thread_id, payload["messages"], phase = "agent",
+                    tools = payload.get("tools"), source_tools = tools,
+                    template_kwargs = payload.get("chat_template_kwargs"),
+                    tool_choice = payload.get("tool_choice"),
+                )
             if thinking_budget_tokens is not None:
                 payload["thinking_budget_tokens"] = thinking_budget_tokens
             # Re-checked per iteration: once a tool result is appended the partial is
@@ -41892,6 +41906,13 @@ class LlamaCppBackend:
         if thread_id and os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
             from core.inference.prompt_prefix_diagnostics import record_prefix
             record_prefix(thread_id, stream_payload["messages"], stream_payload.get("tools"), phase = "final")
+            from core.inference.turn_transition_diagnostics import record_request_surface
+            record_request_surface(
+                thread_id, stream_payload["messages"], phase = "final",
+                tools = stream_payload.get("tools"), source_tools = tools,
+                template_kwargs = stream_payload.get("chat_template_kwargs"),
+                tool_choice = stream_payload.get("tool_choice"),
+            )
 
         # Progress events feed the first-token deadline; timings stay opt-in.
         stream_payload["return_progress"] = True

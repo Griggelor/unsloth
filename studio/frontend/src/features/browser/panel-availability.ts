@@ -10,6 +10,15 @@ const listeners = new Set<() => void>();
 export function setBrowserPanelAvailable(available: boolean): void {
   if (panelAvailable === available) return;
   panelAvailable = available;
+  // Correlate disappearing browser-tool catalogues with panel visibility changes.
+  try {
+    if (typeof window !== "undefined" &&
+        window.localStorage.getItem("unsloth_prompt_prefix_diag") === "1") {
+      console.info("browser_panel_diag", { available });
+    }
+  } catch {
+    // Diagnostic only; storage access can be blocked.
+  }
   for (const listener of listeners) listener();
 }
 

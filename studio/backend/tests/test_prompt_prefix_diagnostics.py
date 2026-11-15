@@ -86,3 +86,67 @@ def test_another_thread_does_not_change_baseline(caplog):
         record_prefix("thread-a", message)
     assert caplog.text.count("first_sample=1") == 2
     assert "stable_prefix_chars_floor=" in caplog.text
+
+
+def test_final_to_agent_boundary_catches_tool_change(caplog):
+    from core.inference.turn_transition_diagnostics import _PREVIOUS_REQUEST, record_request_surface
+
+    _PREVIOUS_REQUEST.clear()
+    before = [{"role": "system", "content": "A" * 6500}, {"role": "user", "content": "secret one"}]
+    after = [{"role": "system", "content": "A" * 6500}, {"role": "user", "content": "secret one"}, {"role": "user", "content": "secret two"}]
+    browser = [{"type": "function", "function": {"name": "browser_navigate"}}]
+    with caplog.at_level(logging.INFO):
+        record_request_surface("boundary-a", before, phase = "final", tools = browser,
+                               source_tools = browser, tool_choice = "none")
+        record_request_surface("boundary-a", after, phase = "agent", tools = [],
+                               source_tools = browser, tool_choice = "auto")
+    assert "turn_boundary_diag" in caplog.text
+    assert "tool_choice_changed=True" in caplog.text
+    assert "wire_tools_changed=True" in caplog.text
+    assert "source_tools_changed=False" in caplog.text
+    assert "old_wire_browser=1 new_wire_browser=0" in caplog.text
+    assert "secret one" not in caplog.text
+    assert "secret two" not in caplog.text
+
+
+def test_boundary_is_thread_isolated_and_phase_order_matters(caplog):
+    from core.inference.turn_transition_diagnostics import _PREVIOUS_REQUEST, record_request_surface
+
+    _PREVIOUS_REQUEST.clear()
+    msg = [{"role": "system", "content": "private"}]
+    with caplog.at_level(logging.INFO):
+        record_request_surface("one", msg, phase = "final")
+        record_request_surface("two", msg, phase = "agent")
+        record_request_surface("one", msg, phase = "agent")
+        record_request_surface("one", msg, phase = "agent")
+    assert caplog.text.count("turn_boundary_diag thread=") == 1
+    assert "private" not in caplog.text
+
+
+def test_browser_inventory_and_template_changes_are_reported(caplog):
+    from core.inference.turn_transition_diagnostics import _PREVIOUS_REQUEST, record_request_surface
+
+    _PREVIOUS_REQUEST.clear()
+    messages = [{"role": "system", "content": "private"}]
+    with caplog.at_level(logging.INFO):
+        record_request_surface("browser", messages, phase = "final",
+                               template_kwargs = {"tools": [{"name": "browser_click"}], "reasoning_effort": "high"})
+        record_request_surface("browser", messages, phase = "agent",
+                               template_kwargs = {"tools": [], "reasoning_effort": "low"})
+    assert "template_tools_changed=True" in caplog.text
+    assert "template_other_changed=True" in caplog.text
+    assert "old_template_browser=1 new_template_browser=0" in caplog.text
+    assert "private" not in caplog.text
+
+
+def test_surface_serializer_errors_fail_open(caplog):
+    from core.inference.turn_transition_diagnostics import _PREVIOUS_REQUEST, record_request_surface
+
+    _PREVIOUS_REQUEST.clear()
+    class Broken:
+        def __str__(self):
+            raise RuntimeError("PRIVATE_EXCEPTION_TEXT")
+    with caplog.at_level(logging.WARNING):
+        record_request_surface("broken", [{"role": "user", "content": Broken()}], phase = "agent")
+    assert "turn_boundary_diag unavailable phase=agent" in caplog.text
+    assert "PRIVATE_EXCEPTION_TEXT" not in caplog.text

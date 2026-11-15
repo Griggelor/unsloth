@@ -30,14 +30,30 @@ export const BROWSER_HISTORY_TOOL = "browser_history";
 
 export const BROWSER_SCRIPT_TOOL = "browser_evaluate";
 
+/** Browser-side opt-in; backend's environment flag does not reach the built frontend. */
+export function browserAgentDiagnosticsOn(): boolean {
+  try {
+    return typeof window !== "undefined" &&
+      window.localStorage.getItem("unsloth_prompt_prefix_diag") === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** The browser tools to offer this turn: none unless the Browser tool is on and the panel can show. */
 export function browserAgentToolsForTurn(): string[] {
   const { enabled, historyAccess, scriptAccess } = useBrowserAgentStore.getState();
-  if (!enabled || !browserPanelAvailable()) return [];
-  return [
+  const panelAvailable = browserPanelAvailable();
+  const offered = !enabled || !panelAvailable ? [] : [
     ...BROWSER_AGENT_TOOLS,
     ...(isTauri ? [BROWSER_SCREENSHOT_TOOL] : []),
     ...(historyAccess === "never" ? [] : [BROWSER_HISTORY_TOOL]),
     ...(scriptAccess === "never" ? [] : [BROWSER_SCRIPT_TOOL]),
   ];
+  if (browserAgentDiagnosticsOn()) {
+    console.info("browser_tool_offer_diag", {
+      enabled, panelAvailable, historyAccess, scriptAccess, offeredCount: offered.length,
+    });
+  }
+  return offered;
 }

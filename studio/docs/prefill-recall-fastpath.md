@@ -89,3 +89,60 @@ rendered prefix through context replay / tool-catalogue transitions.
 
 This patch is **QA-only** and independent of the virtualization/browser EXE
 branch. Do not overwrite a working deployment before test results exist.
+
+## Human-turn boundary and browser-tool instrumentation
+
+With `UNSLOTH_PROMPT_PREFIX_DIAG=1`, the QA branch also records
+`prompt_surface_diag` for each GGUF request and `turn_boundary_diag` for
+**final -> next agent/plain** within the same thread. The latter includes:
+
+- Per-thread monotonically increasing request sequence numbers (correlate by time with Rulith task IDs)
+- JSON-character common-prefix *lower bound*, sampled to 131072 characters; this is **not** tokenized llama.cpp LCP
+- First mismatching **head message** (first 32 messages; first 8192 JSON characters each), system/developer change flag
+- Raw source tool catalogue vs actual wire tool catalogue vs template override tool catalogue: counts, browser-tool counts and hash-change flags
+- `tool_choice` and the remaining chat-template parameters' hash-change flags
+
+Tool names, user text, tool arguments, URLs, session IDs and browser responses are not logged.
+A matching JSON prefix does not prove the final rendered chat-template prefix is stable.
+The diagnostic runs only when explicitly enabled and is bounded in memory.
+
+Correlate `old_seq`/`new_seq` with the Rulith task sequence and compare any
+`source_tools_changed`, `wire_tools_changed`, `template_tools_changed`,
+`template_other_changed`, `tool_choice_changed` and `system_changed`
+against real tokenized engine LCP. A phase boundary is evidence, not proof of cause.
+
+Browser bridge diagnostics (`browser_bridge_diag`) also record the action's
+lifecycle (queued/answered/expired/cancelled), the browser tool name, and elapsed
+wait time. They do **not** emit the web address, browser content, arguments,
+session identifier, or action identifier. A queued action without a terminal
+entry points to a stuck handoff. The frontend may withhold browser tools when
+its panel is unavailable, even if the browser toggle is enabled; backend-only
+logging can show absent tools but cannot prove which frontend gate withheld them.
+
+### Browser-side opt-in (separate from the backend environment)
+
+The browser UI cannot read the backend process environment. In the Studio
+Developer Tools console, enable the scoped, content-free browser offer/dispatch
+diagnostic before reproducing the issue:
+
+```javascript
+localStorage.setItem("unsloth_prompt_prefix_diag", "1");
+```
+
+The console will report `browser_tool_offer_diag` (toggle, panel availability,
+offered count), `browser_panel_diag` when visibility changes, and
+`browser_bridge_diag` on dispatch or malformed actions. Clear the flag
+after testing:
+
+```javascript
+localStorage.removeItem("unsloth_prompt_prefix_diag");
+```
+
+If a streamed browser action fails validation but still has a usable action ID,
+the frontend sends a negative result to the backend rather than leaving the
+tool waiting for its entire timeout. This does not claim to fix other possible
+hangs (missing stream delivery, tab closure, stale run ownership or lost
+`browser-action-result` posts).
+
+The experimental backend diagnostic requires the PR #46 Python changes to be
+deployed; merely changing the bundled browser executable does not enable it.
