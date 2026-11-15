@@ -37199,6 +37199,7 @@ class LlamaCppBackend:
             observe_chat_payload(
                 payload, base_url = self.base_url,
                 headers = self._auth_headers, verify = _local_ssl_context(),
+                emit = logger.info,
             )
         from core.rag.conversation_archive import inference_running
 
