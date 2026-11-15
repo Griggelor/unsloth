@@ -37194,6 +37194,12 @@ class LlamaCppBackend:
                     or getattr(self, "_chat_template", None),
                 ),
             }
+        if os.environ.get("UNSLOTH_PROMPT_PREFIX_PROBE") == "1" and url.endswith("/v1/chat/completions"):
+            from core.inference.prompt_prefix_probe import observe_chat_payload
+            observe_chat_payload(
+                payload, base_url = self.base_url,
+                headers = self._auth_headers, verify = _local_ssl_context(),
+            )
         from core.rag.conversation_archive import inference_running
 
         stream_timeout = httpx.Timeout(connect = 10, read = 0.5, write = 10, pool = 10)
