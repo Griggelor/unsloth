@@ -53,7 +53,7 @@ def _local_endpoint(base_url: str) -> bool:
         return False
 
 
-def observe_chat_payload(payload: dict, *, base_url: str, headers: dict, verify: object) -> None:
+def observe_chat_payload(payload: dict, *, base_url: str, headers: dict, verify: object, emit=None) -> None:
     """Probe the actual outbound payload before streaming, only if explicitly enabled.
 
     Adds two localhost-only HTTP requests (/apply-template and /tokenize). Both
@@ -120,4 +120,5 @@ def observe_chat_payload(payload: dict, *, base_url: str, headers: dict, verify:
         # Log only the exception CLASS. Exception messages can contain server/PII text.
         event.update(status="unavailable", error_type=type(exc).__name__)
     event["probe_ms"] = round(1000 * (time.monotonic() - started))
-    logger.info("prompt_prefix_probe %s", json.dumps(event, sort_keys=True))
+    line = "prompt_prefix_probe " + json.dumps(event, sort_keys=True)
+    (emit or logger.info)(line)
