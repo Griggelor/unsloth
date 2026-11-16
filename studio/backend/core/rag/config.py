@@ -24,6 +24,10 @@ WHOLE_DOC_MAX_TOKENS = int(os.environ.get("RAG_WHOLE_DOC_MAX_TOKENS", "6000"))
 
 # Off: evicted turns are dropped, no recall reserve taken. Applies once the window evicts (opt-in: context_overflow truncate_oldest).
 CONVERSATION_ARCHIVE = os.environ.get("RAG_CONVERSATION_ARCHIVE", "1") == "1"
+# Optional local-chat fastpath: suppress automatic recall injection at the start of new turns.
+# Evicted turns are still archived and the model may explicitly call search_conversation.
+# This avoids foreground retrieval latency and synthetic prompt changes.
+CONVERSATION_AUTO_RECALL = os.environ.get("RAG_CONVERSATION_AUTO_RECALL", "1") != "0"
 CONVERSATION_ARCHIVE_TOP_K = int(os.environ.get("RAG_CONVERSATION_ARCHIVE_TOP_K", "4"))
 # Sized to CONVERSATION_ARCHIVE_TOP_K * CHUNK_TOKENS with slack for the wrapper text.
 CONVERSATION_RECALL_RESERVE_TOKENS = int(

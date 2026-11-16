@@ -78,7 +78,7 @@ function userTexts(
     .map((message) => messageText(message.content));
 }
 import { endBrowserAgentRun } from "@/features/browser/agent/agent-store";
-import { browserAgentToolsForTurn } from "@/features/browser/agent/tools";
+import { browserAgentDiagnosticsOn, browserAgentToolsForTurn } from "@/features/browser/agent/tools";
 import { shownBrowserChat } from "@/features/browser/panel-availability";
 import { projectHasSources } from "@/features/rag/api/rag-api";
 import {
@@ -7554,6 +7554,32 @@ export function createOpenAIStreamAdapter(
                   void import("@/features/browser/agent/executor").then(
                     ({ parseBrowserAction, runBrowserAction }) => {
                       const action = parseBrowserAction(request);
+                      if (!action) {
+                        const raw = (request ?? {}) as Record<string, unknown>;
+                        if (browserAgentDiagnosticsOn()) {
+                          console.warn("browser_bridge_diag stage=parse_rejected", {
+                            hasId: typeof raw.id === "string",
+                            hasOp: typeof raw.op === "string",
+                          });
+                        }
+                        // Never leave the backend waiting for its entire browser timeout
+                        // when the stream delivered a malformed action with a usable id.
+                        if (typeof raw.id === "string" && raw.id.length <= 64) {
+                          void authFetch("/api/inference/browser-action-result", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              action_id: raw.id,
+                              session_id: typeof raw.session_id === "string" ? raw.session_id : "",
+                              result: { ok: false, error: "Invalid browser action; please retry." },
+                            }),
+                          }).catch(() => undefined);
+                        }
+                        return;
+                      }
+                      if (browserAgentDiagnosticsOn()) {
+                        console.info("browser_bridge_diag stage=dispatched", { op: action.op });
+                      }
                       if (action) {
                         void runBrowserAction(action, {
                           runKey: cancelId,

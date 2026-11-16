@@ -284,6 +284,19 @@ def _fit_context(messages, **kwargs):
     force_reset = bool(kwargs.pop("force_reset", False))
     sticky_manual = bool(kwargs.pop("sticky_manual", False))
     replay_only = bool(kwargs.pop("replay_only", False))
+    if os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
+        logger.info(
+            "context_policy_diag requested=%s candidate=%s can_reset=%s "
+            "sticky_dropped=%s sticky_is_checkpoint=%s manual=%s force_reset=%s headroom=%s",
+            requested_policy,
+            "checkpoint" if _request_uses_checkpoint(requested_policy) else "rolling",
+            can_reset,
+            kwargs.get("sticky_dropped"),
+            sticky_is_checkpoint,
+            sticky_manual,
+            force_reset,
+            kwargs.get("headroom_ratio"),
+        )
     if replay_only and int(kwargs.get("sticky_dropped") or 0) <= 0:
         return messages, None
     if kwargs.get("count_tokens") is not None:
@@ -436,6 +449,16 @@ def _fit_with_instruction_pins(
         and not int(truncation.get("dropped_messages") or 0)
     ):
         return _fit_context(messages, protected_message_ids = anchors or None, **kwargs)
+    if truncation and os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
+        logger.info(
+            "context_fit_diag checkpoint=%s checkpoint_started=%s dropped=%s "
+            "tokens_before=%s tokens_after=%s",
+            truncation.get("checkpoint"),
+            truncation.get("checkpoint_started"),
+            truncation.get("dropped_messages"),
+            truncation.get("prompt_tokens_before"),
+            truncation.get("prompt_tokens_after"),
+        )
     return fitted, truncation
 
 
@@ -1585,6 +1608,8 @@ def _conversation_recall_reserve(thread_id: Optional[str]) -> int:
         # Temporary chats are never archived, so do not reserve room for recall.
         if not conversation_archive.can_archive(thread_id):
             return 0
+        if not rag_config.CONVERSATION_AUTO_RECALL:
+            return 0
         # sqlite-vec may exist while the embedder fails; reserving then only loses history.
         if conversation_archive.degraded():
             return 0
@@ -2231,6 +2256,11 @@ def _archive_and_recall(
         if not conversation_archive.enabled():
             return result
 
+        _diag_started = (
+            time.monotonic()
+            if os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1"
+            else None
+        )
         gone = evicted_messages(before, conversation)
         if background:
             # llama.cpp only: its streams gate the idle-gap worker (`inference_running`).
@@ -2250,6 +2280,20 @@ def _archive_and_recall(
             else 0
         )
         counts = {"archived_messages": archived}
+        if _diag_started is not None:
+            logger.info(
+                "conversation_archive_diag phase=evicted_archive duration_ms=%s "
+                "evicted_messages=%s archived_messages=%s",
+                int((time.monotonic() - _diag_started) * 1000),
+                len(gone),
+                archived,
+            )
+
+        # Fastpath: keep indexing evicted turns and manual search_conversation,
+        # but do not synchronously search/inject four synthetic passages on each turn.
+        if not conversation_archive.config.CONVERSATION_AUTO_RECALL:
+            result["counts"] = counts
+            return result
 
         if recall_done or (cancel_check is not None and cancel_check()):
             result["counts"] = counts
@@ -2280,6 +2324,7 @@ def _archive_and_recall(
         # Retries re-ask the same queries: encode each once and reuse lexical passes and branch checks.
         with query_vector_memo(), conversation_archive.recall_session():
             for index, k in enumerate(attempts):
+                _recall_started = time.monotonic() if _diag_started is not None else None
                 recall = build_conversation_recall(
                     conversation,
                     thread_id,
@@ -2287,6 +2332,14 @@ def _archive_and_recall(
                     top_k = k,
                     **recall_kwargs,
                 )
+                if _recall_started is not None:
+                    logger.info(
+                        "conversation_archive_diag phase=auto_recall duration_ms=%s "
+                        "top_k=%s retrieved_chunks=%s",
+                        int((time.monotonic() - _recall_started) * 1000),
+                        k,
+                        int(recall.get("sources") or 0) if recall else 0,
+                    )
                 if not recall:
                     result["counts"] = counts
                     return result
@@ -38190,6 +38243,16 @@ class LlamaCppBackend:
             payload["stop"] = stop
         _apply_seeded_llama_request(payload, seed)
         payload["stream_options"] = {"include_usage": True}
+        if thread_id and os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
+            from core.inference.prompt_prefix_diagnostics import record_prefix
+            record_prefix(thread_id, payload["messages"], phase = "plain")
+            from core.inference.turn_transition_diagnostics import record_request_surface
+            record_request_surface(
+                thread_id, payload["messages"], phase = "plain",
+                tools = payload.get("tools"),
+                template_kwargs = payload.get("chat_template_kwargs"),
+                tool_choice = payload.get("tool_choice"),
+            )
 
         served_by = getattr(self, "_process", None)
         url = f"{self.base_url}/v1/chat/completions"
@@ -39225,6 +39288,17 @@ class LlamaCppBackend:
                         "tools": llama_grammar_tools(safe_tools),
                     }
                 _last_sent_tools = safe_tools
+
+            if thread_id and os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
+                from core.inference.prompt_prefix_diagnostics import record_prefix
+                record_prefix(thread_id, payload["messages"], payload.get("tools"), phase = "agent")
+                from core.inference.turn_transition_diagnostics import record_request_surface
+                record_request_surface(
+                    thread_id, payload["messages"], phase = "agent",
+                    tools = payload.get("tools"), source_tools = tools,
+                    template_kwargs = payload.get("chat_template_kwargs"),
+                    tool_choice = payload.get("tool_choice"),
+                )
             if thinking_budget_tokens is not None:
                 payload["thinking_budget_tokens"] = thinking_budget_tokens
             # Re-checked per iteration: once a tool result is appended the partial is
@@ -41829,6 +41903,16 @@ class LlamaCppBackend:
             stream_payload["stop"] = stop
         _apply_seeded_llama_request(stream_payload, seed, reuse_prompt_cache = _prompt_sent)
         stream_payload["stream_options"] = {"include_usage": True}
+        if thread_id and os.environ.get("UNSLOTH_PROMPT_PREFIX_DIAG") == "1":
+            from core.inference.prompt_prefix_diagnostics import record_prefix
+            record_prefix(thread_id, stream_payload["messages"], stream_payload.get("tools"), phase = "final")
+            from core.inference.turn_transition_diagnostics import record_request_surface
+            record_request_surface(
+                thread_id, stream_payload["messages"], phase = "final",
+                tools = stream_payload.get("tools"), source_tools = tools,
+                template_kwargs = stream_payload.get("chat_template_kwargs"),
+                tool_choice = stream_payload.get("tool_choice"),
+            )
 
         # Progress events feed the first-token deadline; timings stay opt-in.
         stream_payload["return_progress"] = True
