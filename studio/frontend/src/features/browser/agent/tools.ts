@@ -50,7 +50,8 @@ export function browserAgentToolsForTurn(): string[] {
     ...(historyAccess === "never" ? [] : [BROWSER_HISTORY_TOOL]),
     ...(scriptAccess === "never" ? [] : [BROWSER_SCRIPT_TOOL]),
   ];
-  if (browserAgentDiagnosticsOn()) {
+  // A few unit tests evaluate this function in isolation without imported helpers.
+  if (typeof browserAgentDiagnosticsOn === "function" && browserAgentDiagnosticsOn()) {
     console.info("browser_tool_offer_diag", {
       enabled, panelAvailable, historyAccess, scriptAccess, offeredCount: offered.length,
     });
